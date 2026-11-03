@@ -1,0 +1,175 @@
+{
+  "skill_root": "../apparel-style-recolor",
+  "data_dir": "data",
+  "default_provider": "terra",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "auth_token": "1_JiQgjmfST8"
+  },
+  "defaults": {
+    "mode": "single_pass",
+    "concurrency": "auto",
+    "rpm": 0,
+    "max_retries": 3,
+    "timeout_sec": 180,
+    "size": "auto",
+    "quality": "high",
+    "output_format": "png",
+    "send_reference": true,
+    "input_fidelity": "high",
+    "ui": {
+      "hide_rpm": true,
+      "hide_retries": true,
+      "hide_timeout": true,
+      "hide_mode_options": true,
+      "aspect_ratio_sizes": true,
+      "show_price": true,
+      "show_usage": true
+    },
+    "rework": {
+      "refiner": "template",
+      "llm": {
+        "enabled": false,
+        "base_url": "https://sub-proxy-us.65535.space/v1",
+        "model": "",
+        "api_key_env": "TERRA_API_KEY"
+      }
+    },
+    "pricing_file": "pricing.json",
+    "harness": {
+      "provider": "deepseek",
+      "enabled": true,
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "max_steps": 6,
+      "vision": true
+    },
+    "retry_on_timeout": false
+  },
+  "providers": {
+    "terra": {
+      "type": "openai_compat",
+      "label": "65535 网关",
+      "enabled": true,
+      "base_url": "https://sub-proxy-us.65535.space/v1",
+      "model": "gpt-image-2",
+      "api_key_env": "TERRA_API_KEY",
+      "image_field": "image[]",
+      "max_images": 4,
+      "response_format": "b64_json",
+      "auto_size_presets": [
+        "1024x1024",
+        "1536x1024",
+        "1024x1536"
+      ],
+      "concurrency": 4,
+      "rpm": 0,
+      "input_fidelity": "high",
+      "show_in_ui": true
+    },
+    "terra-nano": {
+      "type": "openai_compat",
+      "label": "65535 网关 · nano-banana（备选，改图更保真）",
+      "enabled": true,
+      "base_url": "https://sub-proxy-us.65535.space/v1",
+      "model": "gemini-nano-banana-2.1",
+      "api_key_env": "TERRA_API_KEY",
+      "image_field": "image[]",
+      "max_images": 4,
+      "response_format": "b64_json",
+      "auto_size_presets": [
+        "1024x1024",
+        "1536x1024",
+        "1024x1536"
+      ],
+      "concurrency": 4,
+      "rpm": 0,
+      "input_fidelity": "high",
+      "show_in_ui": false
+    },
+    "terra-eco": {
+      "type": "openai_compat",
+      "label": "65535 网关 · gpt-image-2-eco（便宜快速）",
+      "enabled": true,
+      "base_url": "https://sub-proxy-us.65535.space/v1",
+      "model": "gpt-image-2-eco",
+      "api_key_env": "TERRA_API_KEY",
+      "image_field": "image[]",
+      "max_images": 4,
+      "response_format": "b64_json",
+      "auto_size_presets": [
+        "1024x1024",
+        "1536x1024",
+        "1024x1536"
+      ],
+      "concurrency": 4,
+      "rpm": 0,
+      "input_fidelity": "high",
+      "show_in_ui": false
+    },
+    "gateway": {
+      "type": "openai_compat",
+      "label": "OpenAI 官方 / 其它兼容中转站",
+      "enabled": true,
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-image-1",
+      "api_key_env": "OPENAI_API_KEY",
+      "image_field": "image[]",
+      "max_images": 4,
+      "response_format": "b64_json",
+      "auto_size_presets": [
+        "1024x1024",
+        "1536x1024",
+        "1024x1536"
+      ],
+      "concurrency": 4,
+      "rpm": 0,
+      "show_in_ui": false
+    },
+    "ark": {
+      "type": "ark",
+      "label": "火山方舟 Seedream / SeedEdit",
+      "enabled": true,
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "model": "doubao-seedream-4-0-250828",
+      "api_key_env": "ARK_API_KEY",
+      "multi_image": true,
+      "max_images": 2,
+      "concurrency": 4,
+      "rpm": 0,
+      "show_in_ui": false
+    },
+    "gemini": {
+      "type": "gemini",
+      "label": "Google Gemini 图片编辑（官方直连）",
+      "enabled": true,
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "model": "gemini-2.5-flash-image",
+      "api_key_env": "GEMINI_API_KEY",
+      "max_images": 6,
+      "concurrency": 4,
+      "rpm": 0,
+      "show_in_ui": false
+    },
+    "local": {
+      "type": "local_recolor",
+      "label": "本地换色（免模型 · 图案零失真）",
+      "enabled": true,
+      "sat_ratio": 0.62,
+      "hue_tolerance": 20,
+      "halo_alpha": 190,
+      "concurrency": 4,
+      "show_in_ui": false
+    },
+    "mock": {
+      "type": "mock",
+      "label": "本地模拟（不发请求）",
+      "enabled": true,
+      "concurrency": 8,
+      "mock_delay_sec": 0.4,
+      "show_in_ui": false
+    }
+  }
+}
