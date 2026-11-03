@@ -1,0 +1,7 @@
+interface:
+  display_name: "服装改款换色"
+  short_description: "将服装改为指定款式并按本地参考色批量生成与打包"
+  default_prompt: "使用 $apparel-style-recolor 将上传图片改为圆领卫衣、连帽卫衣或短袖，并按该类型的内置颜色参考生成全部版本后打包为 ZIP。"
+
+policy:
+  allow_implicit_invocation: true
