@@ -215,7 +215,12 @@
         <div class="card-body"><div class="log" id="log" aria-live="polite"></div></div>
       </section>
       <section class="card">
-        <div class="card-head"><h2>历史任务</h2></div>
+        <div class="card-head">
+          <h2>历史任务</h2>
+          <button class="btn btn-quiet btn-sm" id="feishuBtn" type="button" style="margin-left:auto">
+            飞书历史 · 打包下载
+          </button>
+        </div>
         <div class="card-body"><div class="history" id="history"></div></div>
       </section>
     </div>
@@ -261,8 +266,29 @@
   </div>
 </aside>
 
+<!-- 飞书历史 -->
+<div class="scrim" id="feishuScrim" hidden></div>
+<aside class="drawer" id="feishuDrawer" hidden aria-modal="true" role="dialog" aria-label="飞书历史">
+  <div class="drawer-head">
+    <span class="avatar"><svg><use href="#i-download"/></svg></span>
+    <div class="who"><b>飞书历史成品</b><span id="feishuSub">记录和成品图都在多维表格里</span></div>
+    <button class="btn btn-quiet btn-icon" id="feishuClose" type="button" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
+  </div>
+  <div class="chat" id="feishuList"></div>
+  <div class="drawer-foot">
+    <div class="row">
+      <label class="check"><input type="checkbox" id="feishuAll" /><span>全选</span></label>
+      <span class="hint" id="feishuCount">0 条</span>
+    </div>
+    <div class="drawer-actions">
+      <button class="btn btn-ghost" id="feishuReload" type="button">刷新</button>
+      <button class="btn btn-primary" id="feishuExport" type="button" disabled>打包下载 ZIP</button>
+    </div>
+  </div>
+</aside>
+
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=4.2.0"></script>
+<script src="/app.js?v=4.3.0"></script>
 </body>
 </html>
