@@ -1,0 +1,307 @@
+"""Harness: the dialog + streaming brain in front of the image API.
+
+Two jobs:
+
+1. **Intake（开工前）** — ask the operator whether this batch needs anything special.
+   No requirement → the skill default prompt is used unchanged. With a requirement →
+   the requirement is analysed, matched against the skill's hard constraints, and merged
+   into one short "operator requirements" clause that rides along with the default prompt.
+
+2. **Rework（返工时）** — read the operator's revision request together with the original
+   production prompt of the selected image, explain what will change and what is locked,
+   and emit the exact prompt that will be submitted.
+
+Everything streams: `stream()` yields event dicts that the API turns into SSE frames, so
+the UI can print the analysis token by token instead of jumping from spinner to result.
+
+If `defaults.harness.llm` is configured with a reachable chat model, its tokens are
+streamed verbatim; otherwise a deterministic local analyst produces the same structure
+(`refiner = "local"`), so the workbench never blocks on an unavailable model.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from dataclasses import dataclass, field
+from typing import AsyncIterator
+
+import httpx
+
+from . import refine
+
+#: keywords → (中文标签, 需要提醒的风险)
+TOPIC_RULES: list[tuple[tuple[str, ...], str, str]] = [
+    (("图案", "印花", "logo", "标志", "字", "刺绣", "贴布", "print", "letter"),
+     "图案/文字保真", "图案锁已生效：字形、字距、大小、位置、材质浮雕都按原图照抄"),
+    (("颜色", "色号", "偏蓝", "偏黄", "色差", "colour", "color"),
+     "颜色准确度", "以参考图色值为准（色值已写入提示词），只改面料底色"),
+    (("亮", "暗", "曝光", "光", "bright", "light"),
+     "光线/亮度", "只做整体明暗微调，人物皮肤与背景高光不许溢出"),
+    (("背景", "场景", "背景不", "background"),
+     "背景保持", "背景、道具、机位、构图全部锁定不变"),
+    (("去掉", "删除", "不要", "移除", "remove", "delete"),
+     "删除元素", "删除类要求只作用于所指元素，不牵连印花与版型"),
+    (("加", "增加", "添加", "add", "换", "改成"),
+     "新增/替换元素", "只新增所指元素，其余像素不动；避免模型顺手重画印花"),
+    (("比例", "拉长", "宽", "窄", "合身", "版型", "oversize", "fit", "silhouette"),
+     "版型/比例", "版型只跟随原图姿势，不要凭空改剪裁"),
+    (("清晰", "高清", "糊", "锐", "sharp", "blur", "resolution"),
+     "清晰度", "不得放大重绘，保持原分辨率与噪点水平"),
+    (("角度", "侧面", "正面", "背面", "angle", "view"),
+     "角度/视角", "机位与构图锁定，不做视角重拍"),
+]
+
+QUESTION_HINTS = (
+    "吗", "多少", "能不能", "可不可以", "会不会", "怎么", "如何", "是不是",
+    "行不行", "有没有", "？", "?", "how much", "can you", "is it", "would",
+)
+
+
+def looks_like_question(text: str) -> bool:
+    """提问 ≠ 要求：这类句子不能被当成写进提示词的约束。"""
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return False
+    return any(hint in lowered for hint in QUESTION_HINTS)
+
+
+LOCKS = [
+    "服装款式与剪裁",
+    "印花/文字/logo 的字形、字距、大小、位置与浮雕材质",
+    "人物身份、表情、姿势、手部",
+    "背景、道具、机位、构图、裁切",
+    "光线方向、噪点与分辨率",
+]
+
+
+@dataclass
+class HarnessResult:
+    analysis: str
+    requirements: str
+    prompt: str
+    refiner: str = "local"
+    topics: list[str] = field(default_factory=list)
+
+
+def analyze_local(
+    *,
+    mode: str,
+    instruction: str,
+    base_prompt: str,
+    garment: str = "",
+    color: str = "",
+    count: int = 0,
+) -> HarnessResult:
+    """Deterministic analyst: readable analysis + merged requirement clause."""
+    instruction = " ".join((instruction or "").split())
+    lowered = instruction.lower()
+
+    hits: list[tuple[str, str]] = []
+    for words, label, note in TOPIC_RULES:
+        if any(word.lower() in lowered for word in words):
+            hits.append((label, note))
+
+    lines: list[str] = []
+    if mode == "intake":
+        if not instruction:
+            lines.append(
+                "这次没有额外要求，就按 skill 默认规范出图：改款 + 换色一次完成，"
+                "图案与版型按原图照抄。"
+            )
+        else:
+            lines.append(
+                f"收到要求，共识别到 {len(hits) or 1} 类关注点。先把它翻译成生图模型能执行的约束，"
+                "再和 skill 默认规范合并。"
+            )
+    else:
+        lines.append(
+            f"这次要返工 {count} 张，需求是「{instruction or '未填写'}」。"
+            "我按“只动你提到的那一处、其余全部锁死”来拆。"
+        )
+
+    if hits:
+        lines.append("")
+        for label, note in hits:
+            lines.append(f"· {label}：{note}")
+    if garment or color:
+        lines.append("")
+        lines.append(f"· 目标：{garment} / {color}，套用该款式的内置规范与色值。")
+    lines.append("")
+    lines.append("锁定不动的部分：" + "、".join(LOCKS) + "。")
+
+    if mode == "intake" and not instruction:
+        requirements = ""
+        prompt = base_prompt
+        lines.append("")
+        lines.append("→ 结论：不加任何额外约束，直接使用 skill 默认提示词。")
+    elif mode == "intake" and looks_like_question(instruction):
+        requirements = ""
+        prompt = base_prompt
+        lines.append("")
+        lines.append(
+            "→ 这看起来是提问，不是要求，所以我不把它写进提示词。"
+            "要加约束请直接说\"图案必须原样\"这类要求，或点「按默认生成」。"
+        )
+    elif mode == "intake":
+        requirements = instruction
+        prompt = base_prompt + _operator_clause(instruction)
+        lines.append("")
+        lines.append("→ 结论：在你的要求之外不追加任何改动，合并后的请求已附在默认提示词末尾。")
+    else:
+        requirements = instruction
+        prompt = refine.compose_template(instruction, base_prompt)
+        lines.append("")
+        lines.append("→ 结论：以这张成品为参考图重跑，只应用上面这条需求。")
+
+    return HarnessResult(
+        analysis="\n".join(lines),
+        requirements=requirements,
+        prompt=prompt,
+        refiner="local",
+        topics=[label for label, _ in hits],
+    )
+
+
+def _operator_clause(extra: str) -> str:
+    from .prompts import operator_clause
+
+    return operator_clause(extra)
+
+
+async def stream(
+    *,
+    mode: str,
+    instruction: str,
+    base_prompt: str,
+    garment: str = "",
+    color: str = "",
+    count: int = 0,
+    llm_cfg: dict | None = None,
+    env: dict | None = None,
+    chunk_size: int = 14,
+    delay: float = 0.012,
+) -> AsyncIterator[dict]:
+    """Yield {event, data} frames: meta → delta* → prompt → done."""
+    yield {"event": "meta", "data": {"mode": mode, "count": count}}
+
+    cfg = llm_cfg or {}
+    model = str(cfg.get("model") or "").strip()
+    key = str((env or {}).get(str(cfg.get("api_key_env") or ""), "")).strip()
+    use_llm = bool(cfg.get("enabled")) and bool(model) and bool(key)
+
+    result: HarnessResult | None = None
+    if use_llm:
+        try:
+            async for chunk in _stream_llm(
+                mode=mode,
+                instruction=instruction,
+                base_prompt=base_prompt,
+                garment=garment,
+                color=color,
+                count=count,
+                base_url=str(cfg.get("base_url") or ""),
+                model=model,
+                api_key=key,
+            ):
+                yield {"event": "delta", "data": {"text": chunk}}
+            result = analyze_local(
+                mode=mode,
+                instruction=instruction,
+                base_prompt=base_prompt,
+                garment=garment,
+                color=color,
+                count=count,
+            )
+            result.refiner = "llm"
+        except Exception as exc:  # noqa: BLE001 - degrade to the local analyst
+            yield {
+                "event": "delta",
+                "data": {"text": f"（在线模型不可用，改用本地分析：{type(exc).__name__}）\n\n"},
+            }
+            result = None
+
+    if result is None:
+        result = analyze_local(
+            mode=mode,
+            instruction=instruction,
+            base_prompt=base_prompt,
+            garment=garment,
+            color=color,
+            count=count,
+        )
+        text = result.analysis
+        for start in range(0, len(text), chunk_size):
+            yield {"event": "delta", "data": {"text": text[start : start + chunk_size]}}
+            if delay:
+                await asyncio.sleep(delay)
+
+    yield {
+        "event": "prompt",
+        "data": {
+            "prompt": result.prompt,
+            "requirements": result.requirements,
+            "refiner": result.refiner,
+            "topics": result.topics,
+        },
+    }
+    yield {"event": "done", "data": {"ok": True}}
+
+
+async def _stream_llm(
+    *,
+    mode: str,
+    instruction: str,
+    base_prompt: str,
+    garment: str,
+    color: str,
+    count: int,
+    base_url: str,
+    model: str,
+    api_key: str,
+) -> AsyncIterator[str]:
+    system = (
+        "你是服装电商改图工作台的助理。用中文、简短、口语化地说明你会怎么改："
+        "先复述需求，再列出这次会动的点，最后列出锁死不动的点。不要写完整提示词，不要用 markdown 列表符号以外的格式。"
+    )
+    user = (
+        f"模式：{'开工前需求确认' if mode == 'intake' else '成品返工'}\n"
+        f"目标：{garment} / {color}\n"
+        f"本次图片数量：{count}\n"
+        f"操作员需求：{instruction or '（无）'}\n"
+        f"原始规范提示词（节选）：{base_prompt[:400]}"
+    )
+    body = {
+        "model": model,
+        "stream": True,
+        "temperature": 0.4,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    timeout = httpx.Timeout(60.0, connect=15.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream(
+            "POST", f"{base_url.rstrip('/')}/chat/completions", json=body, headers=headers
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                line = (line or "").strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload in {"", "[DONE]"}:
+                    continue
+                try:
+                    data = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                choices = data.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                text = delta.get("content")
+                if text:
+                    yield text
