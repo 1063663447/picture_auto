@@ -1,0 +1,42 @@
+{
+  "currency": "CNY",
+  "unit": "per_call",
+  "note": "网关没有价格接口（/api/pricing 404），此表按网关控制台截图维护：单位人民币元、按次计费；部分模型按输出分辨率分档（1K/2K/4K），档位由所选尺寸自动判定。截图上没给出的模型保持 null（界面显示「未定价」，不计入预估）。",
+  "updated": "2026-11-03",
+  "tier_mp": { "1K": 1.6, "2K": 4.2 },
+  "models": {
+    "gpt-image-2": 0.038,
+    "gpt-image-2-n": 0.038,
+    "gpt-image-2-eco": 0.15,
+    "gpt-image-2-auto": {
+      "tiers": { "1K": 0.045, "2K": 0.065, "4K": 0.095 },
+      "other": 0.095
+    },
+    "gpt-image-2-native": {
+      "tiers": { "1K": 15.0, "2K": 30.0, "4K": 60.0 },
+      "other": 60.0
+    },
+    "gpt-image-2.5": 0.038,
+    "gpt-image-2.5-flare": 0.038,
+    "gpt-image-2.5-sunburst": 0.038,
+    "gpt-image-2.5-flare-eco": 0.15,
+    "gpt-image-2.5-sunburst-eco": 0.15,
+    "gpt-image-2.5-auto": null,
+    "gpt-image-2.5-flare-auto": null,
+    "gpt-image-2.5-flare-native": null,
+    "gpt-image-2.5-sunburst-auto": null,
+    "gpt-image-2.5-sunburst-native": null,
+    "gemini-3-pro-image": 0.18,
+    "gemini-3.1-flash-image": 0.15,
+    "gemini-nano-banana-2.1": 0.15,
+    "grok-imagine-image": 0.042,
+    "grok-imagine-image-2.0": {
+      "tiers": { "1K": 0.1, "2K": 0.14 },
+      "other": 0.16
+    },
+    "grok-imagine-image-quality": {
+      "tiers": { "1K": 0.1, "2K": 0.14 },
+      "other": 0.16
+    }
+  }
+}
