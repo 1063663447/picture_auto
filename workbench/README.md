@@ -1,0 +1,415 @@
+# 服装改款换色工作台
+
+把 `apparel-style-recolor`（原本在 codex/GPT 上按对话跑）封装成**本地工作台 + 第三方生图接口多并发**的生产线：
+上传一批原图 → 选款式和颜色 → 自动拆成 N×M 个任务并发调用生图接口 → 失败自动重试 → 按 skill 规则校验、压到 2MB 以内并打包 ZIP。
+
+```
+原图 2 张 × 短袖 10 色 = 20 个任务 → 并发 6 → 约 3~4 分钟出 20 张成品 + 1 个 ZIP
+```
+
+- **skill 仍是唯一事实来源**：工作台启动时解析 `SKILL.md` / `references/color-reference.md` / `assets/color-references/`，提示词、版型描述、负面约束、颜色清单、2MB 限制全部从 skill 读取。改 markdown，工作台自动跟随。
+- **不绑定某一家模型**：内置 OpenAI 兼容中转站、火山方舟、Gemini、fal.ai、自定义 JSON 五种适配器，换接口只改 `config.json`。
+- **为批量而生**：任务级并发、RPM 节流、指数退避重试、单任务超时、结果有效性校验、失败单独重试、随时取消、历史任务可回溯下载。
+
+---
+
+## 1. 快速开始（Windows）
+
+```bat
+:: 双击也行，或用命令行
+run.bat
+```
+
+`run.bat` 会自动：找 Python → 缺依赖时装 `requirements.txt` → 启动服务 → 打印地址。
+浏览器打开 **http://127.0.0.1:8787** 即是工作台。
+
+手工方式：
+
+```powershell
+python -m pip install -r requirements.txt
+copy .env.example .env        # 然后填入你的 Key
+python serve.py               # --port 8899 可换端口
+```
+
+先用 `本地模拟（不发请求）` 这个接口跑一遍，确认上传、并发、命名、ZIP 都正常，再接真实接口。
+
+> **已预置的默认接口**：`65535 网关 · gpt-image-2`（`https://sub-proxy-us.65535.space/v1`，Key 在 `.env` 的 `TERRA_API_KEY`）。启动后界面默认就选它，模型框里点「拉取」即可看到该网关的 30 个模型，图片模型排在最前。
+>
+> 注意：同一个 Key 在 `https://api2.65535.space` 上调用图片接口会返回 `403 this group is not served by this gateway`，**图片请求要走 `sub-proxy-us.65535.space`**（两份 host 的 `/models` 都能列模型，但只有前者服务图片分组）。codex 里配的 `gpt-5.6-terra` 是纯文本模型（`wire_api = responses`），不能改图，工作台里别选它。
+
+---
+
+## 1.5 部署到公网（Cloudflare）
+
+`powershell
+.\deploy\tunnel.ps1          # 本地服务 + Cloudflare 隧道，打印 https://xxx.trycloudflare.com
+`
+
+- 公网访问需要口令：config.json → server.auth_token，首次访问用 ?token=...，之后 Cookie 生效；无口令一律 401。
+- 只有入口在 Cloudflare 上，计算仍在本机（FastAPI + Pillow + 本地任务目录没法跑在 Workers 里，原因见 deploy/cloudflare.md）。
+- R2 归档：python -m skillbridge.r2 --check（当前账号 R2 未开通，会返回 10042 与开通步骤）。
+- 详见 [deploy/cloudflare.md](deploy/cloudflare.md)。
+
+---
+
+## 2. 目录结构
+
+```text
+picture_auto/
+├─ apparel-style-recolor/            ← 原 skill，不改动
+│  ├─ SKILL.md
+│  ├─ references/color-reference.md
+│  ├─ assets/color-references/{crewneck-sweatshirt,hoodie,short-sleeve}/*.png
+│  └─ scripts/package_outputs.py     ← 打包校验脚本，被工作台原样调用
+└─ workbench/
+   ├─ run.bat                        ← 一键启动
+   ├─ serve.py                       ← Web 工作台
+   ├─ cli.py                         ← 命令行批量跑（无浏览器）
+   ├─ config.json                    ← 接口 / 默认参数
+   ├─ .env.example                   ← API Key
+   ├─ requirements.txt
+   ├─ skillbridge/
+   │  ├─ skill.py                    ← 解析 skill：类型、颜色、提示词、2MB 限制
+   │  ├─ prompts.py                  ← 组装提示词（图案锁 / 材质锁 / 负面词）
+   │  ├─ refine.py                   ← 改图返工提示词与交接 brief
+   │  ├─ harness.py                  ← 本地分析师（降级用）+ SSE 帧
+   │  ├─ agent.py                    ← DeepSeek 工具型 agent（看图/查价/开工）
+   │  ├─ pricing.py                  ← 单价表 + 用量账本
+   │  ├─ job.py                      ← 任务模型与 job.json 持久化
+   │  ├─ runner.py                   ← 任务展开、并发调度、重试、落盘
+   │  ├─ packaging.py                ← 调用 skill 的 package_outputs.py
+   │  ├─ service.py                  ← 任务注册表 / 启动 / 取消 / 重试
+   │  ├─ api.py                      ← FastAPI 接口
+   │  └─ providers/                  ← openai_compat / ark / gemini / fal / custom_json / mock
+   ├─ web/                           ← 工作台前端（原生 JS，无构建）
+   ├─ pricing.json                   ← 每模型单价（可改；null = 未定价）
+   ├─ tools/selftest.py              ← 自检（不需要 Key）
+   ├─ docs/uiux/DESIGN-SYSTEM.md     ← UI 3.0 设计系统定稿（ui-ux-pro-max 生成）
+   ├─ .skills/ui-ux-pro-max/         ← 导入的 UI/UX 设计 skill（可继续用）
+   └─ data/jobs/<job_id>/            ← 每个任务的全部产物
+```
+
+每次任务的数据：
+
+```text
+data/jobs/20261103-100717-986c/
+├─ job.json                 # 任务状态、参数、日志（前端轮询这个状态）
+├─ inputs/item-01/…         # 你上传的原图
+├─ work/item-01.png         # 两段式模式的改款中间图（不会进 ZIP）
+├─ staging/item-01/item-01_black.png
+└─ outputs/short-sleeve-style-recolor-batch.zip
+```
+
+---
+
+## 3. 界面上怎么用（UI 3.0）
+
+界面按 ui-ux-pro-max skill 生成的设计系统重建（记录见 docs/uiux/DESIGN-SYSTEM.md，skill 已导入 .skills/ui-ux-pro-max/）：
+Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图标、44px 触控目标、可见焦点环、toast 代替 alert。
+
+1. **上传原图**：拖拽多张。默认 *一张图 = 一个 item*；同一件衣服多角度命名 item-01_view-01.png / item-01_view-02.png 会归到同一个 item-01/。
+2. **目标款式**：圆领卫衣 / 连帽卫衣 / 短袖，右侧标出参考色数量。
+3. **颜色**：默认全选该款式全部内置参考色，色卡显示按参考图实测的 HEX。
+4. **生成方式**：只有 一次到位。
+5. **接口与并发**：界面只有 **65535 网关** 一个入口；**模型下拉列出该网关全部图片模型（21 个）并显示单价**（如 `gpt-image-2 · $0.08/张`），不做分类，末尾留「其他（手填模型名）」；并发数自动 = 预计调用次数（只读）；尺寸按横竖比；质量 / 输出格式（默认 PNG）/ 是否发颜色参考图。RPM、重试次数、超时（90s）不暴露。
+
+### 价格与用量
+
+- 单价表在 `pricing.json`，**金额单位是人民币元（CNY）**（网关没有价格接口，实测 `/api/pricing` → 404，所以本地维护）。**按网关控制台的真实报价填**：`unit: per_call` 表示**按次**计费；按分辨率分档的模型写成 `{"tiers": {"1K":0.045,"2K":0.065,"4K":0.095}, "other":0.095}`，档位由所选尺寸自动判定（≤1.6MP→1K、≤4.2MP→2K、更大→4K）。
+- **未核实到价格的模型一律 `null`**：界面显示「未定价」、不计入预估、账单里单独标「未定价」——宁可显示没有，也不显示错价。
+- 已按控制台截图核实 16 个：`gpt-image-2` / `-n` / `-2.5` / `-2.5-flare` / `-2.5-sunburst` 各 **¥0.038/次**，`gpt-image-2-auto` **¥0.045/1K·¥0.065/2K·¥0.095/4K**，`gpt-image-2-eco` / `-2.5-flare-eco` / `-2.5-sunburst-eco` / `gemini-3.1-flash-image` / `gemini-nano-banana-2.1` 各 **¥0.15**，`gemini-3-pro-image` **¥0.18**，`grok-imagine-image` **¥0.042**，`grok-imagine-image-2.0` / `-quality` **¥0.10/1K·¥0.14/2K·¥0.16/其他**，`gpt-image-2-native` **¥15/1K·¥30/2K·¥60/4K**；剩 5 个 `-auto` / `-native` 变体仍是未定价。
+- 左下角实时显示 **预计花费**：`张数 × 单价`（模型切换、颜色增减即时重算）。
+- 任务卡里的「本次花费」= 已完成张数 × 单价，旁边小字是整批预估。
+- 顶栏「今日 N 张 · $X」芯片是**用量账本**：每完成一个任务写一条到 `data/usage.json`（幂等，重试不会重复计费），点一下看今日/累计/任务数。
+6. **开始生成 → 先问需求**（见下）→ 生成中右侧实时更新 KPI、进度条、成品卡（含骨架扫光）、日志。
+7. **单张**：卡片右下 下载（附件下载）、改图；失败的卡片多一个 重试（只重跑这一张）。
+8. **批量**：卡片左上勾选或「全选成品」→ 批量改图 / 批量导出。
+
+### 开工前先问需求（DeepSeek agent · 对话框 + 流式输出）
+
+> harness 不是"脚本填模板"：它是**带工具调用的 DeepSeek agent**（默认 `deepseek-flash`，支持图片输入），
+> 会真的读你上传的图、查模型价、算总价，并在你同意后**直接提交生图任务**。
+> Key 在 `.env → DEEPSEEK_API_KEY`；`config.json → defaults.harness` 可改模型/URL/最大工具轮数。
+> 在线模型不可用时自动降级成本地分析师，对话框永远有结果。
+
+工具清单（本地执行，agent 只做决策）：
+
+| 工具 | 作用 |
+|---|---|
+| `inspect_images` | 看这批图：尺寸/比例/是否低分辨率/面料主色（配合图片输入，模型真的"看见"图） |
+| `list_image_models` | 列模型 + 单价 |
+| `estimate_cost` | N 张 × 单价 |
+| `submit_generation` | 正式开工（写进任务队列，并发自动） |
+| `submit_rework` | 以选中的成品为参考图返工 |
+| `job_status` / `get_prompt` | 查进度 / 读当前提示词 |
+
+行为约定：
+
+- 用户说「跑 / 开工 / 确认 / 就这样」就**直接提交**，不再追问；信息不足才问一句。
+- **提问不是要求**：问"这图能改吗""大概多少钱""会不会糊"时，它只会解释与报价，**不会**把问题原样写进提示词。要写进提示词的要求由 agent 用 `set_requirements` 提炼后记录，或由 `submit_generation` 的参数携带。
+
+点「开始生成」不会立刻出图，而是打开右侧 **需求沟通** 面板（应用栏的「需求沟通」按钮同源）：
+
+1. harness 先说明这批的规模（款式 × 颜色 × 图数 = 预计调用次数），问你**有没有特殊要求**，并给出快捷标签（图案必须原样 / 背景别动 / 整体提亮 / 只要正面平铺…）。
+2. 你写一句需求 → 立刻以**流式输出**（SSE，逐字显示）给出分析：命中的关注点、每点的执行方式、锁定不动的清单，并展示将提交的提示词片段。
+3. 两种收尾：
+   - **按默认生成** → 不带任何额外约束，直接用 skill 默认提示词生成；
+   - **按分析结果生成** → 把你的需求作为 OPERATOR REQUIREMENTS 追加在默认提示词末尾（skill 的所有硬约束仍然生效）。
+4. 没有在线模型也能跑：默认走本地分析师（
+efiner=local，确定性规则）；若在 config.json → defaults.harness.llm 配了可用的 chat 模型，则改为流式转发模型输出，失败自动降级。
+
+### 改图返工（对话框 + 流式）
+
+单张 改图 或勾选后 批量改图，同一个对话框切换成返工模式：
+
+1. 说明要改几张，等你写需求（或点快捷标签）；
+2. harness 流式输出「会动什么 / 锁死什么」，并给出**将提交的完整提示词**（以该成品为参考图的 REVISION REQUEST）；
+3. 确认返工 → 提交 kind=rework 的独立任务（
+efiner=harness，提示词即上一步的成品），只重跑选中的那几张，结果可继续下载 / 再改图 / 批量导出。
+
+## 4. 生成方式
+
+界面只剩 `一次到位 single_pass`：改款 + 换色在一次调用里完成，调用次数 = N 图 × M 色。
+
+> 代码里仍保留 `two_phase`（两段式）与 `recolor_only`（仅换色）两种模式，需要时用命令行 `--mode two_phase|recolor_only` 调用，界面不暴露。
+
+---
+
+## 5. 接口配置（`config.json`）
+
+Key 放 `.env`，`config.json` 只写变量名，避免代理/共享文件时泄露：
+
+```ini
+TERRA_API_KEY=sk-...      # 65535 网关（已预置）
+OPENAI_API_KEY=...
+ARK_API_KEY=...
+GEMINI_API_KEY=...
+```
+
+### 已预置的三档 65535 网关（同一个 Key）
+
+| provider | 模型 | 说明 |
+|---|---|---|
+| `terra`（默认） | `gpt-image-2` | 实测 1 图 ~30s、2 图（原图+参考色）~31s，出图 1024×1536、约 1.3MB |
+| `terra-nano` | `gemini-nano-banana-2.1` | 同类里改图保真度通常更好，人物/图案更稳，适合“必须保留原图案”的单子 |
+| `terra-eco` | `gpt-image-2-eco` | 便宜快速，适合先小批量试提示词 |
+| `local` | 本地算法 | 不调接口，只换颜色、图案零失真，秒出图（见 §7.5） |
+
+网关上还有 `gemini-3-pro-image`、`gpt-image-2.5*`、`grok-imagine-image*` 等，界面「拉取」后随手换一个模型即可对比效果（`grok-imagine-video` / `veo-*` / `seedance-*` 是视频模型，不能用于改图）。
+
+适配器一览：
+
+| `type` | 用途 | 关键字段 |
+|---|---|---|
+| `openai_compat` | OpenAI `gpt-image-1`、各类 one-api / new-api / 中转站 | `base_url`、`model`、`image_field`、`max_images`、`response_format` |
+| `ark` | 火山方舟 Seedream 4.0 / SeedEdit | `model`、`multi_image`、`image_encoding` |
+| `gemini` | Gemini 图片编辑（nano-banana） | `model`、`response_modalities` |
+| `fal` | fal.ai（flux-kontext、qwen-image-edit…） | `model`、`images_field` |
+| `custom_json` | 其它任意 HTTP 接口（模板驱动，支持异步轮询） | `submit_url`、`body`、`result_b64_path`/`result_url_path`、`poll` |
+| `mock` | 本地占位图，验证流程用 | `mock_delay_sec`、`mock_fail_rate` |
+
+通用字段：
+
+| 字段 | 说明 |
+|---|---|
+| `label` | 界面上显示的名字 |
+| `enabled` | `false` 时界面显示「未启用」 |
+| `api_key` / `api_key_env` | 直接写 Key，或写 `.env` 里的变量名（推荐后者） |
+| `model` | 该接口默认模型；界面上可临时改成任意模型（每次任务单独生效） |
+| `max_images` | 单次调用最多带几张图。≥2 时会把**颜色参考图**和原图一起发送 |
+| `concurrency` | 该接口的默认并发（界面上的并发数初值） |
+| `rpm` | 默认每分钟请求上限，`0` 为不限 |
+| `global_concurrency` | 多个任务同时跑时，该接口**共享**的并发上限（`0` 不限制）。上游有硬限制就设它 |
+| `auto_size_presets` | 该模型支持的固定尺寸列表（如 `["1024x1024","1536x1024","1024x1536"]`）。设了以后 `size=auto` 会按**原图宽高比自动挑最接近的一档**，避免接口默认出方图破坏构图 |
+| `models_url` / `no_model_list` | 模型列表地址覆盖 / 关闭模型拉取 |
+| `proxy` / `trust_env` | 走代理时指定；`trust_env=false` 可忽略系统代理 |
+| `extra_form` / `extra_body` / `extra_headers` | 透传给网关的私有参数 / 请求头 |
+
+### 拉模型、换模型
+
+```powershell
+python cli.py --provider terra --list-models          # 列出该接口全部模型，图片模型排最前
+python cli.py --input D:\in --garment-type 短袖 --provider terra-nano --model gemini-nano-banana-2.1
+```
+
+界面上是同一个能力：选接口 → 点「拉取」→ 下拉里挑模型（或直接手填）→ 开跑。模型选择按接口分别记忆在浏览器里。
+
+**把中转站接进来看这里**：把 `providers.gateway.base_url` 改成你的中转站地址（例如 `https://your-gateway.com/v1`），`model` 改成中转站支持的模型名，`API Key` 填 `OPENAI_API_KEY` 即可。若网关只接受单图字段，把 `image_field` 从 `image[]` 改成 `image`。
+
+**异步轮询接口**（提交返回 task_id、再查状态）用一个 `custom_json` 例子说明：
+
+```json
+"myapi": {
+  "type": "custom_json",
+  "label": "某云图片编辑",
+  "enabled": true,
+  "submit_url": "https://HOST/v1/images/edit",
+  "method": "POST",
+  "model": "MODEL_NAME",
+  "api_key_env": "CUSTOM_API_KEY",
+  "headers": { "Authorization": "Bearer ${api_key}" },
+  "body": {
+    "model": "${model}",
+    "prompt": "${prompt}",
+    "image": "${image_data_url}",
+    "size": "${size}"
+  },
+  "poll": {
+    "url": "https://HOST/v1/tasks/${task_id}",
+    "id_path": "data.task_id",
+    "status_path": "data.status",
+    "done_values": ["succeeded"],
+    "fail_values": ["failed"],
+    "image_url_path": "data.result.url",
+    "interval_sec": 2,
+    "max_sec": 180
+  },
+  "multi_image": true,
+  "max_images": 2
+}
+```
+
+可用占位符：`${model} ${prompt} ${negative} ${size} ${quality} ${seed} ${image_data_url} ${image_b64} ${ref_data_url} ${ref_b64} ${image_count} ${api_key}`，轮询里额外有 `${task_id}`。
+
+---
+
+## 6. 并发与稳定性
+
+| 机制 | 行为 |
+|---|---|
+| 任务级并发 | 界面**自动**把并发设成预计调用次数（N 图 × M 色，上限 64），即一次把能发的都发出去；命令行可手填 |
+| RPM 节流 | 每分钟最多 N 次调用，超出自动排队等待（防 429） |
+| 全局并发 | `global_concurrency` 让多个任务共享同一接口的上限 |
+| 重试 | 429 / 5xx / 网络错误按 1→2→4→8s 指数退避 + 抖动；优先遵守 `Retry-After`；4xx（Key 错、参数错）立即失败不浪费额度 |
+| 结果校验 | 返回内容必须是能解码的图片，否则当作可重试错误（防网关 200 + 错误 JSON） |
+| 单任务超时 | 默认 **180s**。**超时不自动重试**：网关超时/504 时上游往往已出图（控制台能看到成品），自动重试等于重复计费；失败卡片上点「重试」按需补跑。要恢复自动重试就加 `"retry_on_timeout": true` |
+| 断点友好 | 每张成品落盘即写 `job.json`，服务重启后历史任务仍在，失败可单独重试 |
+| 取消 | 立即中断在飞请求，未完成任务标记为「取消」，已完成的成品保留 |
+
+---
+
+## 7. 提示词是怎么来的
+
+全部由 `skillbridge/prompts.py` 从 skill 生成，不靠手写：
+
+- **一次到位**：用 `SKILL.md` 的「改款换色提示词」模板，把 `[TARGET_GARMENT_TYPE]` 替换成该款式在 skill 里的版型英文描述，末尾追加实测色值（如 `#130f0c`）作为数值锚点。
+- **两段式**：第一阶段「只改款、保持原底色」，第二阶段「只改面料底色到指定色值」，两段都带 `保留原有图案/文字/logo` 与 `保留人物、姿势、背景、光线` 的约束。
+- **PRINT LOCK（图案锁）**：三种模式的提示词都会附一段硬约束——印花必须**逐像素照抄**：同样的字形/字重/字距/大小/位置/旋转，同样的立体浮雕、光泽、边缘高光与投影；明确禁止重新打字、重排字距、拉伸、压平立体字、缩放或移动图案。同时在工作台的负面词里追加了对应的 ~20 条禁止项（不换字体、不改字距、不把平面印变立体、不丢斜面高光、不改领标…）。
+- **MATERIAL（材质锁）**：针对“图案像贴上去”的问题——要求印花保留源图的**物理材质与摄影质感**：同样的表面工艺（磨砂胶印/发泡/刺绣/植绒）、字母内部的微纹理与胶片颗粒、同样的边缘柔度、同方向的高光、与面料交界处的接触阴影与厚度，并且衣服的褶皱和光线要**穿过**图案继续延伸。明确禁止：干净矢量 logo、铬合金渐变、贴纸/贴花感、CGI 渲染感、均匀平涂、比周围照片更锐利的边缘。负面词同步补了对应条目。
+- **原图保真度 `input_fidelity`**：`gpt-image` 系列支持该参数，`high` 会让模型尽量沿用原图细节（人物、文字、图案）。`terra*` 三个接口已默认写死 `high`；需要临时改动时用命令行 `--fidelity low`，或在 `config.json` 里改 provider 的 `input_fidelity`。
+- **改图返工（rework）**：见 §3 末尾——把不满意的成品挑出来，用「本次需求 + 原始提示词」合成新提示词，并以该成品为参考图重跑，只影响挑中的那几张。
+- **负面约束**：接口有 `negative` 字段就单独传（`supports_negative: true`），没有就合并到提示词末尾——和 skill 的要求一致。
+- **颜色参考图**：`max_images >= 2` 时自动把「原图 + 对应参考色图」一起发送；只支持单图的接口靠提示词里的色值 + 颜色名约束，仍然可用。
+- 每次任务实际发送的提示词可在界面点 **查看提示词**，或看 `job.json` 里每个 `task.prompt`。
+
+### 印花失真的四层防线（实测总结）
+
+模型改图时“重画 logo”是最常见的失真来源。按下面的顺序选手段：
+
+1. **只换颜色 → 用「本地换色」接口**（`provider = local`）：完全不调模型，图案像素原样保留（见下一节）。
+2. **需要改款，但图案重要 → 接口模型 + `input_fidelity=high` + 模式「仅换色」或「两段式」**，并尽量喂**原始分辨率**的原图；喂小图（例如几百像素宽）模型只能凭想象补细节，字形一定漂。
+3. **图案质感仍不真实（像贴上去） → 用「改图」逐张返工**：把不可接受的那几张挑出来，写清需求（例：印刷颗粒保留、去掉贴纸感），只重跑这几张。
+4. **仍不满意 → 先模型改款、再本地换色出全色**：先用模型把版型改对（一次），再用本地换色出全部颜色，第二次不再经过模型。
+
+---
+
+## 7.5 本地换色（免模型 · 图案零失真）
+
+`provider = local`（配置里叫 `local`，类型 `local_recolor`）：**不调用任何接口、不花钱、秒出图**。
+
+原理：按颜色把面料分割出来（高饱和面料用色相窗口 + 饱和度下限，近中性面料用 RGB 距离），
+再只替换面料底色（保留原图明暗比例，所以褶皱、罗纹、纹理都还在），
+而低饱和/极暗/极亮的**图案像素被整块排除并加了 2px 保护带**，因此印花、刺绣、立体贴布、领标都逐像素保留。
+
+适用与不适用：
+
+| 情况 | 本地换色 | 说明 |
+|---|---|---|
+| 款式已经对，只换颜色 | ✅ 最佳 | 图案零失真、版型零变化、免费 |
+| 白底 + 换白色 | ⚠️ | 白衣服贴白背景会缺阴影，模型能补光影，本地不行 |
+| 深色印在黑衣服上 | ⚠️ | 图案本来就看不清，任何方法都一样 |
+| 要改款（长袖→短袖、加帽、改领型） | ❌ | 它会直接报错提示改用生图接口 |
+| 图案与面料同色、半透明叠印 | ⚠️ | 分割可能吃边，建议用模型 + `input_fidelity=high` |
+
+调参（`config.json → providers.local`）：`sat_ratio`（默认 0.62，面料与图案的饱和度分界）、`hue_tolerance`（色相窗口）、`halo_alpha`（图案边缘过渡带的重着色强度，默认 190）。
+如果真的分割失败（面料占比 <3% 或 >94%），它会**直接报错而不是产出废图**，这时换用生图接口。
+
+---
+
+## 8. 输出与打包
+
+完全复用 skill 的 `scripts/package_outputs.py`（子进程调用，规则不重复实现）：
+
+- 总目录名 = `<款式>-style-recolor-batch/`，每个 item 一个子目录，文件名 `<item>_<颜色>.png`；
+- 每张图**严格 < 2,000,000 字节**：小于就原样复制，超了才压（PNG 先最大压缩 + 减色，JPG/WEBP 先降质量，都不行才缩尺寸）；
+- ZIP 保留目录层级；`work/` 中间图绝不进包；
+- 有失败任务时按现有成品打包并在日志里标注；`package_outputs.py` 缺失/跑不起来时退化为内置 ZIP 并提示。
+
+---
+
+## 9. 命令行批量（不开浏览器）
+
+```powershell
+# 整个目录，短袖全 10 色，并发 6，接口用 gateway
+python cli.py --input D:\拍摄\2026-11-03 --garment-type 短袖 --provider gateway --concurrency 6
+
+# 指定颜色 + 两段式 + 6 个并发
+python cli.py --input a.jpg b.jpg --garment-type 圆领卫衣 --colors black white --mode two_phase --concurrency 6
+
+# 输出 JPG、独立重试 5 次、单次超时 300s
+python cli.py --input D:\in --garment-type hoodie --format jpg --retries 5 --timeout 300
+```
+
+跑完会打印失败清单和 ZIP 路径，退出码 0 = 全部成功。
+
+---
+
+## 10. 自检
+
+```powershell
+python tools/selftest.py
+```
+
+不需要 Key：验证 skill 解析、颜色扫描、一次到位与两段式的目录命名、失败重试、2MB 压缩、**并发峰值是否被限流**、本地换色图案保真、非法输入拦截。
+
+---
+
+## 11. 常见问题
+
+| 现象 | 处理 |
+|---|---|
+| 接口显示「未配置」 | `.env` 里填对应变量名，或 `config.json` 里直接写 `api_key` |
+| `403 this group is not served by this gateway` | Key 的图片分组不在这个 host：`base_url` 用 `https://sub-proxy-us.65535.space/v1`（不是 `api2.…`） |
+| 模型拉不到 | 该网关不支持 `/models` 或 Key 无权限：工作台会自动回退上次快照 → `pricing.json` 清单，下拉不会空；也可手填模型名 |
+| 模型下拉卡在「正在读取模型…」或 502/504 | 网关 `/models` 偶发 504（实测），已做两级回退；刷新即可 |
+| 任务显示失败但网关控制台已出图 | 超时策略见 §6：**超时不自动重试**（避免重复计费），点该卡片「重试」按需补跑 |
+| 模型单价不对 | 改 `pricing.json`：按次写数字，按分辨率分档写 `{tiers:{1K,2K,4K},other}`；`null` = 未定价（不计入预估） |
+| 大量 429 / 5xx | 降并发（建议 3~6）、设 `rpm`、或把 `global_concurrency` 设成账号真实上限 |
+| 401 / 403 | Key 或 `base_url` 不对；中转站务必确认 `/v1` 前缀与模型名 |
+| 出图比例变了 | 用 `size=auto`，让接口跟随原图；固定 `1024x1024` 会裁掉比例 |
+| 图案像"贴上去"、没有布料质感 | 模型把 logo 重画成了干净矢量图：用「改图」针对那几张返工（写清材质/颗粒要求）；只换颜色的单子直接用 local 本地换色；并确认喂的是高清原图 |
+| 图案被改了（字形/字距/立体感变了） | 这是模型在“重画”logo：改用「仅换色」模式 + `input_fidelity=high`，喂原始分辨率原图；只换颜色的单子直接用 `local` 本地换色 |
+| 出图被压得很小 | 这是 skill 的 2MB 硬规则（`max_bytes` 可在 `config.json` 里调 `defaults`，或改 skill 的数值） |
+| 端口占用 | `python serve.py --port 8899` |
+| 任务卡住 | 界面点「取消」，或重启服务（历史任务会标记为中断，可重试失败项） |
+
+---
+
+## 12. 从 codex 改到工作台，快在哪
+
+| | codex 对话式 | 本工作台 |
+|---|---|---|
+| 触发 | 每次贴规则 / 依赖模型记忆 | skill 解析一次，固定生效 |
+| 并发 | 单线程、一次一张 | N 路并发 + 节流 + 重试 |
+| 数量核对 | 人工数图片 | 自动按 N×M 展开、缺一张就标出来还能重试 |
+| 打包 | 手工压 | 自动 2MB 校验 + 目录结构 + ZIP |
+| 成本 | 难以控制 | 预估调用次数、失败立即止损、只重试失败项 |
+| 复用 | 对话易丢失 | 历史任务 + `job.json` + CLI 可脚本化 |
+
+---
+
+## 13. 注意
+
+- `.env`、`data/` 属于本地私密数据（含客户原图与成品），不要提交到仓库；`.gitignore` 已忽略。
+- 原图请用你有权商用/改图的素材；接口返回的图片版权以对应服务条款为准。
+- 每次调用都计费：先用 `本地模拟` 打通流程、用小批量（1 图 × 1 色）验证接口和提示词效果，再全量跑。
