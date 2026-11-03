@@ -87,6 +87,7 @@ def main() -> int:
     parser.add_argument("--branch", default="main")
     parser.add_argument("--message", default="deploy: apparel recolor workbench")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--prune", action="store_true", help="删除远端已不存在的文件")
     args = parser.parse_args()
 
     files = run_git_files()
@@ -137,6 +138,37 @@ def main() -> int:
         if index % 10 == 0 or index == len(files):
             print(f"    {index}/{len(files)} 已上传")
         time.sleep(0.05)
+
+    pruned: list[str] = []
+    if args.prune:
+        status, tree = request(
+            "GET",
+            f"{API}/repos/{args.repo}/git/trees/{args.branch}?recursive=1",
+            args.token,
+        )
+        remote = [x["path"] for x in (tree.get("tree") or []) if x.get("type") == "blob"]
+        local = set(files)
+        for name in remote:
+            if name in local:
+                continue
+            status, existing = request(
+                "GET",
+                f"{API}/repos/{args.repo}/contents/{urllib.parse.quote(name)}?ref={args.branch}",
+                args.token,
+            )
+            if status != 200 or not isinstance(existing, dict):
+                continue
+            status, result = request(
+                "DELETE",
+                f"{API}/repos/{args.repo}/contents/{urllib.parse.quote(name)}",
+                args.token,
+                {"message": f"prune: remove {name}", "sha": existing.get("sha"), "branch": args.branch},
+            )
+            if status in (200, 201):
+                pruned.append(name)
+            else:
+                failed.append((name, f"prune {status} {result.get('message')}"))
+        print(f"[*] 已删除远端多余文件 {len(pruned)} 个：{pruned[:8]}")
 
     print(f"[*] 完成：成功 {ok}，失败 {len(failed)}")
     for name, reason in failed[:10]:
