@@ -32,5 +32,11 @@ services:
         sync: false          # 在控制台填，别写进仓库
       - key: DEEPSEEK_API_KEY
         sync: false
+      - key: FEISHU_APP_ID
+        sync: false
+      - key: FEISHU_APP_SECRET
+        sync: false
+      - key: WORKBENCH_SESSION_SECRET
+        sync: false          # 登录会话签名密钥，随便一串长随机字符
       - key: PYTHONUNBUFFERED
         value: "1"

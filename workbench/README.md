@@ -45,9 +45,9 @@ python serve.py               # --port 8899 可换端口
 .\deploy\tunnel.ps1          # 本地服务 + Cloudflare 隧道，打印 https://xxx.trycloudflare.com
 `
 
-- 公网访问需要口令：config.json → server.auth_token，首次访问用 ?token=...，之后 Cookie 生效；无口令一律 401。
+- 访问要**账号登录**（飞书「账号」表，见 3 节）；`config.json → server.auth_token` 保留为机器/应急口令，首次访问可用 ?token=... 换 Cookie。
 - 只有入口在 Cloudflare 上，计算仍在本机（FastAPI + Pillow + 本地任务目录没法跑在 Workers 里，原因见 deploy/cloudflare.md）。
-- 记录库用**飞书多维表格**（替代 R2）：python -m skillbridge.feishu --check / --init-fields，配置见 [deploy/feishu.md](deploy/feishu.md)。
+- 记录库 / 定价 / 账号都在**飞书多维表格**（三张表）：python -m skillbridge.feishu --check / --init-fields，配置见 [deploy/feishu.md](deploy/feishu.md)。
 - 详见 [deploy/cloudflare.md](deploy/cloudflare.md)。
 
 ---
@@ -115,15 +115,23 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 
 ### 价格与用量
 
-- 单价表在 `pricing.json`，**金额单位是人民币元（CNY）**（网关没有价格接口，实测 `/api/pricing` → 404，所以本地维护）。**按网关控制台的真实报价填**：`unit: per_call` 表示**按次**计费；按分辨率分档的模型写成 `{"tiers": {"1K":0.045,"2K":0.065,"4K":0.095}, "other":0.095}`，档位由所选尺寸自动判定（≤1.6MP→1K、≤4.2MP→2K、更大→4K）。
+- 单价表**以飞书「模型定价」表为准**（`price_table_id`，人工可改，60 秒内生效；读不到时回退 `pricing.json`），**金额单位是人民币元（CNY）**（网关没有价格接口，实测 `/api/pricing` → 404）。**按网关控制台的真实报价填**：`单价元` 表示**按次**计费；按分辨率分档的模型填 `1K档/2K档/4K档/其他档`，档位由所选尺寸自动判定（≤1.6MP→1K、≤4.2MP→2K、更大→4K）。
 - **未核实到价格的模型一律 `null`**：界面显示「未定价」、不计入预估、账单里单独标「未定价」——宁可显示没有，也不显示错价。
 - 已按控制台截图核实 16 个：`gpt-image-2` / `-n` / `-2.5` / `-2.5-flare` / `-2.5-sunburst` 各 **¥0.038/次**，`gpt-image-2-auto` **¥0.045/1K·¥0.065/2K·¥0.095/4K**，`gpt-image-2-eco` / `-2.5-flare-eco` / `-2.5-sunburst-eco` / `gemini-3.1-flash-image` / `gemini-nano-banana-2.1` 各 **¥0.15**，`gemini-3-pro-image` **¥0.18**，`grok-imagine-image` **¥0.042**，`grok-imagine-image-2.0` / `-quality` **¥0.10/1K·¥0.14/2K·¥0.16/其他**，`gpt-image-2-native` **¥15/1K·¥30/2K·¥60/4K**；剩 5 个 `-auto` / `-native` 变体仍是未定价。
 - 左下角实时显示 **预计花费**：`张数 × 单价`（模型切换、颜色增减即时重算）。
 - 任务卡里的「本次花费」= 已完成张数 × 单价，旁边小字是整批预估。
-- 顶栏「今日 N 张 · $X」芯片是**用量账本**：每完成一个任务写一条到 `data/usage.json`（幂等，重试不会重复计费），点一下看今日/累计/任务数。
+- 顶栏「今日 N 张 · ¥X」芯片是**用量账本**：每完成一个任务写一条到 `data/usage.json`（幂等，重试不会重复计费），点一下（管理员）打开**账号用量**抽屉。
 6. **开始生成 → 先问需求**（见下）→ 生成中右侧实时更新 KPI、进度条、成品卡（含骨架扫光）、日志。
 7. **单张**：卡片右下 下载（附件下载）、改图；失败的卡片多一个 重试（只重跑这一张）。
 8. **批量**：卡片左上勾选或「全选成品」→ 批量改图 / 批量导出。
+
+### 账号登录与用量（飞书「账号」表）
+
+- 打开站点先到 `/login`：账号密码都在飞书 **账号** 表里（`account_table_id`），密码支持 PBKDF2 哈希；运营直接把密码写进「明文密码」列也能登，**首次登录成功后自动转成哈希并清空明文**。
+- 角色 `admin` 才能在右上角看到 **账号用量**（每个账号的张数 / 花费 / 调用次数 / 最近成品），普通成员看不到（接口 403）。
+- 会话 Cookie `wb_session`（HMAC 签名 + 12h 过期）；`?token=<auth_token>` 仍可作机器/应急入口。
+- 停用账号：把「状态」改成 `停用` 即立刻登不上（下一次请求就失效）。
+- 每个任务会把自己的发起账号写进记录表「账号」列，所以飞书里能按人筛选、求和。
 
 ### 历史与成品：以飞书为准
 
@@ -374,7 +382,9 @@ python cli.py --input D:\in --garment-type hoodie --format jpg --retries 5 --tim
 ## 10. 自检
 
 ```powershell
-python tools/selftest.py
+python tools/selftest.py          # 离线全量自检（不需要 Key）
+python tools/check_accounts.py    # 飞书账号表 / 定价表 / 密码哈希 / 会话签名
+python tools/check_login_http.py  # 登录页、会话 Cookie、账号用量接口
 ```
 
 不需要 Key：验证 skill 解析、颜色扫描、一次到位与两段式的目录命名、失败重试、2MB 压缩、**并发峰值是否被限流**、本地换色图案保真、非法输入拦截。
@@ -390,7 +400,7 @@ python tools/selftest.py
 | 模型拉不到 | 该网关不支持 `/models` 或 Key 无权限：工作台会自动回退上次快照 → `pricing.json` 清单，下拉不会空；也可手填模型名 |
 | 模型下拉卡在「正在读取模型…」或 502/504 | 网关 `/models` 偶发 504（实测），已做两级回退；刷新即可 |
 | 任务显示失败但网关控制台已出图 | 超时策略见 §6：**超时不自动重试**（避免重复计费），点该卡片「重试」按需补跑 |
-| 模型单价不对 | 改 `pricing.json`：按次写数字，按分辨率分档写 `{tiers:{1K,2K,4K},other}`；`null` = 未定价（不计入预估） |
+| 模型单价不对 | 改飞书「模型定价」表（`单价元` 按次写数字，分档写 `1K档/2K档/4K档/其他档`；留空 = 未定价不计入预估）；飞书读不到时改 `pricing.json` |
 | 大量 429 / 5xx | 降并发（建议 3~6）、设 `rpm`、或把 `global_concurrency` 设成账号真实上限 |
 | 401 / 403 | Key 或 `base_url` 不对；中转站务必确认 `/v1` 前缀与模型名 |
 | 出图比例变了 | 用 `size=auto`，让接口跟随原图；固定 `1024x1024` 会裁掉比例 |

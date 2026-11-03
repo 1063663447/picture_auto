@@ -52,6 +52,17 @@ class Workbench:
             pricing_path = candidate if candidate.is_file() else pricing_path
         self.pricer = Pricer(pricing_path)
         self.usage = UsageLedger(self.data_dir, self.pricer)
+        self.feishu_config = None
+        try:
+            from . import feishu as feishu_mod
+
+            self.feishu_config = feishu_mod.load_config(self.config, self.env)
+        except Exception:  # noqa: BLE001
+            self.feishu_config = None
+        from .auth import AccountStore
+
+        self.accounts = AccountStore(self.feishu_config, self.data_dir)
+        self.pricer.refresh_from_feishu(self.feishu_config)
         self.drafts_dir = self.data_dir / "drafts"
         self.drafts_dir.mkdir(parents=True, exist_ok=True)
         self.reload_skill()
@@ -278,6 +289,7 @@ class Workbench:
         send_reference: bool = True,
         input_fidelity: str | None = None,
         extra_requirements: str = "",
+        account: str = "",
     ) -> Job:
         if not uploads:
             raise WorkbenchError("请先上传至少一张图片")
@@ -353,6 +365,7 @@ class Workbench:
             ),
             "max_bytes": self.skill.max_bytes,
             "extra_requirements": " ".join((extra_requirements or "").split()),
+            "account": str(account or ""),
             "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto")),
         }
 
@@ -437,6 +450,7 @@ class Workbench:
 
     # --------------------------------------------------------------- pricing --
     def pricing_payload(self) -> dict:
+        self.pricer.refresh_from_feishu(self.feishu_config)
         payload = self.pricer.table()
         payload["usage"] = self.usage.summary()
         payload["default_model"] = str(
@@ -451,13 +465,66 @@ class Workbench:
         stats = job.counts()
         done = stats["done"] + stats["skipped"]
         model = str(job.params.get("model") or "")
+        params = job.params or {}
+        detail = " · ".join(
+            str(part)
+            for part in (
+                params.get("garment_name") or "",
+                "、".join(params.get("colors") or []),
+                params.get("size") or "",
+            )
+            if part
+        )
         return self.usage.record(
             job_id=job.id,
             model=model,
             images=done,
-            kind=str(job.params.get("kind") or "generate"),
-            size=str(job.params.get("size") or "auto"),
+            kind=str(params.get("kind") or "generate"),
+            size=str(params.get("size") or "auto"),
+            account=str(params.get("account") or ""),
+            detail=detail,
         )
+
+    def accounts_payload(self) -> dict:
+        """账号列表 + 每人用量（管理员用）。"""
+        accounts = self.accounts.load(force=True)
+        usage = {row["account"]: row for row in self.usage.by_account()}
+        rows = []
+        for account in accounts.values():
+            account_usage = usage.pop(account.username, None) or {}
+            rows.append(
+                {
+                    **account.as_dict(),
+                    "images": account_usage.get("images", 0),
+                    "cost": account_usage.get("cost", 0.0),
+                    "jobs": account_usage.get("jobs", 0),
+                    "last_at": account_usage.get("last_at", 0),
+                    "recent": account_usage.get("recent", []),
+                    "models": account_usage.get("models", []),
+                }
+            )
+        for name, account_usage in usage.items():  # 表里没有的历史账号
+            rows.append(
+                {
+                    "username": name,
+                    "display": name,
+                    "role": "unknown",
+                    "active": True,
+                    "quota": 0,
+                    "images": account_usage.get("images", 0),
+                    "cost": account_usage.get("cost", 0.0),
+                    "jobs": account_usage.get("jobs", 0),
+                    "last_at": account_usage.get("last_at", 0),
+                    "recent": account_usage.get("recent", []),
+                    "models": account_usage.get("models", []),
+                }
+            )
+        rows.sort(key=lambda row: (-float(row.get("cost") or 0), -int(row.get("images") or 0)))
+        return {
+            "currency": self.pricer.currency,
+            "source": self.accounts.source,
+            "accounts": rows,
+        }
 
     def _color_ref_path(self, color_name: str, garment_slug: str) -> Path | None:
         """找到该颜色对应的色卡文件（附件字段「参考图」用）。"""
@@ -552,6 +619,7 @@ class Workbench:
         timeout_sec: float | None = None,
         refiner: str | None = None,
         prompt_override: str = "",
+        account: str = "",
     ) -> Job:
         """以选中的成品为参考图返工（改图）。"""
         source_job = self.get_job(source_job_id)
@@ -661,6 +729,7 @@ class Workbench:
             "source_job": source_job_id,
             "source_tasks": [t.id for t in selected],
             "brief": briefs[0] if briefs else "",
+            "account": str(account or source_job.params.get("account") or ""),
         }
 
         params["estimate"] = self.pricer.estimate(

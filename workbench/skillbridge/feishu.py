@@ -29,6 +29,7 @@ FIELD_SCHEMA: list[tuple[str, int]] = [
     ("成品", 1),
     ("任务ID", 1),
     ("时间", 5),
+    ("账号", 1),
     ("款式", 1),
     ("颜色", 1),
     ("模型", 1),
@@ -52,6 +53,8 @@ class FeishuConfig:
     app_secret: str = ""
     app_token: str = ""
     table_id: str = ""
+    price_table_id: str = ""
+    account_table_id: str = ""
     per: str = "task"
     upload_images: bool = True
     upload_source: bool = False
@@ -192,6 +195,34 @@ class FeishuBitable:
         return [{"file_token": token}] if token else []
 
     # ----------------------------------------------------------- records --
+    def search_table(self, table_id: str, page_size: int = 200, max_pages: int = 10) -> list[dict]:
+        """读任意表的全部行（自动翻页）。返回 [{record_id, fields}]。"""
+        items: list[dict] = []
+        page_token = ""
+        for _ in range(max_pages):
+            query = f"?page_size={page_size}"
+            if page_token:
+                query += f"&page_token={page_token}"
+            data = self._api(
+                "POST",
+                f"/bitable/v1/apps/{self.cfg.app_token}/tables/{table_id}/records/search{query}",
+                {"automatic_fields": False},
+            )
+            items.extend(data.get("items") or [])
+            if not data.get("has_more"):
+                break
+            page_token = str(data.get("page_token") or "")
+            if not page_token:
+                break
+        return items
+
+    def update_record(self, table_id: str, record_id: str, fields: dict) -> dict:
+        return self._api(
+            "PUT",
+            f"/bitable/v1/apps/{self.cfg.app_token}/tables/{table_id}/records/{record_id}",
+            {"fields": fields},
+        )
+
     def create_records(self, rows: list[dict]) -> list[str]:
         ids: list[str] = []
         for start in range(0, len(rows), 100):
@@ -227,6 +258,7 @@ def build_rows(job, size: str, unit: float | None, currency: str, *, per: str = 
                 "成品": f"{params.get('garment_name', '')} · {done_total} 张",
                 "任务ID": job.id,
                 "时间": finished,
+                "账号": str(params.get("account") or "anonymous"),
                 "款式": str(params.get("garment_name") or ""),
                 "颜色": "、".join(params.get("colors") or []),
                 "模型": str(params.get("model") or ""),
@@ -250,6 +282,7 @@ def build_rows(job, size: str, unit: float | None, currency: str, *, per: str = 
                 "成品": f"{task.item} / {task.color_name}",
                 "任务ID": job.id,
                 "时间": _ms(task.finished_at),
+                "账号": str(params.get("account") or "anonymous"),
                 "款式": str(params.get("garment_name") or ""),
                 "颜色": task.color_name,
                 "模型": str(params.get("model") or ""),
@@ -272,6 +305,8 @@ def load_config(config: dict, env: dict) -> FeishuConfig:
         app_secret=str(env.get(str(block.get("app_secret_env") or "FEISHU_APP_SECRET"), "")).strip(),
         app_token=str(block.get("app_token") or "").strip(),
         table_id=str(block.get("table_id") or "").strip(),
+        price_table_id=str(block.get("price_table_id") or "").strip(),
+        account_table_id=str(block.get("account_table_id") or "").strip(),
         per=str(block.get("per") or "task"),
         upload_images=bool(block.get("upload_images", True)),
         upload_source=bool(block.get("upload_source", False)),

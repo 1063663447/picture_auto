@@ -5,7 +5,10 @@
   "server": {
     "host": "127.0.0.1",
     "port": 8787,
-    "auth_token": "1_JiQgjmfST8"
+    "auth_token": "1_JiQgjmfST8",
+    "session_secret": "wb-session-7f21c9d4a8be",
+    "session_ttl": 43200,
+    "login_required": true
   },
   "defaults": {
     "mode": "single_pass",
@@ -178,6 +181,8 @@
     "app_secret_env": "FEISHU_APP_SECRET",
     "app_token": "Cg19bjnLJaAU7CsYPB5cO3qynrb",
     "table_id": "tblvrb2DVxO7s28c",
+    "price_table_id": "tblORNn4X28tuc0k",
+    "account_table_id": "tbl9dfa7LVmtKgp4",
     "per": "task",
     "upload_images": true,
     "upload_source": false

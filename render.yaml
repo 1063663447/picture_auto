@@ -36,3 +36,6 @@ services:
         sync: false
       - key: FEISHU_APP_SECRET
         sync: false
+      # 登录会话签名密钥（随便一串长的随机字符；不设就回退 config.json）
+      - key: WORKBENCH_SESSION_SECRET
+        sync: false

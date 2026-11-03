@@ -81,6 +81,8 @@ class Pricer:
         self.updated = ""
         self.tier_mp = dict(DEFAULT_TIER_MP)
         self.raw: dict[str, object] = {}
+        self.source = "file"
+        self._feishu_at = 0.0
         self.load()
 
     def load(self) -> None:
@@ -98,6 +100,76 @@ class Pricer:
         if isinstance(payload.get("tier_mp"), dict):
             self.tier_mp = {str(k): float(v) for k, v in payload["tier_mp"].items()}
         self.raw = dict(payload.get("models") or {})
+
+    # --------------------------------------------------------- 飞书定价表 --
+    def refresh_from_feishu(self, cfg, ttl: float = 60.0, force: bool = False) -> bool:
+        """以飞书「模型定价」表为准覆盖本地价目（可人工改）。失败保留原值。"""
+        table_id = str(getattr(cfg, "price_table_id", "") or "")
+        if cfg is None or not table_id or not getattr(cfg, "enabled", False):
+            return False
+        if not force and time.time() - self._feishu_at < ttl:
+            return self.source == "feishu"
+        ok, _ = cfg.ready()
+        if not ok:
+            return False
+        try:
+            from .feishu import FeishuBitable
+
+            items = FeishuBitable(cfg).search_table(table_id)
+        except Exception:  # noqa: BLE001 - 定价表读不到就用 pricing.json
+            self._feishu_at = time.time()
+            return False
+        models = self.parse_feishu_rows(items)
+        if models:
+            self.raw = models
+            self.currency = "CNY"
+            self.source = "feishu"
+            self.note = "价格取自飞书「模型定价」表（可人工修改）"
+        self._feishu_at = time.time()
+        return self.source == "feishu"
+
+    @staticmethod
+    def parse_feishu_rows(items: list[dict]) -> dict[str, object]:
+        def text(value) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, list):
+                return "".join(
+                    str(x.get("text") or "") if isinstance(x, dict) else str(x) for x in value
+                )
+            return str(value)
+
+        def num(value) -> float | None:
+            if value is None or value == "":
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        models: dict[str, object] = {}
+        for item in items:
+            fields = item.get("fields") or {}
+            name = text(fields.get("模型")).strip()
+            if not name:
+                continue
+            enabled_text = text(fields.get("启用")).strip().lower()
+            if enabled_text in {"否", "no", "false", "0", "禁用", "off"}:
+                continue
+            tiers = {
+                tier: num(fields.get(f"{tier}档"))
+                for tier in TIERS
+                if num(fields.get(f"{tier}档")) is not None
+            }
+            other = num(fields.get("其他档"))
+            flat = num(fields.get("单价元"))
+            if tiers:
+                models[name] = {"tiers": tiers, "other": other}
+            elif flat is not None:
+                models[name] = flat
+            else:
+                models[name] = None
+        return models
 
     def price(self, model: str, size: str | None = None) -> Price:
         entry = self.raw.get(model)
@@ -153,6 +225,7 @@ class Pricer:
             "unit": "per_call",
             "note": self.note,
             "updated": self.updated,
+            "source": self.source,
             "tier_mp": self.tier_mp,
             "models": [
                 self.price(name).as_dict() for name in sorted(self.raw)
@@ -201,6 +274,8 @@ class UsageLedger:
         images: int,
         kind: str = "generate",
         size: str | None = None,
+        account: str = "",
+        detail: str = "",
     ) -> dict | None:
         if images <= 0:
             return None
@@ -210,6 +285,7 @@ class UsageLedger:
         price = self.pricer.price(model, size)
         entry = {
             "job_id": job_id,
+            "account": account or "anonymous",
             "model": model,
             "kind": kind,
             "images": int(images),
@@ -217,11 +293,63 @@ class UsageLedger:
             "tier": price.tier,
             "cost": (round(price.unit * images, 4) if price.unit is not None else None),
             "currency": price.currency,
+            "detail": detail[:200],
             "at": time.time(),
         }
         self.entries.append(entry)
         self._save()
         return entry
+
+    def by_account(self) -> list[dict]:
+        """按账号聚合：做了多少张、花了多少钱、最近生成了什么。"""
+        buckets: dict[str, dict] = {}
+        for entry in self.entries:
+            name = str(entry.get("account") or "anonymous")
+            bucket = buckets.setdefault(
+                name,
+                {
+                    "account": name,
+                    "jobs": 0,
+                    "images": 0,
+                    "cost": 0.0,
+                    "unpriced_images": 0,
+                    "models": {},
+                    "last_at": 0,
+                    "recent": [],
+                },
+            )
+            images = int(entry.get("images") or 0)
+            cost = entry.get("cost")
+            bucket["jobs"] += 1
+            bucket["images"] += images
+            if cost is None:
+                bucket["unpriced_images"] += images
+            else:
+                bucket["cost"] += float(cost)
+            model = str(entry.get("model") or "")
+            bucket["models"][model] = bucket["models"].get(model, 0) + images
+            at = float(entry.get("at") or 0)
+            bucket["last_at"] = max(bucket["last_at"], at)
+            bucket["recent"].append(
+                {
+                    "job_id": entry.get("job_id"),
+                    "model": model,
+                    "images": images,
+                    "cost": cost,
+                    "detail": entry.get("detail") or "",
+                    "at": at,
+                }
+            )
+        rows = []
+        for bucket in buckets.values():
+            bucket["cost"] = round(bucket["cost"], 4)
+            bucket["recent"] = list(reversed(bucket["recent"][-10:]))
+            bucket["models"] = sorted(
+                ({"model": k, "images": v} for k, v in bucket["models"].items()),
+                key=lambda item: -item["images"],
+            )
+            rows.append(bucket)
+        return sorted(rows, key=lambda item: -item["images"])
 
     def summary(self) -> dict:
         today = time.strftime("%Y-%m-%d")
@@ -248,5 +376,6 @@ class UsageLedger:
             "total": {"images": total_images, "cost": round(total_cost, 4)},
             "unpriced_images": unpriced,
             "jobs": len(self.entries),
+            "accounts": self.by_account(),
             "recent": list(reversed(self.entries[-20:])),
         }

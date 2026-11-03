@@ -60,6 +60,8 @@
     composedPrompt: "",
     requirements: "",
     streamBubble: null,
+    session: null,
+    accountsData: null,
     feishuRecords: [],
     feishuSelected: new Set(),
     pendingText: "",
@@ -127,6 +129,10 @@
     const res = await fetch(path, options);
     let payload = null;
     try { payload = await res.json(); } catch (_) { /* ignore */ }
+    if (res.status === 401 && payload && payload.login_required) {
+      location.href = "/login";
+      throw new Error("登录已过期，正在跳转登录…");
+    }
     if (!res.ok || (payload && payload.ok === false)) {
       throw new Error((payload && payload.error) || `请求失败 HTTP ${res.status}`);
     }
@@ -140,8 +146,89 @@
     setTimeout(() => el.remove(), kind === "bad" ? 6000 : 3200);
   }
 
+  /* --------------------------------------------------------------- 账号 */
+  async function loadSession() {
+    state.session = null;
+    try {
+      const data = await api("/api/session");
+      if (!data || !data.authenticated) return;
+      state.session = data;
+      $("whoChip").hidden = false;
+      $("whoName").textContent = data.display || data.account;
+      $("whoChip").title = `${data.display || data.account} · ${data.role === "admin" ? "管理员" : "成员"}`
+        + (data.source === "feishu" ? " · 账号来自飞书表" : " · 本地兜底账号");
+      $("accountsBtn").hidden = !data.admin;
+      $("accountsBtn").title = data.admin ? "查看每个账号的用量" : "";
+    } catch (_) { /* 口令访问或接口不可用时静默 */ }
+  }
+
+  async function logout() {
+    try { await api("/api/logout", { method: "POST" }); } catch (_) { /* ignore */ }
+    location.href = "/login";
+  }
+
+  async function loadAccounts() {
+    const list = $("accountsList");
+    list.innerHTML = `<div class="bubble muted">${icon("i-users")}<div>正在读取账号用量…</div></div>`;
+    try {
+      const data = await api("/api/accounts");
+      state.accountsData = data;
+      renderAccounts(data);
+    } catch (err) {
+      list.innerHTML = `<div class="bubble muted">${icon("i-alert")}<div>读取失败：${esc(err.message)}</div></div>`;
+    }
+  }
+
+  function renderAccounts(data) {
+    const list = $("accountsList");
+    const rows = (data.accounts || []).slice();
+    const currency = data.currency || state.pricing.currency;
+    $("accountsSub").textContent = data.source === "feishu"
+      ? "账号来自飞书「账号」表 · 用量按任务记录聚合"
+      : "本地兜底账号 · 用量按任务记录聚合";
+    const totalImages = rows.reduce((sum, row) => sum + Number(row.images || 0), 0);
+    const totalCost = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+    $("accountsTotal").textContent = `${rows.length} 个账号 · 合计 ${totalImages} 张 · ${money(totalCost, currency)}`;
+    if (!rows.length) {
+      list.innerHTML = `<div class="bubble muted">${icon("i-users")}<div>还没有账号记录</div></div>`;
+      return;
+    }
+    list.innerHTML = rows.map((row) => {
+      const recent = (row.recent || []).slice(0, 3).map((item) => `
+        <li><span>${esc(item.detail || item.job_id || "")}</span>
+        <em>${item.images} 张 · ${money(item.cost, currency)}</em></li>`).join("");
+      const role = row.role === "admin" ? "管理员" : (row.role === "unknown" ? "历史账号" : "成员");
+      return `<article class="acc-card">
+        <header>
+          <b>${esc(row.display || row.username)}</b>
+          <span class="tag ${row.active ? "" : "warn"}">${row.active ? role : "已停用"}</span>
+          <code>${esc(row.username)}</code>
+        </header>
+        <div class="acc-kpi">
+          <span><em>${row.images || 0}</em>张</span>
+          <span><em>${money(row.cost, currency)}</em>花费</span>
+          <span><em>${row.jobs || 0}</em>次调用</span>
+          ${row.last_at ? `<span class="hint">最近 ${new Date(row.last_at * 1000).toLocaleString("zh-CN")}</span>` : ""}
+        </div>
+        ${recent ? `<ul class="acc-recent">${recent}</ul>` : ""}
+      </article>`;
+    }).join("");
+  }
+
+  function showAccounts() {
+    $("accountsScrim").hidden = false;
+    $("accountsDrawer").hidden = false;
+    loadAccounts();
+  }
+
+  function hideAccounts() {
+    $("accountsScrim").hidden = true;
+    $("accountsDrawer").hidden = true;
+  }
+
   /* ------------------------------------------------------------- bootstrap */
   async function boot() {
+    await loadSession();
     try {
       const health = await api("/api/health");
       $("healthLine").textContent = `${health.types} 款 · ${health.providers_ui || health.providers} 接口`;
@@ -271,7 +358,7 @@
       line.textContent = "预计花费 —";
       line.classList.remove("warn");
     } else if (info.unit === null) {
-      line.textContent = `预计花费 — · ${model || "未选模型"} 未定价（在 pricing.json 里填该模型单价）`;
+      line.textContent = `预计花费 — · ${model || "未选模型"} 未定价（在飞书「模型定价」表或 pricing.json 里填单价）`;
       line.classList.add("warn");
     } else {
       const tier = info.tiered ? ` · ${info.tier} 档` : "";
@@ -376,6 +463,7 @@
       const data = await api("/api/pricing");
       state.pricing.payload = data;
       state.pricing.currency = data.currency || "USD";
+      state.pricing.source = data.source || "file";
       state.pricing.raw = {};
       if (data.tier_mp) state.pricing.tierMp = data.tier_mp;
       for (const model of data.models || []) {
@@ -405,7 +493,8 @@
       `今日 ${today.images} 张 ${money(today.cost, state.usage.currency)} · ` +
       `累计 ${total.images} 张 ${money(total.cost, state.usage.currency)} · ` +
       `${state.usage.jobs} 个任务` +
-      (state.usage.unpriced_images ? ` · ${state.usage.unpriced_images} 张未定价` : "");
+      (state.usage.unpriced_images ? ` · ${state.usage.unpriced_images} 张未定价` : "") +
+      (state.pricing.source === "feishu" ? " · 价格来自飞书「模型定价」表" : " · 价格来自 pricing.json");
   }
 
   /* ------------------------------------------------------------------ files */
@@ -1207,12 +1296,21 @@
     $("feishuExport").addEventListener("click", exportFromFeishu);
     $("promptClose").addEventListener("click", closePrompt);
     $("promptScrim").addEventListener("click", closePrompt);
+    $("accountsBtn").addEventListener("click", showAccounts);
+    $("accountsClose").addEventListener("click", hideAccounts);
+    $("accountsScrim").addEventListener("click", hideAccounts);
+    $("accountsReload").addEventListener("click", loadAccounts);
+    $("logoutBtn").addEventListener("click", logout);
+    $("usageChip").addEventListener("click", () => {
+      if (state.session && state.session.admin) showAccounts();
+    });
 
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (!$("harnessDrawer").hidden) closeHarness();
       if (!$("promptDrawer").hidden) closePrompt();
       if (!$("feishuDrawer").hidden) closeFeishu();
+      if (!$("accountsDrawer").hidden) hideAccounts();
     });
   }
 

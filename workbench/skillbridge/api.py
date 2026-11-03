@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,12 +14,13 @@ from fastapi.responses import (
     FileResponse,
     HTMLResponse,
     JSONResponse,
+    RedirectResponse,
     Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 
-from . import agent, feishu, feishu_export, harness, prompts, refine
+from . import agent, auth, feishu, feishu_export, harness, prompts, refine
 from .config import WORKBENCH_DIR
 from .providers.base import ProviderError
 from .service import Workbench, WorkbenchError
@@ -40,38 +42,84 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def access_guard(request: Request, call_next):
-        """配了 server.auth_token 就要求口令，避免公网隧道把工作台裸暴露出去。"""
+        """账号登录 + 口令兜底：登录前只放行登录页与静态资源。"""
         bench = getattr(app.state, "wb", None)
         if bench is None:
             return await call_next(request)
+        path = request.url.path
         # 健康检查端点必须免口令，否则云平台（Render/Koyeb/Cloud Run）判定服务不健康
-        if request.url.path in {"/api/health", "/healthz"}:
+        if path in {"/api/health", "/healthz"}:
             return await call_next(request)
-        token = str((bench.config.get("server") or {}).get("auth_token") or "")
-        if not token:
-            return await call_next(request)
+
+        server = bench.config.get("server") or {}
+        token = str(server.get("auth_token") or "")
+        secret = session_secret(bench)
+        ttl = int(server.get("session_ttl") or auth.SESSION_TTL)
+        login_required = bool(server.get("login_required", True))
+
+        # 1) 机器口令（?token= / x-workbench-token / 旧 Cookie）永远有效，防止把自己锁在门外
         provided = (
             request.query_params.get("token")
             or request.headers.get("x-workbench-token")
             or request.cookies.get("wb_token")
         )
-        if provided != token:
-            return HTMLResponse(
-                "<!doctype html><meta charset=utf-8><title>需要口令</title>"
-                "<div style='font:14px/1.7 system-ui;max-width:560px;margin:12vh auto;padding:24px'>"
-                "<h2 style='margin:0 0 8px'>需要访问口令</h2>"
-                "<p style='color:#555'>这个工作台在公网隧道后面，请在地址后加 "
-                "<code>?token=你的口令</code> 打开一次，浏览器会记住 Cookie。<br>"
-                "口令在 <code>config.json → server.auth_token</code>。"
-                "</p></div>",
+        if token and provided == token:
+            request.state.account = "token"
+            request.state.role = "admin"
+            request.state.display = "口令访问"
+            response = await call_next(request)
+            if request.query_params.get("token") == token:
+                response.set_cookie(
+                    "wb_token", token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30
+                )
+            return response
+
+        # 2) 会话 Cookie
+        username = auth.read_session(request.cookies.get("wb_session"), secret)
+        account = None
+        if username:
+            try:
+                account = (await asyncio.to_thread(bench.accounts.load)).get(username.lower())
+            except Exception:  # noqa: BLE001 - 账号表读不到时不阻断已登录会话
+                account = None
+            if account is not None and not account.active:
+                account = None
+        if account is not None:
+            request.state.account = account.username
+            request.state.role = "admin" if account.is_admin else "member"
+            request.state.display = account.display or account.username
+            return await call_next(request)
+
+        request.state.account = ""
+        request.state.role = ""
+        if not login_required or not token:
+            return await call_next(request)
+
+        # 3) 未登录：页面给登录表单，接口返回 401，静态资源照常放行
+        if path.startswith("/api/") or path == "/api":
+            return JSONResponse(
+                {"ok": False, "error": "未登录或会话已过期", "login_required": True},
                 status_code=401,
             )
-        response = await call_next(request)
-        if request.query_params.get("token") == token:
-            response.set_cookie(
-                "wb_token", token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30
-            )
-        return response
+        if path in {"/", "/index.html"}:
+            return HTMLResponse(auth.LOGIN_PAGE.replace("__ERROR__", ""))
+        return await call_next(request)
+
+    def current_account(request: Request) -> str:
+        return str(getattr(request.state, "account", "") or "")
+
+    def current_role(request: Request) -> str:
+        return str(getattr(request.state, "role", "") or "")
+
+    def session_secret(bench: Workbench) -> str:
+        """会话签名密钥：优先环境变量（部署时别写进仓库），再回退配置/口令。"""
+        server = bench.config.get("server") or {}
+        return (
+            os.environ.get("WORKBENCH_SESSION_SECRET")
+            or str(server.get("session_secret") or "")
+            or str(server.get("auth_token") or "")
+            or "workbench-session"
+        )
 
     def wb(request: Request) -> Workbench:
         return request.app.state.wb
@@ -106,6 +154,72 @@ def create_app(config_path: str | None = None) -> FastAPI:
             "providers_ui": len(bench.provider_payload()),
             "jobs": len(bench.jobs),
         }
+
+    # ---------------------------------------------------------------- 登录 --
+    @app.get("/login")
+    async def login_page(request: Request):
+        bench = wb(request)
+        secret = session_secret(bench)
+        if auth.read_session(request.cookies.get("wb_session"), secret):
+            return RedirectResponse("/", status_code=302)
+        error = request.query_params.get("error")
+        notice = '<p class="err">账号或密码不对，或账号已停用</p>' if error else ""
+        return HTMLResponse(auth.LOGIN_PAGE.replace("__ERROR__", notice))
+
+    @app.post("/login")
+    async def login_submit(request: Request):
+        bench = wb(request)
+        form = await request.form()
+        username = str(form.get("username") or "").strip()
+        password = str(form.get("password") or "")
+        account = await asyncio.to_thread(bench.accounts.authenticate, username, password)
+        if account is None:
+            return RedirectResponse("/login?error=1", status_code=302)
+        server = bench.config.get("server") or {}
+        secret = session_secret(bench)
+        ttl = int(server.get("session_ttl") or auth.SESSION_TTL)
+        response = RedirectResponse("/", status_code=302)
+        response.set_cookie(
+            "wb_session",
+            auth.make_session(account.username, secret, ttl),
+            httponly=True,
+            samesite="lax",
+            max_age=ttl,
+        )
+        return response
+
+    @app.post("/api/logout")
+    async def logout():
+        response = JSONResponse({"ok": True})
+        response.delete_cookie("wb_session")
+        response.delete_cookie("wb_token")
+        return response
+
+    @app.get("/api/session")
+    async def session_info(request: Request):
+        bench = wb(request)
+        name = current_account(request)
+        if not name:
+            return {"ok": True, "authenticated": False}
+        accounts = await asyncio.to_thread(bench.accounts.load)
+        account = accounts.get(name.lower())
+        return {
+            "ok": True,
+            "authenticated": True,
+            "account": name,
+            "display": (account.display if account and account.display else
+                        getattr(request.state, "display", name)),
+            "role": current_role(request),
+            "admin": current_role(request) == "admin",
+            "source": bench.accounts.source,
+        }
+
+    @app.get("/api/accounts")
+    async def accounts_list(request: Request):
+        bench = wb(request)
+        if current_role(request) != "admin":
+            return JSONResponse({"ok": False, "error": "只有管理员能看账号用量"}, status_code=403)
+        return await asyncio.to_thread(bench.accounts_payload)
 
     @app.get("/api/skill")
     async def skill_info(request: Request, reload: bool = False):
@@ -207,6 +321,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             send_reference=send_reference,
             input_fidelity=input_fidelity,
             extra_requirements=extra_requirements,
+            account=current_account(request),
         )
         if start:
             bench.start(job.id)
@@ -413,6 +528,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     quality=str(body.get("quality") or "high"),
                     output_format=str(body.get("output_format") or "png"),
                     extra_requirements=extra,
+                    account=current_account(request),
                 )
                 bench.start(job.id)
                 created["job_id"] = job.id
@@ -433,6 +549,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 job = await bench.create_rework_job(
                     job_id, task_ids, text or instruction or "按需求调整",
                     provider=provider_obj.name, model=model_choice,
+                    account=current_account(request),
                 )
                 bench.start(job.id)
                 created["job_id"] = job.id
@@ -633,6 +750,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             timeout_sec=timeout_sec,
             refiner=refiner or None,
             prompt_override=prompt_override,
+            account=current_account(request),
         )
         if start:
             bench.start(job.id)
