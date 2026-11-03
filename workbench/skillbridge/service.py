@@ -10,7 +10,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from . import r2 as r2mod
+from . import feishu as feishu_mod
 from . import refine
 from .config import WORKBENCH_DIR, load_config, load_env
 from .pricing import Pricer, UsageLedger
@@ -459,30 +459,36 @@ class Workbench:
             size=str(job.params.get("size") or "auto"),
         )
 
-    def archive_zip(self, job: Job) -> str | None:
-        """把成品 ZIP 传到 R2（未配置就静默跳过），返回对象 URL。"""
-        if not job.zip_rel:
-            return None
-        cfg = r2mod.load_r2(self.env)
-        enabled = bool((self.config.get("cloudflare") or {}).get("r2_upload", True))
+    def sync_to_feishu(self, job: Job) -> int:
+        """把任务写进飞书多维表格（未配置就静默跳过），返回写入行数。"""
+        env = self.env
+        cfg = feishu_mod.load_config(self.config, env)
         ok, reason = cfg.ready()
-        if not enabled or not ok:
-            return None
-        root = job.root or self.job_dir(job.id)
-        path = root / job.zip_rel
-        if not path.is_file():
-            return None
-        key = f"batches/{job.id}/{path.name}"
+        if not cfg.enabled or not ok:
+            if cfg.enabled and not ok:
+                job.add_log(f"飞书未同步：{reason}", level="warn")
+                job.save()
+            return 0
+        model = str(job.params.get("model") or "")
+        size = str(job.params.get("size") or "auto")
+        price = self.pricer.price(model, size)
+        rows = feishu_mod.build_rows(
+            job, size, price.unit, price.currency, per=cfg.per
+        )
+        if not rows:
+            return 0
+        client = feishu_mod.FeishuBitable(cfg)
         try:
-            url = r2mod.put_object(cfg, key, path.read_bytes())
-        except Exception as exc:  # noqa: BLE001 - 归档失败不影响出图
-            job.add_log(f"R2 归档失败：{exc}", level="warn")
+            client.ensure_fields()
+            ids = client.create_records(rows)
+            job.params["feishu_rows"] = len(ids)
+            job.add_log(f"已写入飞书多维表格 {len(ids)} 行")
             job.save()
-            return None
-        job.params["r2_url"] = url
-        job.add_log(f"已归档到 R2：{url}")
-        job.save()
-        return url
+            return len(ids)
+        except Exception as exc:  # noqa: BLE001 - 同步失败不影响出图
+            job.add_log(f"飞书写入失败：{exc}", level="warn")
+            job.save()
+            return 0
 
     def estimate_for(self, model: str, count: int, size: str | None = None) -> dict:
         return self.pricer.estimate(model, count, size or str(self.defaults().get("size") or "auto"))
@@ -712,10 +718,10 @@ class Workbench:
         job = self.jobs.get(job_id)
         if job is None:
             return
-        # 归档到 R2（同步 IO，丢到线程池里，别堵事件循环）
+        # 写飞书多维表格（同步 IO，丢线程池，别堵事件循环）
         try:
             loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, self.archive_zip, job)
+            loop.run_in_executor(None, self.sync_to_feishu, job)
         except RuntimeError:
             pass
         try:
