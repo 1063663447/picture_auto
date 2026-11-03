@@ -544,3 +544,14 @@ input[readonly] { background: var(--surface-2); color: var(--fg-muted); cursor: 
 .kpi .v.cost { font-size: 17px; }
 .summary.warn { color: var(--warn); }
 select option:disabled { color: var(--fg-subtle); }
+
+/* 飞书历史列表 */
+.frow { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); font-size: 12px; }
+.frow.sel { border-color: var(--primary); background: var(--primary-soft); }
+.frow input { accent-color: var(--primary); width: 15px; height: 15px; }
+.frow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow .badge { font-size: 10.5px; padding: 1px 7px; border-radius: var(--r-pill);
+  background: var(--surface-2); color: var(--fg-muted); }
+.frow .badge.ok { background: var(--primary-soft); color: var(--primary-hover); }
+.frow .badge.no { background: var(--warn-soft); color: var(--warn); }
