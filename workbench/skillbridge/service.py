@@ -459,30 +459,71 @@ class Workbench:
             size=str(job.params.get("size") or "auto"),
         )
 
+    def _color_ref_path(self, color_name: str, garment_slug: str) -> Path | None:
+        """找到该颜色对应的色卡文件（附件字段「参考图」用）。"""
+        try:
+            garment = self.skill.types.get(garment_slug)
+        except Exception:  # noqa: BLE001
+            garment = None
+        if garment is None:
+            return None
+        for ref in garment.colors:
+            if ref.name_zh == color_name or ref.label == color_name:
+                return ref.path
+        return None
+
     def sync_to_feishu(self, job: Job) -> int:
-        """把任务写进飞书多维表格（未配置就静默跳过），返回写入行数。"""
-        env = self.env
-        cfg = feishu_mod.load_config(self.config, env)
+        """把任务写进飞书多维表格（含图片附件）；未配置就静默跳过。返回写入行数。"""
+        cfg = feishu_mod.load_config(self.config, self.env)
         ok, reason = cfg.ready()
         if not cfg.enabled or not ok:
             if cfg.enabled and not ok:
                 job.add_log(f"飞书未同步：{reason}", level="warn")
                 job.save()
             return 0
+
         model = str(job.params.get("model") or "")
         size = str(job.params.get("size") or "auto")
         price = self.pricer.price(model, size)
-        rows = feishu_mod.build_rows(
-            job, size, price.unit, price.currency, per=cfg.per
-        )
+        rows = feishu_mod.build_rows(job, size, price.unit, price.currency, per=cfg.per)
         if not rows:
             return 0
+
+        root = job.root or self.job_dir(job.id)
+        garment_slug = str(job.params.get("garment_type") or "")
         client = feishu_mod.FeishuBitable(cfg)
         try:
             client.ensure_fields()
+
+            if cfg.upload_images:
+                by_id = {task.id: task for task in job.tasks}
+                for row in rows:
+                    task = by_id.get(row.get("_task_id") or "")
+                    if task is None:  # per=job 时只挂第一张成品图
+                        first = next((t for t in job.tasks if t.out), None)
+                        task = first
+                    if task is None:
+                        continue
+                    try:
+                        if task.out:
+                            row["成品图"] = client.attach(root / str(task.out))
+                        if task.source:
+                            ref = self._color_ref_path(task.color_name, garment_slug)
+                            if ref is not None and ref.is_file():
+                                row["参考图"] = client.attach(ref)
+                        if cfg.upload_source and task.source:
+                            row["原图"] = client.attach(root / str(task.source))
+                    except Exception as exc:  # noqa: BLE001 - 附件失败不拦整体
+                        row["备注"] = (str(row.get("备注") or "") + f" [附件失败:{exc}]")[:900]
+                    if cfg.per == "job":
+                        break
+
+            for row in rows:
+                row.pop("_task_id", None)
             ids = client.create_records(rows)
             job.params["feishu_rows"] = len(ids)
-            job.add_log(f"已写入飞书多维表格 {len(ids)} 行")
+            job.params["feishu_table"] = f"https://feishu.cn/base/{cfg.app_token}?table={cfg.table_id}"
+            job.add_log(f"已写入飞书多维表格 {len(ids)} 行（含图片附件）")
             job.save()
             return len(ids)
         except Exception as exc:  # noqa: BLE001 - 同步失败不影响出图
