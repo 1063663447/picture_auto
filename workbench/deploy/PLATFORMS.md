@@ -36,7 +36,9 @@
 
 访问地址形如 `https://apparel-recolor-workbench.onrender.com/?token=<config.json 里的 auth_token>`。
 
-注意：免费实例休眠后再访问要等 30~60s；**重启会清空 `data/`**，成品记得下载 ZIP（或开通 R2 归档）。
+注意：免费实例休眠后再访问要等 30~60s；**重启会清空 `data/`**。记录库已改用**飞书多维表格**
+（任务/模型/张数/金额/成品编号都留痕，见 `deploy/feishu.md`），图本身请及时下载 ZIP，
+或把 `feishu.upload_zip` 打开让 ZIP 进飞书附件。
 
 ## 路径 2：Google Cloud Run（无服务器，按量免费额度）
 
