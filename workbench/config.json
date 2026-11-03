@@ -176,9 +176,10 @@
     "enabled": true,
     "app_id_env": "FEISHU_APP_ID",
     "app_secret_env": "FEISHU_APP_SECRET",
-    "app_token": "",
-    "table_id": "",
+    "app_token": "Cg19bjnLJaAU7CsYPB5cO3qynrb",
+    "table_id": "tblvrb2DVxO7s28c",
     "per": "task",
-    "upload_zip": false
+    "upload_images": true,
+    "upload_source": false
   }
 }
