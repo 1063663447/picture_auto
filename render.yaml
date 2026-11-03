@@ -1,10 +1,12 @@
 # Render Blueprint（放在仓库根目录，Render 默认就在这里找）
 #
 # 部署：Render → New → Blueprint → 选仓库 1063663447/picture_auto → Apply
-# 然后在 Environment 填 TERRA_API_KEY / DEEPSEEK_API_KEY（sync: false = 不写进仓库）
+# 然后在 Environment 填 TERRA_API_KEY / DEEPSEEK_API_KEY / FEISHU_APP_ID / FEISHU_APP_SECRET
+# （sync: false = 不写进仓库，控制台填）
 #
 # 免费版限制：无持久盘（重启清 data/）、闲置 15 分钟休眠、512MB 内存。
-# 生成的成品请及时下载 ZIP；开通 R2 后会自动归档（见 workbench/deploy/cloudflare.md）。
+# 记录库用飞书多维表格（见 workbench/deploy/feishu.md），所以即使 data/ 丢了，
+# 「做了什么/多少钱/成品编号」这些在飞书里仍然留痕。
 
 services:
   - type: web
@@ -32,11 +34,7 @@ services:
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
-      - key: R2_BUCKET
+      - key: FEISHU_APP_ID
         sync: false
-      - key: R2_ACCOUNT_ID
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
+      - key: FEISHU_APP_SECRET
         sync: false
