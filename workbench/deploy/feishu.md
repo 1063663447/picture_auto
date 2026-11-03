@@ -73,6 +73,21 @@ python deploy/setup_feishu_table.py --app-id ... --app-secret ... \
 4. 把应用加为该多维表格的协作者（可编辑）
 5. 填 `.env` 与 `config.json` → `python -m skillbridge.feishu --init-fields`
 
+## 历史回拉：从飞书批量打包
+
+不需要服务器本地文件，直接以飞书为准：
+
+```powershell
+# 列表（可按 job_id / color 过滤）
+curl "http://127.0.0.1:8787/api/feishu/records?limit=200&token=<auth_token>"
+# 打包（record_ids 省略则按过滤条件全导）
+curl -X POST "http://127.0.0.1:8787/api/feishu/export?token=<auth_token>" `
+     -H "Content-Type: application/json" -d "{""record_ids"":[""recxxx""]}" -o history.zip
+```
+
+界面入口：「历史任务」卡片右上角 **飞书历史 · 打包下载** → 勾选（默认只列有成品图的）→ 打包下载。
+ZIP 内按「成品」字段命名，如 `feishu-history/item-01-黑色.png`；下载失败的记录会写进 `_missing.txt`。
+
 ## 排错
 
 | 现象 | 原因 / 处理 |
