@@ -21,8 +21,6 @@ services:
     envVars:
       - key: WORKBENCH_HOST
         value: 0.0.0.0
-      - key: WORKBENCH_PORT
-        value: 7860
       - key: WORKBENCH_DEPLOYED
         value: "1"
       - key: PYTHONUNBUFFERED
