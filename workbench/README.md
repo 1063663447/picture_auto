@@ -47,7 +47,7 @@ python serve.py               # --port 8899 可换端口
 
 - 公网访问需要口令：config.json → server.auth_token，首次访问用 ?token=...，之后 Cookie 生效；无口令一律 401。
 - 只有入口在 Cloudflare 上，计算仍在本机（FastAPI + Pillow + 本地任务目录没法跑在 Workers 里，原因见 deploy/cloudflare.md）。
-- R2 归档：python -m skillbridge.r2 --check（当前账号 R2 未开通，会返回 10042 与开通步骤）。
+- 记录库用**飞书多维表格**（替代 R2）：python -m skillbridge.feishu --check / --init-fields，配置见 [deploy/feishu.md](deploy/feishu.md)。
 - 详见 [deploy/cloudflare.md](deploy/cloudflare.md)。
 
 ---
