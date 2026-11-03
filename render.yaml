@@ -1,0 +1,42 @@
+# Render Blueprint（放在仓库根目录，Render 默认就在这里找）
+#
+# 部署：Render → New → Blueprint → 选仓库 1063663447/picture_auto → Apply
+# 然后在 Environment 填 TERRA_API_KEY / DEEPSEEK_API_KEY（sync: false = 不写进仓库）
+#
+# 免费版限制：无持久盘（重启清 data/）、闲置 15 分钟休眠、512MB 内存。
+# 生成的成品请及时下载 ZIP；开通 R2 后会自动归档（见 workbench/deploy/cloudflare.md）。
+
+services:
+  - type: web
+    name: apparel-recolor-workbench
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./workbench/deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: WORKBENCH_HOST
+        value: 0.0.0.0
+      - key: WORKBENCH_PORT
+        value: 7860
+      - key: WORKBENCH_DEPLOYED
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # 有付费持久盘时打开，并挂到 /data
+      # - key: WORKBENCH_DATA_DIR
+      #   value: /data
+      - key: TERRA_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
