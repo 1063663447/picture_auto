@@ -1,0 +1,804 @@
+"""Workbench service: owns config, skill, providers, job registry and job tasks."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import shutil
+import time
+import zipfile
+from pathlib import Path
+
+from . import r2 as r2mod
+from . import refine
+from .config import WORKBENCH_DIR, load_config, load_env
+from .pricing import Pricer, UsageLedger
+from .job import Job, Task, new_job_id, normalise_item
+from .providers import build_providers
+from .providers.base import Provider
+from .runner import JobRunner
+from .skill import ColorRef, GarmentType, Skill, load_skill
+
+SAFE_NAME = re.compile(r"[^0-9A-Za-z._\-\u4e00-\u9fff]+")
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+IMAGE_MODEL_HINT = re.compile(
+    r"(image|dall-?e|flux|seedream|seededit|kolors|wanx|imagen|nano-banana|"
+    r"grok-imagine-image|midjourney|qwen-image|\bsd-?xl\b|photoshop|edit)",
+    re.I,
+)
+NON_IMAGE_HINT = re.compile(r"(video|veo|seedance|kling|sora|animate|tts|whisper|embed)", re.I)
+MODEL_CACHE_TTL = 600.0
+
+
+class WorkbenchError(Exception):
+    pass
+
+
+class Workbench:
+    def __init__(self, config_path: str | Path | None = None) -> None:
+        self.env = load_env()
+        self.config = load_config(Path(config_path) if config_path else None, self.env)
+        self.data_dir = Path(self.config["data_dir"])
+        self.jobs_dir = self.data_dir / "jobs"
+        self.jobs_dir.mkdir(parents=True, exist_ok=True)
+        self.jobs: dict[str, Job] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
+        self._provider_sems: dict[str, asyncio.Semaphore] = {}
+        self._model_cache: dict[str, tuple[float, dict]] = {}
+        pricing_path = Path(str(self.config.get("pricing_file") or "pricing.json"))
+        if not pricing_path.is_absolute():
+            candidate = WORKBENCH_DIR / pricing_path
+            pricing_path = candidate if candidate.is_file() else pricing_path
+        self.pricer = Pricer(pricing_path)
+        self.usage = UsageLedger(self.data_dir, self.pricer)
+        self.drafts_dir = self.data_dir / "drafts"
+        self.drafts_dir.mkdir(parents=True, exist_ok=True)
+        self.reload_skill()
+        self.providers: dict[str, Provider] = build_providers(self.config, self.env)
+        self._load_existing()
+
+    # ------------------------------------------------------------------ setup #
+    def reload_skill(self) -> Skill:
+        self.skill = load_skill(self.config["skill_root"])
+        # optional override of the skill's 2,000,000-byte packaging limit
+        override = self.config.get("max_bytes") or (self.config.get("defaults") or {}).get(
+            "max_bytes"
+        )
+        if override:
+            try:
+                self.skill.max_bytes = int(override)
+            except (TypeError, ValueError):
+                pass
+        return self.skill
+
+    def _load_existing(self) -> None:
+        for path in sorted(self.jobs_dir.glob("*/job.json")):
+            try:
+                job = Job.load(path)
+            except Exception:
+                continue
+            if job.status in {"running", "packaging", "queued"}:
+                job.status = "failed"
+                job.stage = "服务重启，任务中断"
+                for task in job.tasks:
+                    if task.status in {"pending", "running"}:
+                        task.status = "canceled"
+                try:
+                    job.save()
+                except OSError:
+                    pass
+            self.jobs[job.id] = job
+
+    # ------------------------------------------------------------------- info #
+    def skill_payload(self) -> dict:
+        return {"ok": True, **self.skill.as_dict()}
+
+    def provider_payload(self) -> list[dict]:
+        """Only providers flagged `show_in_ui` are offered in the workbench UI."""
+        visible = [
+            provider
+            for provider in self.providers.values()
+            if provider.cfg.get("show_in_ui", False)
+        ]
+        if not visible:  # fallback so the UI is never empty
+            visible = list(self.providers.values())
+        return [provider.info() for provider in visible]
+
+    def defaults(self) -> dict:
+        return self.config.get("defaults") or {}
+
+    # ----------------------------------------------------------------- models #
+    def _get_provider_any(self, name: str | None) -> Provider:
+        name = (name or "").strip()
+        if not name:
+            name = str(self.config.get("default_provider") or "mock")
+        provider = self.providers.get(name)
+        if provider is None:
+            raise WorkbenchError(f"未知接口 `{name}`，可用：{sorted(self.providers)}")
+        return provider
+
+    def _models_cache_path(self, provider_name: str) -> Path:
+        return self.data_dir / f"models-{provider_name}.json"
+
+    def _read_models_cache(self, provider_name: str) -> dict | None:
+        path = self._models_cache_path(provider_name)
+        if not path.is_file():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def _write_models_cache(self, provider_name: str, payload: dict) -> None:
+        path = self._models_cache_path(provider_name)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
+        except OSError:
+            pass
+
+    def _offline_models(self, provider_name: str, reason: str) -> dict:
+        """网关 /models 抖动时：先用上次成功的快照，再退回 pricing.json 的模型名。"""
+        snapshot = self._read_models_cache(provider_name)
+        if snapshot and snapshot.get("models"):
+            payload = dict(snapshot)
+            payload["cached"] = True
+            payload["degraded"] = f"{reason}（使用上次拉取的快照）"
+            self._model_cache[provider_name] = (time.time(), payload)
+            return payload
+        rows = []
+        for model_id in sorted(self.pricer.raw):
+            price = self.pricer.price(model_id, str(self.defaults().get("size")))
+            rows.append(
+                {
+                    "id": model_id,
+                    "image": True,
+                    "video": False,
+                    "owned_by": None,
+                    "current": False,
+                    "price": price.unit,
+                    "price_label": price.label(),
+                    "currency": price.currency,
+                }
+            )
+        payload = {
+            "provider": provider_name,
+            "current": "",
+            "count": len(rows),
+            "image_models": [row["id"] for row in rows],
+            "models": rows,
+            "fetched_at": time.time(),
+            "cached": False,
+            "degraded": f"{reason}（使用本地 pricing.json 的模型清单）",
+        }
+        self._model_cache[provider_name] = (time.time(), payload)
+        return payload
+
+    async def list_models(self, name: str | None, *, refresh: bool = False) -> dict:
+        """Pull the provider's model catalogue so the operator can pick a real id."""
+        provider = self._get_provider_any(name)
+        cached = self._model_cache.get(provider.name)
+        if cached and not refresh and time.time() - cached[0] < MODEL_CACHE_TTL:
+            payload = dict(cached[1])
+            payload["cached"] = True
+            return payload
+
+        current = str(provider.cfg.get("model") or "")
+        try:
+            raw = await provider.list_models()
+        except Exception as exc:  # noqa: BLE001 - 上游抖动不该让下拉框变空
+            return self._offline_models(provider.name, f"模型列表拉取失败：{exc}")
+        models: list[dict] = []
+        for item in raw:
+            model_id = item["id"]
+            is_video = bool(NON_IMAGE_HINT.search(model_id))
+            is_image = bool(IMAGE_MODEL_HINT.search(model_id)) and not is_video
+            models.append(
+                {
+                    "id": model_id,
+                    "image": is_image,
+                    "video": is_video,
+                    "owned_by": item.get("owned_by"),
+                    "current": model_id == current,
+                }
+            )
+        for model in models:
+            price = self.pricer.price(model["id"], str(self.defaults().get("size")))
+            model["price"] = price.unit
+            model["price_label"] = price.label()
+            model["currency"] = price.currency
+        models.sort(key=lambda m: (not m["image"], m["video"], m["id"].lower()))
+        payload = {
+            "provider": provider.name,
+            "current": current,
+            "count": len(models),
+            "image_models": [m["id"] for m in models if m["image"]],
+            "models": models,
+            "fetched_at": time.time(),
+            "cached": False,
+        }
+        self._model_cache[provider.name] = (time.time(), payload)
+        self._write_models_cache(provider.name, payload)
+        return payload
+
+    def get_provider(self, name: str | None) -> Provider:
+        name = (name or "").strip()
+        if not name:
+            name = str(self.config.get("default_provider") or "mock")
+        provider = self.providers.get(name)
+        if provider is None:
+            raise WorkbenchError(f"未知接口 `{name}`，可用：{sorted(self.providers)}")
+        ready, reason = provider.ready()
+        if not ready:
+            raise WorkbenchError(f"接口 `{name}` 未就绪：{reason}")
+        return provider
+
+    # ------------------------------------------------------------------- jobs #
+    def job_dir(self, job_id: str) -> Path:
+        if not re.fullmatch(r"[0-9A-Za-z\-]{4,40}", job_id or ""):
+            raise WorkbenchError("非法任务 ID")
+        return self.jobs_dir / job_id
+
+    def get_job(self, job_id: str) -> Job:
+        job = self.jobs.get(job_id)
+        if job is None:
+            raise WorkbenchError(f"任务不存在：{job_id}")
+        return job
+
+    def list_jobs(self) -> list[dict]:
+        jobs = sorted(self.jobs.values(), key=lambda j: j.created_at, reverse=True)
+        return [job.as_dict(with_tasks=False, with_log=False) for job in jobs]
+
+    def _resolve_garment(self, name: str | None) -> GarmentType:
+        try:
+            return self.skill.type_by_alias(name)
+        except KeyError as exc:
+            raise WorkbenchError(str(exc)) from exc
+
+    def create_job(
+        self,
+        uploads: list[tuple[str, bytes]],
+        *,
+        garment_type: str | None,
+        colors: list[str] | None = None,
+        mode: str = "single_pass",
+        provider: str | None = None,
+        model: str | None = None,
+        concurrency: int | str | None = None,
+        rpm: int | None = None,
+        size: str = "auto",
+        quality: str = "high",
+        seed: int | None = None,
+        max_retries: int | None = None,
+        timeout_sec: float | None = None,
+        output_format: str = "auto",
+        send_reference: bool = True,
+        input_fidelity: str | None = None,
+        extra_requirements: str = "",
+    ) -> Job:
+        if not uploads:
+            raise WorkbenchError("请先上传至少一张图片")
+
+        garment = self._resolve_garment(garment_type)
+        try:
+            selected = garment.resolve_colors(colors)
+        except KeyError as exc:
+            raise WorkbenchError(str(exc)) from exc
+        if not selected:
+            raise WorkbenchError("请至少选择一个颜色参考")
+
+        provider_obj = self.get_provider(provider)
+        defaults = self.defaults()
+        chosen_model = str(model or "").strip() or str(provider_obj.cfg.get("model") or "")
+
+        job_id = new_job_id()
+        root = self.job_dir(job_id)
+        (root / "inputs").mkdir(parents=True)
+        (root / "work").mkdir()
+        (root / "staging").mkdir()
+        (root / "outputs").mkdir()
+
+        counter = 0
+        for filename, data in uploads:
+            suffix = Path(filename).suffix.lower()
+            if suffix not in IMAGE_SUFFIXES:
+                raise WorkbenchError(f"不支持的图片格式：{filename}")
+            stem = Path(filename).stem
+            item, view = normalise_item(stem)
+            if item:
+                folder = item
+                name = f"{view or stem}{suffix}"
+            else:
+                counter += 1
+                folder = f"item-{counter:02d}"
+                name = f"{stem or folder}{suffix}"
+            target_dir = root / "inputs" / folder
+            target_dir.mkdir(parents=True, exist_ok=True)
+            safe = SAFE_NAME.sub("-", name).strip("-") or f"{folder}{suffix}"
+            target = target_dir / safe
+            index = 1
+            while target.exists():
+                index += 1
+                target = target_dir / f"{Path(safe).stem}-{index}{suffix}"
+            target.write_bytes(data)
+
+        params = {
+            "garment_type": garment.slug,
+            "garment_name": garment.display_name,
+            "colors": [color.label for color in selected],
+            "mode": (
+                str(mode)
+                if str(mode) in {"single_pass", "two_phase", "recolor_only"}
+                else "single_pass"
+            ),
+            "provider": provider_obj.name,
+            "provider_label": provider_obj.info()["label"],
+            "model": chosen_model,
+            "concurrency": concurrency,
+            "rpm": int(
+                rpm if rpm is not None else (provider_obj.setting("rpm", 0) or 0)
+            ),
+            "size": str(size or "auto"),
+            "quality": str(quality or "high"),
+            "seed": int(seed) if seed not in (None, "") else None,
+            "max_retries": max(1, int(max_retries or defaults.get("max_retries") or 3)),
+            "timeout_sec": float(timeout_sec or defaults.get("timeout_sec") or 90),
+            "output_format": str(output_format or defaults.get("output_format") or "png"),
+            "send_reference": bool(send_reference),
+            "input_fidelity": str(
+                input_fidelity or provider_obj.setting("input_fidelity", "") or defaults.get("input_fidelity", "")
+            ),
+            "max_bytes": self.skill.max_bytes,
+            "extra_requirements": " ".join((extra_requirements or "").split()),
+            "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto")),
+        }
+
+        job = Job(id=job_id, params=params, batch_name=garment.batch_name)
+        job.root = root
+        job.add_log(
+            f"任务创建：{garment.display_name}，{len(selected)} 色，"
+            f"{len(uploads)} 张原图，接口 {provider_obj.name}"
+        )
+        # plan up-front so the UI can show the whole task list immediately
+        try:
+            JobRunner(
+                job,
+                self.skill,
+                garment,
+                selected,
+                provider_obj,
+                data_dir=self.data_dir,
+            ).plan()
+        except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(root, ignore_errors=True)
+            raise WorkbenchError(f"任务规划失败：{exc}") from exc
+
+        # 并发默认等于预计调用次数（用户要求：一次把能发的都发出去）
+        if str(concurrency).strip().lower() in {"", "auto", "none"} or concurrency is None:
+            job.params["concurrency"] = max(1, min(64, len(job.tasks)))
+            job.add_log(f"并发自动设为 {job.params['concurrency']}（= 预计调用次数）")
+
+        job.params["estimate"] = self.pricer.estimate(
+            chosen_model, len(job.tasks), str(job.params.get("size") or "auto")
+        )
+        job.save()
+        self.jobs[job_id] = job
+        return job
+
+    # ---------------------------------------------------------------- drafts --
+    def save_draft(self, uploads: list[tuple[str, bytes]]) -> dict:
+        """开工前先把图片存成草稿；harness 的工具之后直接引用这份草稿。"""
+        if not uploads:
+            raise WorkbenchError("没有可保存的图片")
+        draft_id = "d" + new_job_id()
+        folder = self.drafts_dir / draft_id
+        folder.mkdir(parents=True, exist_ok=True)
+        names: list[str] = []
+        for index, (filename, data) in enumerate(uploads, start=1):
+            suffix = Path(filename).suffix.lower() or ".png"
+            if suffix not in IMAGE_SUFFIXES:
+                raise WorkbenchError(f"不支持的图片格式：{filename}")
+            (folder / f"{index:02d}{suffix}").write_bytes(data)
+            names.append(filename)
+        return {"draft_id": draft_id, "count": len(names), "names": names}
+
+    def draft_uploads(self, draft_id: str) -> list[tuple[str, bytes]]:
+        if not re.fullmatch(r"d[0-9A-Za-z\-]{4,40}", draft_id or ""):
+            raise WorkbenchError("非法草稿 ID")
+        folder = self.drafts_dir / draft_id
+        if not folder.is_dir():
+            raise WorkbenchError("草稿已失效，请重新上传图片")
+        uploads: list[tuple[str, bytes]] = []
+        for path in sorted(folder.iterdir()):
+            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES:
+                uploads.append((f"item-{path.stem}{path.suffix}", path.read_bytes()))
+        if not uploads:
+            raise WorkbenchError("草稿里没有图片")
+        return uploads
+
+    def draft_image_paths(self, draft_id: str) -> list[Path]:
+        if not re.fullmatch(r"d[0-9A-Za-z\-]{4,40}", draft_id or ""):
+            return []
+        folder = self.drafts_dir / draft_id
+        if not folder.is_dir():
+            return []
+        return [
+            path
+            for path in sorted(folder.iterdir())
+            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+        ]
+
+    def drop_draft(self, draft_id: str) -> None:
+        if re.fullmatch(r"d[0-9A-Za-z\-]{4,40}", draft_id or ""):
+            shutil.rmtree(self.drafts_dir / draft_id, ignore_errors=True)
+
+    # --------------------------------------------------------------- pricing --
+    def pricing_payload(self) -> dict:
+        payload = self.pricer.table()
+        payload["usage"] = self.usage.summary()
+        payload["default_model"] = str(
+            (self.providers.get("terra") or next(iter(self.providers.values()))).cfg.get("model") or ""
+        )
+        return payload
+
+    def usage_payload(self) -> dict:
+        return self.usage.summary()
+
+    def record_usage(self, job: Job) -> dict | None:
+        stats = job.counts()
+        done = stats["done"] + stats["skipped"]
+        model = str(job.params.get("model") or "")
+        return self.usage.record(
+            job_id=job.id,
+            model=model,
+            images=done,
+            kind=str(job.params.get("kind") or "generate"),
+            size=str(job.params.get("size") or "auto"),
+        )
+
+    def archive_zip(self, job: Job) -> str | None:
+        """把成品 ZIP 传到 R2（未配置就静默跳过），返回对象 URL。"""
+        if not job.zip_rel:
+            return None
+        cfg = r2mod.load_r2(self.env)
+        enabled = bool((self.config.get("cloudflare") or {}).get("r2_upload", True))
+        ok, reason = cfg.ready()
+        if not enabled or not ok:
+            return None
+        root = job.root or self.job_dir(job.id)
+        path = root / job.zip_rel
+        if not path.is_file():
+            return None
+        key = f"batches/{job.id}/{path.name}"
+        try:
+            url = r2mod.put_object(cfg, key, path.read_bytes())
+        except Exception as exc:  # noqa: BLE001 - 归档失败不影响出图
+            job.add_log(f"R2 归档失败：{exc}", level="warn")
+            job.save()
+            return None
+        job.params["r2_url"] = url
+        job.add_log(f"已归档到 R2：{url}")
+        job.save()
+        return url
+
+    def estimate_for(self, model: str, count: int, size: str | None = None) -> dict:
+        return self.pricer.estimate(model, count, size or str(self.defaults().get("size") or "auto"))
+
+    # ------------------------------------------------------------------- run  #
+    def ui_flags(self) -> dict:
+        return dict((self.defaults().get("ui") or {}))
+
+    async def create_rework_job(
+        self,
+        source_job_id: str,
+        task_ids: list[str],
+        instruction: str,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        size: str | None = None,
+        quality: str | None = None,
+        output_format: str | None = None,
+        timeout_sec: float | None = None,
+        refiner: str | None = None,
+        prompt_override: str = "",
+    ) -> Job:
+        """以选中的成品为参考图返工（改图）。"""
+        source_job = self.get_job(source_job_id)
+        instruction = " ".join((instruction or "").split())
+        if not instruction:
+            raise WorkbenchError("请填写本次改图需求")
+        wanted = {str(t) for t in (task_ids or [])}
+        selected = [t for t in source_job.tasks if t.id in wanted and t.out]
+        if not selected:
+            raise WorkbenchError("请选择至少一张已生成的图片")
+
+        source_root = source_job.root or self.job_dir(source_job_id)
+        garment = self._resolve_garment(source_job.params.get("garment_type"))
+        provider_obj = self.get_provider(provider or source_job.params.get("provider"))
+        defaults = self.defaults()
+        rework_cfg = defaults.get("rework") or {}
+        chosen_model = str(model or source_job.params.get("model") or
+                           provider_obj.cfg.get("model") or "")
+
+        job_id = new_job_id()
+        root = self.job_dir(job_id)
+        (root / "inputs").mkdir(parents=True)
+        (root / "work").mkdir()
+        (root / "staging").mkdir()
+        (root / "outputs").mkdir()
+
+        tasks: list[Task] = []
+        briefs: list[str] = []
+        refiners: set[str] = set()
+        for index, task in enumerate(selected, start=1):
+            original = source_root / str(task.out)
+            if not original.is_file():
+                continue
+            folder = task.item or f"item-{index:02d}"
+            target_dir = root / "inputs" / folder
+            target_dir.mkdir(parents=True, exist_ok=True)
+            stem = f"{folder}_v2" if not task.view else f"{folder}-{task.view}_v2"
+            target = target_dir / f"{stem}{original.suffix or '.png'}"
+            target.write_bytes(original.read_bytes())
+
+            if prompt_override.strip():
+                prompt, used = prompt_override.strip(), "harness"
+            else:
+                prompt, used = await refine.compose(
+                    instruction,
+                    task.prompt,
+                    refiner=refiner or str(rework_cfg.get("refiner") or "template"),
+                    cfg=rework_cfg.get("llm") or {},
+                    env=self.env,
+                )
+            refiners.add(used)
+            new_task = Task(
+                id=f"{folder}__{task.color}-v2",
+                item=folder,
+                view="",
+                color=f"{task.color}-v2",
+                color_hex=task.color_hex,
+                color_name=f"{task.color_name}·改图",
+                source=str(target.relative_to(root)).replace("\\", "/"),
+                prompt=prompt,
+            )
+            tasks.append(new_task)
+            briefs.append(
+                refine.format_brief(
+                    instruction=instruction,
+                    original_prompt=task.prompt,
+                    reference_image=str(task.out),
+                    task_id=task.id,
+                    garment=garment.display_name,
+                    color=task.color_name,
+                )
+            )
+
+        if not tasks:
+            shutil.rmtree(root, ignore_errors=True)
+            raise WorkbenchError("选中的图片文件已不存在，无法改图")
+
+        params = {
+            "kind": "rework",
+            "garment_type": garment.slug,
+            "garment_name": garment.display_name,
+            "colors": [t.color for t in tasks],
+            "mode": "rework",
+            "provider": provider_obj.name,
+            "provider_label": provider_obj.info()["label"],
+            "model": chosen_model,
+            "concurrency": len(tasks),
+            "rpm": 0,
+            "size": str(size or source_job.params.get("size") or "auto"),
+            "quality": str(quality or source_job.params.get("quality") or "high"),
+            "seed": None,
+            "max_retries": int(source_job.params.get("max_retries") or 3),
+            "timeout_sec": float(
+                timeout_sec or source_job.params.get("timeout_sec") or 90
+            ),
+            "output_format": str(
+                output_format or source_job.params.get("output_format") or "png"
+            ),
+            "send_reference": False,
+            "input_fidelity": str(
+                provider_obj.setting("input_fidelity", "")
+                or defaults.get("input_fidelity", "")
+            ),
+            "max_bytes": self.skill.max_bytes,
+            "instruction": instruction,
+            "refiner": ",".join(sorted(refiners)) or "template",
+            "source_job": source_job_id,
+            "source_tasks": [t.id for t in selected],
+            "brief": briefs[0] if briefs else "",
+        }
+
+        params["estimate"] = self.pricer.estimate(
+            chosen_model, len(tasks), str(params.get("size") or "auto")
+        )
+        batch = f"{garment.slug}-rework-batch"
+        job = Job(id=job_id, params=params, batch_name=batch)
+        job.root = root
+        job.tasks = tasks
+        job.total = len(tasks)
+        job.add_log(f"改图任务：{len(tasks)} 张，接口 {provider_obj.name}，提示词由 {params['refiner']} 生成")
+        job.add_log(f"用户需求：{instruction}")
+        job.save()
+        self.jobs[job_id] = job
+        return job
+
+    def export_zip(self, job_id: str, task_ids: list[str] | None = None) -> Path:
+        """把选中的成品打成 ZIP（不传 task_ids 则导出全部成功图片）。"""
+        job = self.get_job(job_id)
+        root = job.root or self.job_dir(job_id)
+        wanted = {str(t) for t in (task_ids or [])}
+        files = [
+            root / str(task.out)
+            for task in job.tasks
+            if task.out and (not wanted or task.id in wanted)
+        ]
+        files = [path for path in files if path.is_file()]
+        if not files:
+            raise WorkbenchError("没有可导出的图片")
+        export_dir = root / "exports"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        suffix = "selected" if wanted else "all"
+        target = export_dir / f"{job.batch_name or job_id}-{suffix}-{stamp}.zip"
+
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in files:
+                try:
+                    relative = path.relative_to(root / "staging")
+                except ValueError:
+                    relative = Path(path.name)
+                archive.write(path, relative)
+        job.add_log(f"导出 {len(files)} 张：{target.name}")
+        job.save()
+        return target
+
+    def _provider_sem(self, provider: Provider) -> asyncio.Semaphore | None:
+        """Optional cap shared by every job using the same provider.
+
+        Set `global_concurrency` on a provider in config.json when several jobs may
+        run at once and the upstream account has a hard concurrency limit.
+        """
+        cap = int(provider.setting("global_concurrency", 0) or 0)
+        if cap <= 0:
+            return None
+        sem = self._provider_sems.get(provider.name)
+        if sem is None:
+            sem = asyncio.Semaphore(cap)
+            self._provider_sems[provider.name] = sem
+        return sem
+
+    def _runner_for(self, job: Job) -> JobRunner:
+        garment = self._resolve_garment(job.params.get("garment_type"))
+        is_rework = str(job.params.get("kind") or "") == "rework"
+        colors: list[ColorRef] = []
+        if not is_rework:
+            try:
+                colors = garment.resolve_colors(job.params.get("colors") or [])
+            except KeyError as exc:
+                raise WorkbenchError(str(exc)) from exc
+        provider = self.get_provider(job.params.get("provider"))
+        return JobRunner(
+            job,
+            self.skill,
+            garment,
+            colors,
+            provider,
+            data_dir=self.data_dir,
+            provider_sem=self._provider_sem(provider),
+        )
+
+    def start(self, job_id: str) -> dict:
+        job = self.get_job(job_id)
+        if job_id in self._tasks and not self._tasks[job_id].done():
+            raise WorkbenchError("任务正在运行中")
+        job.cancel_requested = False
+        runner = self._runner_for(job)
+        task = asyncio.create_task(runner.run(), name=f"job-{job_id}")
+        self._tasks[job_id] = task
+        task.add_done_callback(
+            lambda finished, jid=job_id: (self._record_after(jid, finished), self._forget(jid, finished))
+        )
+        return job.as_dict(with_tasks=False, with_log=False)
+
+    def _record_after(self, job_id: str, task: asyncio.Task) -> None:
+        job = self.jobs.get(job_id)
+        if job is None:
+            return
+        # 归档到 R2（同步 IO，丢到线程池里，别堵事件循环）
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, self.archive_zip, job)
+        except RuntimeError:
+            pass
+        try:
+            entry = self.record_usage(job)
+            if entry:
+                job.add_log(
+                    f"用量记录：{entry['images']} 张 × {entry['unit'] or '未定价'} = "
+                    f"{entry['cost'] if entry['cost'] is not None else '未定价'} {entry['currency']}"
+                )
+                job.save()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _forget(self, job_id: str, task: asyncio.Task) -> None:
+        if self._tasks.get(job_id) is task:
+            self._tasks.pop(job_id, None)
+
+    def retry(self, job_id: str, task_ids: list[str] | None = None) -> dict:
+        job = self.get_job(job_id)
+        if job_id in self._tasks and not self._tasks[job_id].done():
+            raise WorkbenchError("任务正在运行中")
+        wanted = {str(t) for t in (task_ids or [])}
+        targets = [
+            t for t in job.tasks if t.status == "failed" and (not wanted or t.id in wanted)
+        ]
+        if not targets:
+            raise WorkbenchError("没有失败的任务需要重试")
+        job.cancel_requested = False
+        job.error = None
+        job.zip_rel = None
+        runner = self._runner_for(job)
+        task = asyncio.create_task(
+            runner.run(retry_failed_only=True, task_ids=wanted or None),
+            name=f"retry-{job_id}",
+        )
+        self._tasks[job_id] = task
+        task.add_done_callback(lambda finished, jid=job_id: self._forget(jid, finished))
+        return job.as_dict(with_tasks=False, with_log=False)
+
+    def cancel(self, job_id: str) -> dict:
+        job = self.get_job(job_id)
+        job.cancel_requested = True
+        task = self._tasks.get(job_id)
+        if task and not task.done():
+            task.cancel()
+        job.add_log("收到取消请求", level="warn")
+        job.save()
+        return job.as_dict(with_tasks=False, with_log=False)
+
+    def delete(self, job_id: str) -> None:
+        job = self.get_job(job_id)
+        task = self._tasks.pop(job_id, None)
+        if task and not task.done():
+            task.cancel()
+        job.cancel_requested = True
+        self.jobs.pop(job_id, None)
+        shutil.rmtree(self.job_dir(job_id), ignore_errors=True)
+
+    async def shutdown(self) -> None:
+        for task in list(self._tasks.values()):
+            if not task.done():
+                task.cancel()
+        for provider in self.providers.values():
+            try:
+                await provider.close()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------ files #
+    def image_path(self, job_id: str, task_id: str) -> Path:
+        job = self.get_job(job_id)
+        for task in job.tasks:
+            if task.id == task_id and task.out:
+                path = (job.root or Path(".")) / task.out
+                if path.is_file():
+                    return path
+        raise WorkbenchError("图片不存在")
+
+    def zip_path(self, job_id: str) -> Path:
+        job = self.get_job(job_id)
+        if not job.zip_rel:
+            raise WorkbenchError("打包文件尚未生成")
+        path = (job.root or Path(".")) / job.zip_rel
+        if not path.is_file():
+            raise WorkbenchError("打包文件不存在")
+        return path
