@@ -60,20 +60,9 @@ https://<随机的 trycloudflare 域名>/?token=<config.json 里的 auth_token>
 
 跑通后可以用 `cloudflared service install` 注册成开机自启服务。
 
-## 4) R2 归档（开通后可用）
+## 4) 记录库：飞书多维表格（不再是 R2）
 
-R2 的 S3 凭据你已经有了（Access Key / Secret / endpoint），**但 R2 未开通前调用会失败**，这是 Cloudflare 侧的限制。
-
-1. 控制台 → R2 → 同意开通（需绑卡，免费额度 10GB）→ 建一个 bucket（例如 `apparel-images`）
-2. 在 `.env` 里填 `R2_BUCKET=apparel-images`
-3. 体检 + 上传：
-
-```powershell
-python -m skillbridge.r2 --check
-python -m skillbridge.r2 --key batches/demo.zip --file data\jobs\xxx\outputs\xxx.zip
-```
-
-`--check` 会直接告诉你 R2 是否可用（当前返回的正是那条 10042 提示）。上传用标准 AWS SigV4 签名，只依赖标准库。
+已完成成品写进飞书多维表格，配置见 [feishu.md](feishu.md)；R2 相关代码已移除。
 
 ## 5) 安全须知
 
