@@ -223,13 +223,14 @@ class FeishuBitable:
             {"fields": fields},
         )
 
-    def create_records(self, rows: list[dict]) -> list[str]:
+    def create_records(self, rows: list[dict], table_id: str = "") -> list[str]:
+        table_id = table_id or self.cfg.table_id
         ids: list[str] = []
         for start in range(0, len(rows), 100):
             chunk = rows[start : start + 100]
             data = self._api(
                 "POST",
-                f"/bitable/v1/apps/{self.cfg.app_token}/tables/{self.cfg.table_id}/records/batch_create",
+                f"/bitable/v1/apps/{self.cfg.app_token}/tables/{table_id}/records/batch_create",
                 {"records": [{"fields": row} for row in chunk]},
             )
             for item in data.get("records") or []:
@@ -351,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
 
             bench = Workbench()
             job = bench.get_job(args.sync_job)
-            count = bench.sync_to_feishu(job)
+            count = bench.sync_to_feishu(job, force=True)
             print(f"[ok] 写入 {count} 行（附件已按配置上传）")
             print(f"     表格：https://feishu.cn/base/{cfg.app_token}?table={cfg.table_id}")
         return 0

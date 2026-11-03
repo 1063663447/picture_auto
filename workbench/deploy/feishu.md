@@ -109,6 +109,13 @@ python deploy/setup_feishu_tables.py --app-id ... --app-secret ... \
        --admin admin --admin-password "Apparel@2026"  # 建/整理 记录表+定价表+账号表（幂等）
 python tools/check_accounts.py                       # 账号/密码/定价表 连通性自检
 python tools/check_login_http.py                     # 登录、会话、账号用量 HTTP 自检
+python tools/check_account_e2e.py --sync             # mock 跑一单，验证「账号」写进记录
+python tools/feishu_account_admin.py list            # 列账号（角色/状态/有无哈希）
+python tools/feishu_account_admin.py add zhang "Pass@2026" --display 张三 --role member
+python tools/feishu_account_admin.py passwd zhang "新密码"
+python tools/feishu_account_admin.py del zhang
+python tools/cleanup_feishu_jobs.py <任务ID>          # 删掉某个任务在飞书里的记录（清理测试）
+python tools/fix_record_table_fields.py              # 万一主字段被改名，改回「成品」
 ```
 
 任务跑完会**自动写**，日志里出现：`已写入飞书多维表格 N 行（含图片附件）`，
@@ -117,8 +124,9 @@ python tools/check_login_http.py                     # 登录、会话、账号�
 ## 用量：谁做了什么
 
 - 记录表每行的「账号」= 发起人；工作台 `data/usage.json` 也按账号记账（`job_id` 幂等，不重复计费）。
+- **账号用量优先从飞书记录表聚合**（`张数`/`金额元`/`任务ID`/`成品`/`时间`），Render 这类没有持久盘的部署重启后数字也不会丢；飞书读不到时才回退本地账本。
 - 管理员界面右上角 **账号用量** → 每个账号的 张数 / 花费 / 调用次数 / 最近三次成品（来自 `/api/accounts`，非管理员 403）。
-- 汇总接口：`GET /api/usage`（今日、累计、按账号 `accounts[]`）。
+- 汇总接口：`GET /api/usage`（今日、累计、按账号 `accounts[]`）、`GET /api/accounts`（管理员，`usage_source: feishu|ledger`）。
 
 ## 从零配一遍（换租户或重装时）
 

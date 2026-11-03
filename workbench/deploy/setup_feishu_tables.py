@@ -103,16 +103,23 @@ def create_table(token: str, app_token: str, name: str, schema: list[tuple[str, 
     return str((data.get("data") or {}).get("table_id") or "")
 
 
-def ensure_fields(token: str, app_token: str, table_id: str, schema: list[tuple[str, int]]) -> None:
+def ensure_fields(
+    token: str,
+    app_token: str,
+    table_id: str,
+    schema: list[tuple[str, int]],
+    rename_primary: bool = False,
+) -> None:
     current = call(
         "GET",
         f"{BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/fields?page_size=100",
         token,
     )
     have = {str(x.get("field_name")): x for x in (current.get("data") or {}).get("items") or []}
-    # 新表自带一个主字段（文本），把它重命名成 schema 的第一项
+    # 只有新建表时（rename_primary=True）才把自带的主字段改名成 schema 的第一项；
+    # 给已有表补字段时绝不能动主字段，否则会把「成品」这类主字段改掉。
     first_name, first_type = schema[0]
-    if first_name not in have:
+    if rename_primary and first_name not in have:
         primary = next((x for x in have.values() if x.get("is_primary")), None)
         if primary and primary.get("type") == first_type:
             call(
@@ -175,7 +182,7 @@ def main() -> int:
         token, args.app_token, "模型定价", PRICE_FIELDS
     )
     print(f"[*] 模型定价表：{price_table}")
-    ensure_fields(token, args.app_token, price_table, PRICE_FIELDS)
+    ensure_fields(token, args.app_token, price_table, PRICE_FIELDS, rename_primary=True)
 
     existing = call(
         "POST",
@@ -220,7 +227,7 @@ def main() -> int:
         token, args.app_token, "账号", ACCOUNT_FIELDS
     )
     print(f"[*] 账号表：{account_table}")
-    ensure_fields(token, args.app_token, account_table, ACCOUNT_FIELDS)
+    ensure_fields(token, args.app_token, account_table, ACCOUNT_FIELDS, rename_primary=True)
 
     existing_accounts = call(
         "POST",

@@ -485,13 +485,88 @@ class Workbench:
             detail=detail,
         )
 
+    def _feishu_account_usage(self) -> dict[str, dict] | None:
+        """从飞书记录表聚合每人用量（Render 无持久盘，本地账本会丢，飞书才是准的）。"""
+        cfg = self.feishu_config
+        if cfg is None or not cfg.enabled:
+            return None
+        ok, _reason = cfg.ready()
+        if not ok:
+            return None
+        try:
+            client = feishu_mod.FeishuBitable(cfg)
+            items = client.search_table(cfg.table_id, page_size=200, max_pages=5)
+        except Exception:  # noqa: BLE001 - 飞书挂了就用本地账本
+            return None
+        if not items:
+            return None
+
+        def text(value) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, list):
+                return "".join(
+                    str(x.get("text") or "") if isinstance(x, dict) else str(x) for x in value
+                )
+            return str(value)
+
+        buckets: dict[str, dict] = {}
+        jobs: dict[str, set[str]] = {}
+        for item in items:
+            fields = item.get("fields") or {}
+            name = text(fields.get("账号")).strip() or "anonymous"
+            bucket = buckets.setdefault(
+                name,
+                {
+                    "account": name,
+                    "images": 0,
+                    "cost": 0.0,
+                    "jobs": 0,
+                    "last_at": 0.0,
+                    "recent": [],
+                },
+            )
+            images = int(fields.get("张数") or 0)
+            bucket["images"] += images
+            try:
+                bucket["cost"] += float(fields.get("金额元") or 0)
+            except (TypeError, ValueError):
+                pass
+            at = fields.get("时间") or 0
+            at = float(at) / 1000.0 if isinstance(at, (int, float)) and at > 1e11 else float(at or 0)
+            bucket["last_at"] = max(bucket["last_at"], at)
+            job_id = text(fields.get("任务ID")).strip()
+            if job_id:
+                jobs.setdefault(name, set()).add(job_id)
+            bucket["recent"].append(
+                {
+                    "job_id": job_id,
+                    "model": text(fields.get("模型")).strip(),
+                    "images": images,
+                    "cost": fields.get("金额元"),
+                    "detail": text(fields.get("成品")).strip(),
+                    "at": at,
+                }
+            )
+        for name, bucket in buckets.items():
+            bucket["cost"] = round(bucket["cost"], 4)
+            bucket["jobs"] = len(jobs.get(name) or ())
+            bucket["recent"] = list(reversed(bucket["recent"][-10:]))
+            bucket["models"] = []
+        return buckets
+
     def accounts_payload(self) -> dict:
-        """账号列表 + 每人用量（管理员用）。"""
+        """账号列表 + 每人用量（管理员用）。优先用飞书记录聚合，其次本地账本。"""
         accounts = self.accounts.load(force=True)
-        usage = {row["account"]: row for row in self.usage.by_account()}
+        feishu_usage = self._feishu_account_usage()
+        usage = feishu_usage if feishu_usage else {
+            row["account"]: row for row in self.usage.by_account()
+        }
         rows = []
         for account in accounts.values():
-            account_usage = usage.pop(account.username, None) or {}
+            account_usage = usage.pop(account.username, None) or usage.pop(
+                account.username.lower(), None
+            ) or {}
             rows.append(
                 {
                     **account.as_dict(),
@@ -523,6 +598,7 @@ class Workbench:
         return {
             "currency": self.pricer.currency,
             "source": self.accounts.source,
+            "usage_source": "feishu" if feishu_usage else "ledger",
             "accounts": rows,
         }
 
@@ -539,8 +615,10 @@ class Workbench:
                 return ref.path
         return None
 
-    def sync_to_feishu(self, job: Job) -> int:
+    def sync_to_feishu(self, job: Job, force: bool = False) -> int:
         """把任务写进飞书多维表格（含图片附件）；未配置就静默跳过。返回写入行数。"""
+        if not force and job.params.get("feishu_rows"):
+            return int(job.params.get("feishu_rows") or 0)  # 已写过，别重复记账
         cfg = feishu_mod.load_config(self.config, self.env)
         ok, reason = cfg.ready()
         if not cfg.enabled or not ok:

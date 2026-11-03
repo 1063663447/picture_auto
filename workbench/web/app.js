@@ -183,9 +183,10 @@
     const list = $("accountsList");
     const rows = (data.accounts || []).slice();
     const currency = data.currency || state.pricing.currency;
-    $("accountsSub").textContent = data.source === "feishu"
-      ? "账号来自飞书「账号」表 · 用量按任务记录聚合"
-      : "本地兜底账号 · 用量按任务记录聚合";
+    $("accountsSub").textContent = (data.source === "feishu"
+      ? "账号来自飞书「账号」表 · "
+      : "本地兜底账号 · ")
+      + (data.usage_source === "feishu" ? "用量取自飞书记录" : "用量取自本地账本");
     const totalImages = rows.reduce((sum, row) => sum + Number(row.images || 0), 0);
     const totalCost = rows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
     $("accountsTotal").textContent = `${rows.length} 个账号 · 合计 ${totalImages} 张 · ${money(totalCost, currency)}`;
