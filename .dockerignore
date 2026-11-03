@@ -1,0 +1,11 @@
+# 构建上下文是仓库根目录，排除掉不需要进镜像的东西
+.tmp-uiux/
+workbench/.bin/
+workbench/data/
+workbench/.env
+workbench/__pycache__/
+**/__pycache__/
+**/*.pyc
+workbench/.skills/
+docs/
+*.log
