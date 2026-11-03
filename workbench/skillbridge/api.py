@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from PIL import Image
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
-from . import agent, harness, prompts, refine
+from . import agent, feishu, feishu_export, harness, prompts, refine
 from .config import WORKBENCH_DIR
 from .providers.base import ProviderError
 from .service import Workbench, WorkbenchError
@@ -494,6 +501,69 @@ def create_app(config_path: str | None = None) -> FastAPI:
             frames(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # ------------------------------------------------------- 飞书历史/回拉 --
+    @app.get("/api/feishu/records")
+    async def feishu_records(
+        request: Request, limit: int = 200, job_id: str = "", color: str = ""
+    ):
+        """读飞书多维表格里的历史成品记录（Render 重启后也能看到）。"""
+        bench = wb(request)
+        cfg = feishu.load_config(bench.config, bench.env)
+        ok, reason = cfg.ready()
+        if not ok:
+            return JSONResponse(
+                {"ok": False, "error": f"飞书未配置：{reason}"}, status_code=400
+            )
+        loop = asyncio.get_running_loop()
+        records = await loop.run_in_executor(
+            None,
+            lambda: feishu_export.list_records(
+                cfg, limit=max(1, min(500, limit)), job_id=job_id, color=color
+            ),
+        )
+        return {
+            "ok": True,
+            "count": len(records),
+            "records": records,
+            "table": f"https://feishu.cn/base/{cfg.app_token}?table={cfg.table_id}",
+        }
+
+    @app.post("/api/feishu/export")
+    async def feishu_export_zip(request: Request):
+        """从飞书附件批量拉成品图，打包成 ZIP 直接下载（不依赖本机 data/）。"""
+        bench = wb(request)
+        cfg = feishu.load_config(bench.config, bench.env)
+        ok, reason = cfg.ready()
+        if not ok:
+            return JSONResponse(
+                {"ok": False, "error": f"飞书未配置：{reason}"}, status_code=400
+            )
+        body = await request.json()
+        record_ids = {str(x) for x in (body.get("record_ids") or [])}
+        job_id = str(body.get("job_id") or "")
+        color = str(body.get("color") or "")
+        limit = int(body.get("limit") or 500)
+
+        def work() -> bytes:
+            records = feishu_export.list_records(
+                cfg, limit=max(1, min(500, limit)), job_id=job_id, color=color
+            )
+            if record_ids:
+                records = [r for r in records if str(r.get("record_id")) in record_ids]
+            folder = f"feishu-{job_id}" if job_id else "feishu-history"
+            return feishu_export.build_zip(cfg, records, folder=folder)
+
+        try:
+            payload = await asyncio.get_running_loop().run_in_executor(None, work)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        name = f"feishu-{job_id}.zip" if job_id else "feishu-history.zip"
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
         )
 
     # ---------------------------------------------------------------- 改图 --
