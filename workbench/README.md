@@ -125,6 +125,13 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 7. **单张**：卡片右下 下载（附件下载）、改图；失败的卡片多一个 重试（只重跑这一张）。
 8. **批量**：卡片左上勾选或「全选成品」→ 批量改图 / 批量导出。
 
+### 历史与成品：以飞书为准
+
+- 每个成品一条记录，**成品图 / 参考图**存在记录的附件字段里（见 `deploy/feishu.md`）。
+- 界面「历史任务」卡片右上角 **飞书历史 · 打包下载**：列出飞书里的历史成品 → 勾选 → **打包下载 ZIP**
+  （图片是从飞书附件实时下载的，不依赖服务器磁盘，所以 Render 重启丢 `data/` 也不影响）。
+- 接口：`GET /api/feishu/records?limit=200&job_id=&color=`、`POST /api/feishu/export {record_ids:[...]}`。
+
 ### 开工前先问需求（DeepSeek agent · 对话框 + 流式输出）
 
 > harness 不是"脚本填模板"：它是**带工具调用的 DeepSeek agent**（默认 `deepseek-flash`，支持图片输入），
