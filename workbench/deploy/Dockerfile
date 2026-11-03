@@ -13,7 +13,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     WORKBENCH_HOST=0.0.0.0 \
-    WORKBENCH_PORT=7860
+    WORKBENCH_DEPLOYED=1
 
 WORKDIR /app
 
@@ -30,10 +30,11 @@ COPY workbench /app/workbench
 
 WORKDIR /app/workbench
 
-# 健康检查用公开端点（带 token 的部署可自行改）
+# 健康检查用公开端点（`/api/health` 已免口令）
+# 注意：云平台会注入 PORT（Render/Koyeb/Cloud Run），serve.py 在 WORKBENCH_DEPLOYED=1 时优先采用它
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:${WORKBENCH_PORT}/api/health" >/dev/null || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8787}/api/health" >/dev/null || exit 1
 
-EXPOSE 7860
+EXPOSE 8787
 
 CMD ["python", "serve.py"]
