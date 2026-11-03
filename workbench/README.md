@@ -385,6 +385,9 @@ python cli.py --input D:\in --garment-type hoodie --format jpg --retries 5 --tim
 python tools/selftest.py          # 离线全量自检（不需要 Key）
 python tools/check_accounts.py    # 飞书账号表 / 定价表 / 密码哈希 / 会话签名
 python tools/check_login_http.py  # 登录页、会话 Cookie、账号用量接口
+python tools/check_account_e2e.py --sync   # mock 跑一单，验证「账号」写进飞书记录
+python tools/check_real_job.py --base http://127.0.0.1:8787   # 真接口跑一单并核对用量（会花 ¥0.038）
+python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表维护
 ```
 
 不需要 Key：验证 skill 解析、颜色扫描、一次到位与两段式的目录命名、失败重试、2MB 压缩、**并发峰值是否被限流**、本地换色图案保真、非法输入拦截。
