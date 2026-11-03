@@ -1,0 +1,36 @@
+# Render Blueprint —— 免费 Web Service 部署这个工作台
+#
+# 用法：
+#   1) 把整个仓库（picture_auto：含 workbench/ 与 apparel-style-recolor/）推到 GitHub
+#   2) Render 控制台 → New → Blueprint → 选这个仓库 → Apply
+#   3) 在 Environment 里填 .env 的同名变量（TERRA_API_KEY / DEEPSEEK_API_KEY 等）
+#
+# 免费版限制（务必知道）：
+#   - 无持久盘：data/（原图、成品、ZIP）在重启/重新部署后清空 → 成品请及时下载 ZIP
+#   - 闲置 15 分钟休眠，冷启动 30~60s
+#   - 512MB 内存：大图 + 高并发时把并发降到 2~3，或改用更轻的模型
+#   - 生图单张 30~120s，属于正常长请求；Render 允许长连接，但休眠中的实例要先唤醒
+
+services:
+  - type: web
+    name: apparel-recolor-workbench
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./workbench/deploy/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: WORKBENCH_HOST
+        value: 0.0.0.0
+      - key: WORKBENCH_PORT
+        value: 7860
+      # 免费版没有持久卷；有付费盘时把下面两行打开并设为 /data
+      # - key: WORKBENCH_DATA_DIR
+      #   value: /data
+      - key: TERRA_API_KEY
+        sync: false          # 在控制台填，别写进仓库
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
