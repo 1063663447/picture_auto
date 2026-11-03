@@ -72,6 +72,7 @@ class Task:
             "duration": self.duration,
             "bytes": self.bytes,
             "prompt": self.prompt,
+            "source": self.source,
         }
 
 
