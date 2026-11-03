@@ -60,6 +60,8 @@
     composedPrompt: "",
     requirements: "",
     streamBubble: null,
+    feishuRecords: [],
+    feishuSelected: new Set(),
     pendingText: "",
     typerTimer: null,
   };
@@ -695,7 +697,103 @@
     } catch (err) { toast("bad", err.message); }
   }
 
+  /* --------------------------------------------------------- 飞书历史 --- */
+  async function loadFeishuRecords() {
+    const box = $("feishuList");
+    box.innerHTML = `<p class="tip" style="padding:6px 2px">正在从飞书读取…</p>`;
+    try {
+      const data = await api("/api/feishu/records?limit=200");
+      state.feishuRecords = data.records || [];
+      $("feishuSub").textContent = `${data.count} 条记录 · ${data.table || ""}`;
+      renderFeishuRecords();
+    } catch (err) {
+      box.innerHTML = `<p class="tip" style="color:var(--danger);padding:6px 2px">${esc(err.message)}</p>`;
+      $("feishuSub").textContent = "读取失败";
+    }
+  }
+
+  function renderFeishuRecords() {
+    const box = $("feishuList");
+    const rows = state.feishuRecords || [];
+    box.innerHTML = "";
+    if (!rows.length) {
+      box.innerHTML = `<p class="tip" style="padding:6px 2px">飞书表格里还没有记录</p>`;
+      $("feishuCount").textContent = "0 条";
+      $("feishuExport").disabled = true;
+      return;
+    }
+    for (const record of rows) {
+      const selected = state.feishuSelected.has(record.record_id) ? "checked" : "";
+      const row = document.createElement("label");
+      row.className = "frow" + (selected ? " sel" : "");
+      const has = record.attachment_count > 0;
+      const when = record.time ? fmtTime(Math.floor(record.time / 1000)) : "";
+      const money0 = record.amount === null || record.amount === undefined
+        ? "" : `¥${Number(record.amount).toFixed(3)}`;
+      row.innerHTML = `
+        <input type="checkbox" data-record="${esc(record.record_id)}" ${selected} ${has ? "" : "disabled"} />
+        <span class="grow">${esc(record.name)} · ${esc(record.model || "")} ${esc(money0)}</span>
+        <span class="badge ${has ? "ok" : "no"}">${has ? "有图" : "无图"}</span>
+        <span class="badge">${esc(when)}</span>`;
+      row.querySelector("input").addEventListener("change", (event) => {
+        if (event.target.checked) state.feishuSelected.add(record.record_id);
+        else state.feishuSelected.delete(record.record_id);
+        renderFeishuRecords();
+      });
+      box.appendChild(row);
+    }
+    const take = rows.filter((r) => r.attachment_count > 0).length;
+    $("feishuCount").textContent = `已选 ${state.feishuSelected.size} / ${rows.length} 条（${take} 条有成品图）`;
+    $("feishuExport").disabled = state.feishuSelected.size === 0;
+    $("feishuAll").checked = state.feishuSelected.size === take && take > 0;
+  }
+
+  async function exportFromFeishu() {
+    const ids = [...state.feishuSelected];
+    if (!ids.length) return;
+    $("feishuExport").disabled = true;
+    $("feishuExport").textContent = "打包中…";
+    try {
+      const res = await fetch("/api/feishu/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record_ids: ids }),
+      });
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try { message = (await res.json()).error || message; } catch (_) { /* ignore */ }
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "feishu-history.zip";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast("ok", `已从飞书打包 ${ids.length} 张历史成品`);
+    } catch (err) {
+      toast("bad", `打包失败：${err.message}`);
+    } finally {
+      $("feishuExport").disabled = state.feishuSelected.size === 0;
+      $("feishuExport").textContent = "打包下载 ZIP";
+    }
+  }
+
   /* ------------------------------------------------------- drawer plumbing */
+  function openFeishu() {
+    $("feishuScrim").hidden = false;
+    $("feishuDrawer").hidden = false;
+    requestAnimationFrame(() => {
+      $("feishuScrim").classList.add("on");
+      $("feishuDrawer").classList.add("on");
+    });
+    loadFeishuRecords();
+  }
+  function closeFeishu() { closePanel("feishuDrawer", "feishuScrim"); }
+
   function openDrawer(which) {
     const isPrompt = which === "prompt";
     const scrim = isPrompt ? $("promptScrim") : $("harnessScrim");
@@ -1092,6 +1190,21 @@
     $("harnessApply").addEventListener("click", harnessApplyAction);
     $("harnessClose").addEventListener("click", closeHarness);
     $("harnessScrim").addEventListener("click", closeHarness);
+    $("feishuBtn").addEventListener("click", openFeishu);
+    $("feishuClose").addEventListener("click", closeFeishu);
+    $("feishuScrim").addEventListener("click", closeFeishu);
+    $("feishuReload").addEventListener("click", () => {
+      state.feishuSelected = new Set();
+      loadFeishuRecords();
+    });
+    $("feishuAll").addEventListener("change", (event) => {
+      const rows = (state.feishuRecords || []).filter((r) => r.attachment_count > 0);
+      state.feishuSelected = event.target.checked
+        ? new Set(rows.map((r) => r.record_id))
+        : new Set();
+      renderFeishuRecords();
+    });
+    $("feishuExport").addEventListener("click", exportFromFeishu);
     $("promptClose").addEventListener("click", closePrompt);
     $("promptScrim").addEventListener("click", closePrompt);
 
@@ -1099,6 +1212,7 @@
       if (event.key !== "Escape") return;
       if (!$("harnessDrawer").hidden) closeHarness();
       if (!$("promptDrawer").hidden) closePrompt();
+      if (!$("feishuDrawer").hidden) closeFeishu();
     });
   }
 
