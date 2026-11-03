@@ -1,79 +1,83 @@
-# 用飞书多维表格当记录库（替代 R2）
+# 飞书多维表格记录库（含图片附件）
 
-每完成一个任务，工作台会把「做了什么 / 什么模型 / 多少张 / 多少钱 / 成品在哪」写进一张多维表格，
-运营直接在飞书里筛选、求和、对账。**不需要对象存储**；R2 相关代码已摘除。
+每个成品写一条记录，**成品图 / 参考图**直接用附件字段挂在记录上（不需要 zip，也不依赖本机磁盘）。
+时间、款式、颜色、模型、尺寸、张数、单价、金额、接口、状态一并记录，运营在飞书里能直接筛选、求和、对账。
 
-## 一、5 分钟配置（一次性）
+## 当前已建好的表
 
-1. **建企业自建应用**
-   https://open.feishu.cn/app → 创建企业自建应用 → 记下 **App ID / App Secret**（「凭证与基础信息」页）
-2. **加权限**
-   应用 → 权限管理 → 搜索并添加：
-   - `bitable:app`（查看、编辑、删除多维表格）—— **必需**
-   - 如需把 ZIP 当附件写进表格：再加 `drive:drive`
-3. **发布**
-   应用 → 版本管理与发布 → 创建版本 → 申请发布（企业内自建应用，管理员通过即可）
-4. **建多维表格**
-   飞书里新建一个「多维表格」，打开后从地址栏取两段：
-   ```
-   https://xxx.feishu.cn/base/<APP_TOKEN>?table=<TABLE_ID>&view=vew...
-                              ^^^^^^^^^^         ^^^^^^^^^
-   ```
-5. **把应用加成协作者**（最容易漏的一步）
-   多维表格右上角「···」→ 协作者 → 添加「应用」→ 选你刚建的应用 → 权限 **可编辑**
-6. **填配置**
-   `.env`：
-   ```ini
-   FEISHU_APP_ID=cli_xxxxxxxx
-   FEISHU_APP_SECRET=xxxxxxxxxxxxxxxx
-   ```
-   `config.json → feishu`：
-   ```json
-   "feishu": {
-     "enabled": true,
-     "app_id_env": "FEISHU_APP_ID",
-     "app_secret_env": "FEISHU_APP_SECRET",
-     "app_token": "bascnxxxxxxxxxxxx",
-     "table_id": "tblxxxxxxxx",
-     "per": "task",
-     "upload_zip": false
-   }
-   ```
+| 项 | 值 |
+|---|---|
+| 表格链接 | https://ocnbd3tr10x9.feishu.cn/base/Cg19bjnLJaAU7CsYPB5cO3qynrb |
+| `app_token` | `Cg19bjnLJaAU7CsYPB5cO3qynrb` |
+| `table_id` | `tblvrb2DVxO7s28c` |
+| 应用 | `cli_aa633e549a79dcf4`（凭据在 `.env`） |
+| 权限 | `bitable:app` + `drive:drive`（附件上传已实测通过） |
 
-## 二、体检 + 自动建字段
+> 表是「应用」创建的，你在飞书里若看不到它：打开上面的链接，右上角「···」→ 协作者 → 把自己加成「可管理」。
+> 也可以把邮箱给我，我用接口直接把你加成协作者。
 
-```powershell
-python -m skillbridge.feishu --check         # 鉴权 + 读现有字段
-python -m skillbridge.feishu --init-fields   # 自动补齐缺的字段（不动已有字段）
-python -m skillbridge.feishu --sync-job 20261103-150000-abcd   # 补写某个历史任务
+## 字段结构（16 个，`deploy/setup_feishu_table.py` 可幂等重建）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| 成品 | 文本（主字段） | `item-01 / 黑色` |
+| 任务ID | 文本 | 同一批任务聚合用 |
+| 时间 | 日期 | 记录完成时刻（毫秒时间戳），可按日筛选 |
+| 款式 / 颜色 / 模型 / 尺寸 / 接口 / 状态 | 文本 | 生成参数与结果 |
+| 张数 | 数字 | 成功记 1、失败记 0 |
+| 单价元 / 金额元 | 数字 | 按 `pricing.json`（人民币），可直接求和 |
+| 备注 | 文本 | 失败原因 / 本次特殊要求 / 附件异常 |
+| **成品图** | 附件 | 该记录对应的成品图（PNG/JPG 头像级预览） |
+| **参考图** | 附件 | 该颜色所用的内置色卡（用来核对颜色） |
+| **原图** | 附件 | 可选，默认不上传（`upload_source: true` 打开） |
+
+## 配置（`config.json → feishu`）
+
+```json
+"feishu": {
+  "enabled": true,
+  "app_id_env": "FEISHU_APP_ID",
+  "app_secret_env": "FEISHU_APP_SECRET",
+  "app_token": "Cg19bjnLJaAU7CsYPB5cO3qynrb",
+  "table_id": "tblvrb2DVxO7s28c",
+  "per": "task",            // task=一行一个成品（默认，失败也留痕）；job=一行一任务
+  "upload_images": true,    // 上传 成品图 + 参考图
+  "upload_source": false    // 是否也上传原图
+}
 ```
 
-自动创建的 14 个字段（分类字段用"文本"，避免单选选项要人工维护）：
+`.env`：
+```ini
+FEISHU_APP_ID=cli_xxx
+FEISHU_APP_SECRET=xxx
+```
 
-| 字段 | 类型 | 内容 |
-|---|---|---|
-| 成品 | 文本 | `item-01 / 黑色` |
-| 任务ID | 文本 | 便于聚合与追溯 |
-| 完成时间 | 日期 | 毫秒时间戳，可在飞书按日筛选 |
-| 款式 / 颜色 / 模型 / 尺寸 / 接口 / 状态 | 文本 | 生成参数与结果 |
-| 张数 | 数字 | 成功的记 1、失败记 0 |
-| 单价元 / 金额元 | 数字 | 按 `pricing.json`（人民币），可直接求和 |
-| 本地ZIP | 文本 | 相对路径（仅本机部署有意义） |
-| 备注 | 文本 | 失败原因 / 本次特殊要求 |
+## 命令行
 
-## 三、两种粒度
+```powershell
+python -m skillbridge.feishu --check                 # 鉴权 + 读字段
+python -m skillbridge.feishu --init-fields           # 补齐缺的字段（不动已有）
+python -m skillbridge.feishu --sync-job <任务ID>      # 补写某个历史任务（含图片）
+python deploy/setup_feishu_table.py --app-id ... --app-secret ... \
+       --app-token ... --table-id ...                # 重建/整理表结构（幂等）
+```
 
-- `per: "task"`（默认）**一行一个成品** —— 适合按颜色/模型做透视，失败也留痕
-- `per: "job"` **一行一个任务** —— 行数少，适合只看批次
+任务跑完会**自动写**，日志里出现：`已写入飞书多维表格 N 行（含图片附件）`，
+`job.params.feishu_rows` / `feishu_table` 也会记录。
 
-## 四、附件（可选，默认关闭）
+## 从零配一遍（换租户或重装时）
 
-`upload_zip: true` 时，任务完成后把 ZIP 传到多维表格附件字段（需要 `drive:drive` 权限）。
-限制：单文件 ≤ 20MB、走 Fly Drive 上传会额外消耗频次；成品多时建议只传汇总 ZIP。
+1. 建企业自建应用 https://open.feishu.cn/app → 拿 App ID / App Secret
+2. 权限：`bitable:app`（必需）、`drive:drive`（附件必需）→ 创建版本并发布
+3. 建一个多维表格，从地址栏取 `app_token`（`/base/` 后）与 `table_id`（`?table=` 后）
+4. 把应用加为该多维表格的协作者（可编辑）
+5. 填 `.env` 与 `config.json` → `python -m skillbridge.feishu --init-fields`
 
-## 五、和部署的关系
+## 排错
 
-- **本地 / 隧道部署**：`data/` 在本地，飞书表格是索引，ZIP 直接下载。
-- **Render 免费实例**：磁盘是临时的，重启会清 `data/` —— 此时**飞书表格是唯一持久记录**，
-  建议 `upload_zip: true` 或出图后立刻下载 ZIP；表格里的「本地ZIP」字段在重启后会失效，仅作参考。
-- 写入失败不会影响出图：只记一条 warn 日志（"飞书写入失败：..."），任务照常完成。
+| 现象 | 原因 / 处理 |
+|---|---|
+| `code 9499 Bad Request` 列记录失败 | 飞书的 `GET /records` 对新建表偶尔报这个；改用 `POST /records/search`（代码里已是 search） |
+| 附件上传失败 `code 1061xxx` | 没开 `drive:drive` 权限，或应用不是该表协作者 |
+| 只写了行、没有图片 | `upload_images` 关着；或该颜色没有对应色卡；或任务是从 job.json 反序列化的老任务（`source` 字段需要新版才会保存） |
+| 表格里看不到数据 | 表是应用创建的，用「··· → 协作者」把自己加进去 |
