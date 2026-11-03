@@ -171,5 +171,14 @@
       "mock_delay_sec": 0.4,
       "show_in_ui": false
     }
+  },
+  "feishu": {
+    "enabled": true,
+    "app_id_env": "FEISHU_APP_ID",
+    "app_secret_env": "FEISHU_APP_SECRET",
+    "app_token": "",
+    "table_id": "",
+    "per": "task",
+    "upload_zip": false
   }
 }
