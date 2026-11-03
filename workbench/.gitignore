@@ -1,0 +1,15 @@
+# 本地私密数据：客户原图、成品、Key
+data/
+.env
+
+.bin/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 临时
+config.test.json
+*.log
