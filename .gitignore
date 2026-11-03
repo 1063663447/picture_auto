@@ -1,0 +1,16 @@
+# 仓库根 .gitignore（整个 picture_auto）
+workbench/.env
+workbench/.env.*
+!workbench/.env.example
+workbench/data/
+workbench/.bin/
+workbench/docs/
+workbench/.skills/
+workbench/deploy/*.zip
+.tmp-uiux/
+
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+Thumbs.db
