@@ -37,6 +37,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         bench = getattr(app.state, "wb", None)
         if bench is None:
             return await call_next(request)
+        # 健康检查端点必须免口令，否则云平台（Render/Koyeb/Cloud Run）判定服务不健康
+        if request.url.path in {"/api/health", "/healthz"}:
+            return await call_next(request)
         token = str((bench.config.get("server") or {}).get("auth_token") or "")
         if not token:
             return await call_next(request)
