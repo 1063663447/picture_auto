@@ -354,6 +354,8 @@ class JobRunner:
         await self._attempt(task, request)
 
     async def _run_two_phase(self) -> None:
+        if self.multi_style:
+            raise ValueError("两段式（two_phase）暂不支持多款式，请用一次到位 single_pass")
         unique: dict[tuple[str, str, str], Path] = {}
         for task in self.job.tasks:
             unique[(task.item, task.view, task.source)] = self.root / task.source
@@ -467,15 +469,46 @@ class JobRunner:
                 best = str(preset)
         return best
 
+    def garment_for_task(self, task: Task) -> GarmentType:
+        """任务属于哪个款式。
+
+        多款式任务里 `self.garment` 只是第一个款式，必须按 task.garment 找，
+        否则第二个款式的颜色会在第一个款式里查 → 查不到就报「颜色参考缺失」，
+        查得到（同名色）更糟：会悄悄拿错款式的参考图。
+        """
+        slug = task.garment or self.garment.slug
+        if slug == self.garment.slug:
+            return self.garment
+        for garment, _colors in self.selections:
+            if garment.slug == slug:
+                return garment
+        try:
+            return self.skill.type_by_alias(slug)
+        except KeyError:
+            return self.garment
+
     async def _execute_color_task(self, task: Task, *, source_override: Path | None = None) -> None:
-        color = self.garment.color(task.color)
+        garment = self.garment_for_task(task)
+        color = garment.color(task.color)
         if color is None:
-            self._set_status(task, "failed", error="颜色参考缺失")
+            self._set_status(
+                task,
+                "failed",
+                error=f"颜色参考缺失：{garment.display_name} 里没有「{task.color_name or task.color}」这个颜色",
+            )
             return
         source = source_override or (self.root / task.source)
         images = [source]
         if self.send_reference:
-            images.append(color.path)
+            if color.path.is_file():
+                images.append(color.path)
+            else:
+                # 参考图文件真的不在（数据问题）→ 记一条警告继续跑，别整张失败
+                self.job.add_log(
+                    f"颜色参考图缺失，已跳过参考：{garment.display_name} / {color.label}",
+                    level="warn",
+                )
+                self._save()
         request = EditRequest(
             images=images,
             prompt=task.prompt,

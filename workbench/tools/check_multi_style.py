@@ -63,7 +63,7 @@ def build_bench() -> Workbench:
     return Workbench(path)
 
 
-async def run_job(bench: Workbench, job) -> None:
+def _runner(bench: Workbench, job) -> JobRunner:
     selections = []
     for raw in job.params.get("selections") or []:
         garment = bench.skill.type_by_alias(raw["garment_type"])
@@ -75,13 +75,16 @@ async def run_job(bench: Workbench, job) -> None:
     else:
         garment = bench.skill.type_by_alias(job.params["garment_type"])
         colors = garment.resolve_colors(job.params["colors"])
-    runner = JobRunner(
+    return JobRunner(
         job, bench.skill, garment, colors,
         bench.get_provider(job.params["provider"]),
         selections=selections or None,
         data_dir=bench.data_dir,
     )
-    await runner.run()
+
+
+async def run_job(bench: Workbench, job) -> None:
+    await _runner(bench, job).run()
 
 
 def zip_entries(job) -> list[str]:
@@ -100,8 +103,11 @@ def main() -> int:
     print("[1] 多款式：06 连帽卫衣 3 色 + 23 索罗娜短袖 2 色")
     hoodie = bench.skill.type_by_alias("06-hoodie")
     tee = bench.skill.type_by_alias("23-sorona-tee")
-    hoodie_colors = [c.label for c in hoodie.colors][:3]
-    tee_colors = [c.label for c in tee.colors][:2]
+    hoodie_colors = ["white", "black", "heather-grey"]
+    hoodie_labels = {c.label for c in hoodie.colors}
+    # 只挑连帽卫衣里没有的颜色 —— 老代码会在这里报「颜色参考缺失」（或悄悄用错参考图）
+    tee_colors = [c.label for c in tee.colors if c.label not in hoodie_labels][:2]
+    assert len(tee_colors) == 2, [c.label for c in tee.colors]
     job = asyncio.run(_create(bench, uploads, [
         {"garment_type": "06-hoodie", "colors": hoodie_colors},
         {"garment_type": "23-sorona-tee", "colors": tee_colors},
@@ -113,6 +119,19 @@ def main() -> int:
     garments = {t.garment for t in job.tasks}
     check("任务各自带款式", garments == {"06-hoodie", "23-sorona-tee"}, ",".join(sorted(garments)))
     check("批次名按款式数命名", job.batch_name.endswith("2styles-recolor-batch"), job.batch_name)
+
+    print("[1.1] 颜色参考必须来自任务自己的款式")
+    runner = _runner(bench, job)
+    all_ok = True
+    for task in job.tasks:
+        garment = runner.garment_for_task(task)
+        color = garment.color(task.color)
+        if garment.slug != task.garment or color is None or not color.path.is_file():
+            all_ok = False
+            print(f"    ✗ {task.id} → {garment.slug} / {task.color} / "
+                  f"{(color.path if color else 'None')}")
+    check("每个任务都能拿到本款式的参考图", all_ok)
+    check("两款颜色确实不相交", not (set(tee_colors) & hoodie_labels), ",".join(tee_colors))
 
     asyncio.run(run_job(bench, job))
     check("任务完成", job.status in {"done", "partial"}, job.status)
