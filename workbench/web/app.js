@@ -72,6 +72,8 @@
     logSig: "",
     pendingText: "",
     typerTimer: null,
+    pendingBrief: "",
+    view: "gallery",
   };
 
   /* --------------------------------------------------------------- helpers */
@@ -469,6 +471,11 @@
     }
     const deep = params.get("job");
     if (deep) watchJob(deep);
+    if (location.hash === "#logs") switchView("logs");
+    window.addEventListener("hashchange", () => {
+      if (location.hash === "#logs") switchView("logs");
+      else if (location.hash === "#gallery") switchView("gallery");
+    });
     updateSummary();
     if (params.get("panel") === "prompt") showPrompt();
   }
@@ -925,6 +932,9 @@
     $("progressStats").textContent =
       `运行 ${stats.running} · 失败 ${stats.failed}${job.error ? ` · ${job.error}` : ""}`;
 
+    if ($("galleryCount")) {
+      $("galleryCount").textContent = String(done).padStart(2, "0");
+    }
     $("cancelBtn").hidden = TERMINAL.includes(job.status);
     $("retryBtn").hidden = !(stats.failed > 0);
     $("downloadBtn").hidden = !job.has_zip;
@@ -1493,6 +1503,11 @@
     }
     $("harnessApply").disabled = true;
     openDrawer("harness");
+    if (state.pendingBrief) {
+      $("harnessInput").value = state.pendingBrief;
+      state.pendingBrief = "";
+      $("harnessInput").focus();
+    }
   }
 
   async function streamHarness(payload) {
@@ -1726,6 +1741,8 @@
     $("startBtn").addEventListener("click", () => {
       const reason = startBlockedReason();
       if (reason) { toast("bad", reason); return; }
+      const brief = ($("briefInput") ? $("briefInput").value : "").trim();
+      state.pendingBrief = brief;
       openHarness("intake", []);
     });
     $("previewBtn").addEventListener("click", showPrompt);
@@ -1846,11 +1863,12 @@
       }
       const dl = event.target.closest("[data-dl]");
       if (dl && dl.getAttribute("aria-disabled") === "true") event.preventDefault();
-      // 点图看原图（网格里只加载缩略图，大图按需打开）
+      // 点图看大图：星雾灯箱（原图尺寸，可下载）
       const shot = event.target.closest(".cardimg .shot");
       const card = shot && shot.closest(".cardimg");
       if (card && card.dataset.full) {
-        window.open(card.dataset.full, "_blank", "noopener");
+        const name = card.querySelector(".meta .name");
+        openLightbox(card.dataset.full, name ? `${name.textContent} · 成品原图` : "成品原图");
       }
     });
 
@@ -1862,6 +1880,7 @@
       if (!$("accountsDrawer").hidden) hideAccounts();
     });
 
+    bindAurora();
     bindMotion();
 
     // 切回标签页时立刻追一次进度（后台是完全不轮询的）
@@ -1873,6 +1892,167 @@
       if (state.jobId && !state.pollTimer) watchJob(state.jobId, state.job || null);
       if (state.session && state.session.admin) refreshCacheInfo();
     });
+  }
+
+  /* ------------------------------------------------------------ 星雾交互 7.0 */
+  function switchView(name) {
+    const which = name === "logs" ? "logs" : "gallery";
+    state.view = which;
+    const gallery = $("galleryPane");
+    const logs = $("logPane");
+    if (gallery) gallery.hidden = which !== "gallery";
+    if (logs) logs.hidden = which !== "logs";
+    document.querySelectorAll("[data-view]").forEach((btn) => {
+      const on = btn.dataset.view === which;
+      if (btn.classList.contains("view-tab")) btn.classList.toggle("active", on);
+      else if (btn.classList.contains("toplinks") || btn.closest(".toplinks")) btn.classList.toggle("current", on);
+      else if (btn.classList.contains("nav-icon")) btn.classList.toggle("on", on);
+    });
+    try {
+      const next = `${location.pathname}${location.search}${which === "logs" ? "#logs" : ""}`;
+      history.replaceState(null, "", next);
+    } catch (_) { /* ignore */ }
+    if (which === "logs") loadHistory();
+  }
+
+  function openLightbox(url, title) {
+    const dialog = $("lightbox");
+    if (!dialog) { window.open(url, "_blank", "noopener"); return; }
+    $("largeImage").src = url;
+    $("lightboxTitle").textContent = title || "成品大图";
+    const link = $("sampleDownload");
+    if (link) link.href = `${url}${url.includes("?") ? "&" : "?"}download=true`;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }
+
+  const BRIEF_IDEAS = [
+    "图案必须原样不动，只换面料底色，保留印花颗粒感。",
+    "背景保持干净纯色，光线柔和自然，电商棚拍质感。",
+    "整体提亮半档，保留人物与构图，不要改脸。",
+    "每个颜色一套独立的印花配色，别复用同一张图。",
+  ];
+
+  function bindAurora() {
+    // 视图切换（顶栏 / 左侧图标栏 / 画布标签共用 data-view）
+    document.querySelectorAll("[data-view]").forEach((btn) =>
+      btn.addEventListener("click", () => switchView(btn.dataset.view))
+    );
+
+    // 上传：点击整块 drop / 图标栏 / 键盘 Enter 都走同一个 input
+    const dropZone = $("drop");
+    if (dropZone) {
+      dropZone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          $("fileInput").click();
+        }
+      });
+    }
+
+    const upload = $("railUpload");
+    if (upload) upload.addEventListener("click", () => $("fileInput").click());
+    const chat = $("railChat");
+    if (chat) chat.addEventListener("click", () => $("openHarnessBtn").click());
+    const usage = $("railUsage");
+    if (usage) usage.addEventListener("click", () => showAccounts());
+    const avatarBtn = $("railAvatar");
+    if (avatarBtn) {
+      avatarBtn.addEventListener("click", () => {
+        const who = state.session ? (state.session.display || state.session.account) : "未登录";
+        toast("ok", `${who} · 右上角 × 可退出登录`);
+      });
+    }
+    // 顶栏的「账号用量 / 管理后台」按权限显示，图标栏跟着同步
+    const syncRail = () => {
+      const adminHidden = $("adminLink") ? $("adminLink").hidden : true;
+      const usageHidden = $("accountsBtn") ? $("accountsBtn").hidden : true;
+      if ($("railAdmin")) $("railAdmin").hidden = adminHidden;
+      if ($("railUsage")) $("railUsage").hidden = usageHidden;
+      const name = $("whoName") ? $("whoName").textContent.trim() : "";
+      if (avatarBtn && name) avatarBtn.textContent = name.slice(0, 1).toUpperCase();
+    };
+    ["adminLink", "accountsBtn", "whoChip"].forEach((id) => {
+      const el = $(id);
+      if (el && typeof MutationObserver !== "undefined") {
+        new MutationObserver(syncRail).observe(el, { attributes: true, attributeFilter: ["hidden"] });
+      }
+    });
+    syncRail();
+
+    // composer：快捷灵感 + 换一个灵感 + Ctrl/Cmd+Enter 开工
+    const chips = $("briefChips");
+    if (chips) {
+      chips.innerHTML = BRIEF_IDEAS.slice(0, 3).map((text, index) =>
+        `<button class="prompt-chip" type="button" data-brief="${index}">${esc(text.slice(0, 8))}…</button>`
+      ).join("");
+      chips.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-brief]");
+        if (!btn) return;
+        const input = $("briefInput");
+        input.value = BRIEF_IDEAS[Number(btn.dataset.brief)];
+        input.focus();
+      });
+    }
+    let ideaIndex = 0;
+    const random = $("randomBrief");
+    if (random) {
+      random.addEventListener("click", () => {
+        const input = $("briefInput");
+        input.value = BRIEF_IDEAS[ideaIndex++ % BRIEF_IDEAS.length];
+        input.focus();
+        toast("ok", "灵感已填入，可以继续改");
+      });
+    }
+    const brief = $("briefInput");
+    if (brief) {
+      brief.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          $("startBtn").click();
+        }
+      });
+    }
+    const direct = $("directStartBtn");
+    if (direct) {
+      direct.addEventListener("click", async () => {
+        const reason = startBlockedReason();
+        if (reason) { toast("bad", reason); return; }
+        await withLoading(direct, () => createJob(""), "提交中…");
+      });
+    }
+
+    const feishuHistory = $("feishuHistoryBtn");
+    if (feishuHistory) feishuHistory.addEventListener("click", () => openFeishu());
+
+    // 灯箱
+    const dialog = $("lightbox");
+    if (dialog) {
+      const close = $("closeModal");
+      if (close) close.addEventListener("click", () => dialog.close());
+      dialog.addEventListener("click", (event) => {
+        if (event.target !== dialog) return;
+        const rect = dialog.getBoundingClientRect();
+        const out = event.clientX < rect.left || event.clientX > rect.right
+          || event.clientY < rect.top || event.clientY > rect.bottom;
+        if (out) dialog.close();
+      });
+    }
+
+    // 鼠标跟随光斑（只在精细指针 + 未开启减弱动效时）
+    if (window.matchMedia("(pointer: fine)").matches
+      && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      let waiting = false;
+      document.addEventListener("pointermove", (event) => {
+        if (waiting) return;
+        waiting = true;
+        requestAnimationFrame(() => {
+          document.documentElement.style.setProperty("--mx", `${event.clientX}px`);
+          document.documentElement.style.setProperty("--my", `${event.clientY}px`);
+          waiting = false;
+        });
+      });
+    }
   }
 
   /* ------------------------------------------------------- 视觉动效（5.0） */
