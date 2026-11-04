@@ -149,6 +149,11 @@ class Job:
                     f"/api/jobs/{self.id}/thumb/{task.id}?w=520&v={self._task_version(task) or 0}"
                     if task.out else None
                 )
+                # 点开「大图」用 1600 宽的 WebP（约 200KB），要看原图再点下载
+                data["preview"] = (
+                    f"/api/jobs/{self.id}/thumb/{task.id}?w=1600&v={self._task_version(task) or 0}"
+                    if task.out else None
+                )
                 items.append(data)
             payload["tasks"] = items
         if with_log:

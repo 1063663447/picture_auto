@@ -459,16 +459,35 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/api/jobs")
     async def list_jobs(request: Request):
-        return {"ok": True, "jobs": wb(request).list_jobs()}
+        bench = wb(request)
+        jobs = bench.list_jobs()
+        # 列表也用 ETag：内容没变就 304，轮询历史几乎不花流量
+        etag = 'W/"jobs-%d-%d"' % (len(jobs), int(sum(j.get("updated_at") or 0 for j in jobs)))
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+        return JSONResponse(
+            {"ok": True, "jobs": jobs},
+            headers={"ETag": etag, "Cache-Control": "no-cache"},
+        )
 
     @app.get("/api/jobs/{job_id}")
     async def get_job(request: Request, job_id: str, prompts: bool = False):
         job = wb(request).get_job(job_id)
+        payload = job.as_dict(with_tasks=True, with_log=True, with_prompts=prompts)
+        # 轮询省流量：任务没变化时回 304（浏览器只收几百字节响应头，不收正文）
+        stats = payload["stats"]
+        signature = (
+            f"{job_id}-{int(job.updated_at * 1000)}-{stats['done']}-{stats['failed']}"
+            f"-{stats['running']}-{stats['pending']}-{int(prompts)}"
+        )
+        etag = f'W/"{signature}"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
         # 默认不带提示词（每条 3~4KB，轮询时纯浪费流量）；需要时加 ?prompts=true
-        return {
-            "ok": True,
-            "job": job.as_dict(with_tasks=True, with_log=True, with_prompts=prompts),
-        }
+        return JSONResponse(
+            {"ok": True, "job": payload},
+            headers={"ETag": etag, "Cache-Control": "no-cache"},
+        )
 
     @app.post("/api/jobs/{job_id}/start")
     async def start_job(request: Request, job_id: str):
@@ -765,9 +784,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
     # ------------------------------------------------------- 飞书历史/回拉 --
     @app.get("/api/feishu/records")
     async def feishu_records(
-        request: Request, limit: int = 200, job_id: str = "", color: str = ""
+        request: Request, limit: int = 200, job_id: str = "", color: str = "", links: bool = False
     ):
-        """读飞书多维表格里的历史成品记录（Render 重启后也能看到）。"""
+        """读飞书多维表格里的历史成品记录（Render 重启后也能看到）。
+
+        `links=true` 时额外返回 `download_url`（飞书签发的临时直链）——
+        浏览器直接找飞书要图，**不经过 Render**，打包/逐张下载都不吃免费流量。
+        """
         bench = wb(request)
         cfg = feishu.load_config(bench.config, bench.env)
         ok, reason = cfg.ready()
@@ -782,10 +805,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 cfg, limit=max(1, min(500, limit)), job_id=job_id, color=color
             ),
         )
+        if links:
+            tokens = [str(r.get("file_token") or "") for r in records]
+            try:
+                mapping = await loop.run_in_executor(
+                    None, lambda: feishu_export.tmp_download_urls(cfg, tokens)
+                )
+            except Exception as exc:  # noqa: BLE001 - 拿不到直链就只给打包
+                mapping = {}
+                print(f"[feishu] 直链获取失败：{exc}", flush=True)
+            for record in records:
+                record["download_url"] = mapping.get(str(record.get("file_token") or ""), "")
         return {
             "ok": True,
             "count": len(records),
             "records": records,
+            "links": bool(links),
             "table": f"https://feishu.cn/base/{cfg.app_token}?table={cfg.table_id}",
         }
 
@@ -924,7 +959,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         """列表用缩略图（WebP）。原图动辄 3~6MB，缩略图只有几十 KB —— 省 Render 出口流量。"""
         bench = wb(request)
         path = bench.image_path(job_id, task_id)
-        width = max(120, min(1200, int(w or 520)))
+        width = max(120, min(2400, int(w or 520)))
         thumb_path = await asyncio.to_thread(bench.thumbnail_path, job_id, task_id, width)
         if thumb_path is None:
             return FileResponse(path, headers={"Cache-Control": "private, max-age=600"})

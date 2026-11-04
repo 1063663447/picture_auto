@@ -125,6 +125,38 @@ def _post(url: str, token: str, payload: dict) -> dict:
         raise RuntimeError(f"飞书查询失败 HTTP {exc.code}: {body[:200]}") from exc
 
 
+def tmp_download_urls(cfg: FeishuConfig, file_tokens: list[str]) -> dict[str, str]:
+    """把 file_token 换成飞书签发的临时下载直链（浏览器直接下载，不经过 Render，省流量）。"""
+    tokens = [t for t in dict.fromkeys(file_tokens) if t]
+    if not tokens:
+        return {}
+    client = FeishuBitable(cfg)
+    result: dict[str, str] = {}
+    for start in range(0, len(tokens), 50):
+        chunk = tokens[start : start + 50]
+        # 注意：这个接口要求 file_tokens **重复传参**（file_tokens=a&file_tokens=b），
+        # 用逗号拼成一个值会返回空数组（实测）。
+        query = urllib.parse.urlencode([("file_tokens", t) for t in chunk])
+        url = f"{BASE}/drive/v1/medias/batch_get_tmp_download_url?{query}"
+        request = urllib.request.Request(url)
+        request.add_header("Authorization", f"Bearer {client.token()}")
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                import json as _json
+
+                payload = _json.loads(response.read() or b"{}")
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(
+                f"飞书直链获取失败 HTTP {exc.code}: {exc.read().decode('utf-8', 'replace')[:200]}"
+            ) from exc
+        for item in (payload.get("data") or {}).get("tmp_download_urls") or []:
+            token_ = str(item.get("file_token") or "")
+            link = str(item.get("tmp_download_url") or "")
+            if token_ and link:
+                result[token_] = link
+    return result
+
+
 def download_attachment(cfg: FeishuConfig, file_token: str) -> bytes:
     client = FeishuBitable(cfg)
     url = f"{BASE}/drive/v1/medias/{urllib.parse.quote(file_token)}/download"

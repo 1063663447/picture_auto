@@ -322,8 +322,10 @@
     </div>
     <div class="drawer-actions">
       <button class="btn btn-ghost" id="feishuReload" type="button">刷新</button>
-      <button class="btn btn-primary" id="feishuExport" type="button" disabled>打包下载 ZIP</button>
+      <button class="btn btn-primary" id="feishuExport" type="button" disabled
+              title="打包在服务器上完成，会消耗 Render 流量；想省流量请用每行的「直链」">打包下载 ZIP</button>
     </div>
+    <p class="tip">每行右侧「直链」= 浏览器直接从飞书下载，不经过本服务器（省流量）；打包 ZIP 会在服务器上合并，按原图大小计流量。</p>
   </div>
 </aside>
 
@@ -348,7 +350,7 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/imgcache.js?v=5.7.0"></script>
-<script src="/app.js?v=5.7.0"></script>
+<script src="/imgcache.js?v=5.8.1"></script>
+<script src="/app.js?v=5.8.1"></script>
 </body>
 </html>

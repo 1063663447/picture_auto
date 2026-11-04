@@ -62,6 +62,8 @@
     streamBubble: null,
     session: null,
     syncingJob: "",
+    pollStartedAt: 0,
+    pricingAt: 0,
     accountsData: null,
     feishuRecords: [],
     feishuSelected: new Set(),
@@ -625,6 +627,7 @@
         }
       }
       state.usage = data.usage;
+      state.pricingAt = Date.now();
       renderUsage();
       renderModelLabels();
       updateSummary();
@@ -760,9 +763,15 @@
   }
 
   /* ----------------------------------------------------------------- watch */
+  // 轮询策略（省 Render 流量）：
+  //  - 服务端 ETag + 304：任务没变化时只传响应头，几乎不花流量
+  //  - 标签页在后台就**停轮询**，切回来立刻拉一次
+  //  - 任务跑得久就逐步拉长间隔（1.2s → 2s → 3s）
+  //  - 跑完后不再轮询
   function watchJob(jobId, seed) {
     state.jobId = jobId;
     state.selected = new Set();
+    state.pollStartedAt = Date.now();
     try {
       const url = new URL(location.href);
       url.searchParams.set("job", jobId);
@@ -771,23 +780,29 @@
     if (state.pollTimer) clearTimeout(state.pollTimer);
     // POST 的响应里已经带完整任务列表 → 先渲染一帧，别让用户干等第一次轮询
     if (seed && seed.id === jobId) renderJob(seed);
+
     const tick = async () => {
       if (!state.jobId) return;
+      if (document.hidden) {          // 后台不请求，切回来由 visibilitychange 触发
+        state.pollTimer = null;
+        return;
+      }
       let delay = 1200;
       try {
         const data = await api(`/api/jobs/${state.jobId}`);
         renderJob(data.job);
         if (TERMINAL.includes(data.job.status)) {
           loadHistory();
-          loadPricing();
+          maybeLoadPricing();
           state.pollTimer = null;
           return;
         }
-        // 任务多 / 页面在后台时降低轮询频率，别让渲染和网络互相抢
         const total = (data.job.stats || {}).total || 0;
-        if (document.hidden) delay = 5000;
-        else if (total > 12) delay = 2200;
+        const elapsed = (Date.now() - (state.pollStartedAt || Date.now())) / 1000;
+        if (total > 12) delay = 2400;
         else if (total > 6) delay = 1600;
+        if (elapsed > 60) delay = Math.max(delay, 2000);
+        if (elapsed > 180) delay = Math.max(delay, 3000);
       } catch (err) {
         $("jobStage").textContent = `读取任务失败：${err.message}`;
         delay = 2500;
@@ -795,6 +810,13 @@
       state.pollTimer = setTimeout(tick, delay);
     };
     tick();
+  }
+
+  // 价格/用量不需要每次任务结束都刷（飞书那边有 60s 缓存，刷了也不省钱）
+  function maybeLoadPricing(force = false) {
+    const now = Date.now();
+    if (!force && state.pricingAt && now - state.pricingAt < 45000) return;
+    loadPricing();
   }
 
   function renderJob(job) {
@@ -993,7 +1015,7 @@
         }
         entry.thumb = thumbUrl;
         entry.el.classList.add("settled");
-        entry.el.dataset.full = task.thumb || "";
+        entry.el.dataset.full = task.preview || task.thumb || "";
         loadThumb(entry, img, thumbUrl, job.id, `${task.id}@small`);
       }
     } else if (entry.thumb) {
@@ -1155,7 +1177,7 @@
     const box = $("feishuList");
     box.innerHTML = `<p class="tip" style="padding:6px 2px">正在从飞书读取…</p>`;
     try {
-      const data = await api("/api/feishu/records?limit=200");
+      const data = await api("/api/feishu/records?limit=200&links=true");
       state.feishuRecords = data.records || [];
       $("feishuSub").textContent = `${data.count} 条记录 · ${data.table || ""}`;
       renderFeishuRecords();
@@ -1177,15 +1199,21 @@
     }
     for (const record of rows) {
       const selected = state.feishuSelected.has(record.record_id) ? "checked" : "";
-      const row = document.createElement("label");
+      const row = document.createElement("div");
       row.className = "frow" + (selected ? " sel" : "");
       const has = record.attachment_count > 0;
       const when = record.time ? fmtTime(Math.floor(record.time / 1000)) : "";
       const money0 = record.amount === null || record.amount === undefined
         ? "" : `¥${Number(record.amount).toFixed(3)}`;
+      // 直链：浏览器直接找飞书要图，不经过服务器（不花 Render 流量）
+      const direct = record.download_url
+        ? `<a class="badge ok" href="${esc(record.download_url)}" target="_blank" rel="noopener"
+              title="飞书直链下载（不经过服务器）">直链</a>`
+        : "";
       row.innerHTML = `
         <input type="checkbox" data-record="${esc(record.record_id)}" ${selected} ${has ? "" : "disabled"} />
         <span class="grow">${esc(record.name)} · ${esc(record.model || "")} ${esc(money0)}</span>
+        ${direct}
         <span class="badge ${has ? "ok" : "no"}">${has ? "有图" : "无图"}</span>
         <span class="badge">${esc(when)}</span>`;
       row.querySelector("input").addEventListener("change", (event) => {
@@ -1643,7 +1671,7 @@
     $("batchReworkBtn").addEventListener("click", () => openHarness("rework", [...state.selected]));
     $("batchExportBtn").addEventListener("click", exportSelection);
     $("usageChip").addEventListener("click", async () => {
-      await loadPricing();
+      await loadPricing();      // 用户主动点，强制刷新一次用量
       if (!state.usage) return;
       const today = state.usage.today || {};
       const total = state.usage.total || {};
@@ -1753,6 +1781,16 @@
     });
 
     bindMotion();
+
+    // 切回标签页时立刻追一次进度（后台是完全不轮询的）
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        if (state.pollTimer) { clearTimeout(state.pollTimer); state.pollTimer = null; }
+        return;
+      }
+      if (state.jobId && !state.pollTimer) watchJob(state.jobId, state.job || null);
+      if (state.session && state.session.admin) refreshCacheInfo();
+    });
   }
 
   /* ------------------------------------------------------- 视觉动效（5.0） */
