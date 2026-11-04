@@ -53,6 +53,6 @@ if errorlevel 1 (
 )
 
 rem ---- 3. 启动工作台 ----
-%PY% serve.py %*
+%PY% serve.py --open %*
 if errorlevel 1 pause
 endlocal

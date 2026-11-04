@@ -1,6 +1,11 @@
 # Render Blueprint（放在仓库根目录，Render 默认就在这里找）
 #
-# 部署：Render → New → Blueprint → 选仓库 1063663447/picture_auto → Apply
+# ⚠️ 已停用（2026-11）：工作台只跑本地，双击 workbench\run.bat 即可。
+#    线上服务 srv-dbkok1nf3r2c73fggbt0 已 suspend、autoDeploy 已关，git push 不会触发重建。
+#    需要恢复：Render 控制台点 Resume，或 POST /v1/services/srv-dbkok1nf3r2c73fggbt0/resume，
+#    然后把下面的 autoDeploy 改回 true。
+#
+# 原部署：Render → New → Blueprint → 选仓库 1063663447/picture_auto → Apply
 # 然后在 Environment 填 TERRA_API_KEY / DEEPSEEK_API_KEY / FEISHU_APP_ID / FEISHU_APP_SECRET
 # （sync: false = 不写进仓库，控制台填）
 #
@@ -17,7 +22,7 @@ services:
     dockerfilePath: ./workbench/deploy/Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
-    autoDeploy: true
+    autoDeploy: false
     envVars:
       - key: WORKBENCH_HOST
         value: 0.0.0.0

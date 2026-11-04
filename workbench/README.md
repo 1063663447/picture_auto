@@ -1,34 +1,61 @@
-# 服装改款换色工作台
+# 生图工作台（本地版）
 
 把 `apparel-style-recolor`（原本在 codex/GPT 上按对话跑）封装成**本地工作台 + 第三方生图接口多并发**的生产线：
 上传一批原图 → 选款式和颜色 → 自动拆成 N×M 个任务并发调用生图接口 → 失败自动重试 → 按 skill 规则校验、压到 2MB 以内并打包 ZIP。
 
 ```
-原图 2 张 × 短袖 10 色 = 20 个任务 → 并发 6 → 约 3~4 分钟出 20 张成品 + 1 个 ZIP
+原图 2 张 × 23 索罗娜短袖 10 色 = 20 个任务 → 并发 6 → 约 3~4 分钟出 20 张成品 + 1 个 ZIP
 ```
 
+> **2026-11 起只跑本地，不再上云。** Render 上的实例已 `suspended`、`autoDeploy` 已关（push 不会再触发重建），
+> 需要重新上线在 Render 控制台点 Resume 即可，代码和 `deploy/` 脚本都还在。
+
 - **skill 仍是唯一事实来源**：工作台启动时解析 `SKILL.md` / `references/color-reference.md` / `assets/color-references/`，提示词、版型描述、负面约束、颜色清单、2MB 限制全部从 skill 读取。改 markdown，工作台自动跟随。
+- **款式库叠加**：《墨西哥-服装款式代号表》解析出的 10 个款式（49 色）以 `library/` 叠加在原 skill 上，原 skill 不动。
 - **不绑定某一家模型**：内置 OpenAI 兼容中转站、火山方舟、Gemini、fal.ai、自定义 JSON 五种适配器，换接口只改 `config.json`。
 - **为批量而生**：任务级并发、RPM 节流、指数退避重试、单任务超时、结果有效性校验、失败单独重试、随时取消、历史任务可回溯下载。
+- **成品落本地 + 飞书留痕**：成品图存 `data/jobs/`，同时（压缩后）写进飞书多维表格，换机/重装也能从飞书回拉。
 
 ---
 
-## 1. 快速开始（Windows）
+## 0. 本地启动（默认方式）
 
-```bat
-:: 双击也行，或用命令行
-run.bat
+双击 **`run.bat`**（或命令行 `python serve.py --open`）：
+
+1. 自动找 Python → 缺依赖就装 `requirements.txt` → 启动服务 → **自动打开浏览器**；
+2. 地址 `http://127.0.0.1:8787`，登录用飞书「账号」表里的账号（默认 `admin / Asd123456.`）；
+3. 应急入口：`http://127.0.0.1:8787/?token=<config.json 里的 auth_token>`（机器访问/忘记密码时用）；
+4. 关掉命令行窗口即停止服务；换端口 `python serve.py --port 8899`。
+
+启动时会打印一段清单，方便确认路径对不对：
+
+```
+生图工作台（本地）
+地址    : http://127.0.0.1:8787
+应急口令: http://127.0.0.1:8787/?token=...
+登录    : 飞书「账号」表的账号（默认 admin / Asd123456.）
+skill   : E:\picture_auto\apparel-style-recolor
+款式库  : library
+数据    : E:\picture_auto\workbench\data（成品、日志、本地缓存都在这）
+飞书    : 已接入（app_token ...）
 ```
 
-`run.bat` 会自动：找 Python → 缺依赖时装 `requirements.txt` → 启动服务 → 打印地址。
-浏览器打开 **http://127.0.0.1:8787** 即是工作台。
+本机数据都在 `workbench/data/`（成品、日志、用量、缩略图/压缩版缓存）；磁盘涨了用：
 
-手工方式：
+```powershell
+python tools/cleanup_local_data.py --days 30 --dry-run   # 预览
+python tools/cleanup_local_data.py --days 30             # 删 30 天前的任务
+python tools/cleanup_local_data.py --derived-only         # 只清缩略图/压缩版缓存
+```
+
+---
+
+## 1. 手工安装（首次/换机）
 
 ```powershell
 python -m pip install -r requirements.txt
-copy .env.example .env        # 然后填入你的 Key
-python serve.py               # --port 8899 可换端口
+copy .env.example .env        # 然后填入你的 Key（TERRA / DEEPSEEK / FEISHU）
+python serve.py               # --open 自动开浏览器，--port 8899 换端口
 ```
 
 先用 `本地模拟（不发请求）` 这个接口跑一遍，确认上传、并发、命名、ZIP 都正常，再接真实接口。
@@ -39,16 +66,32 @@ python serve.py               # --port 8899 可换端口
 
 ---
 
-## 1.5 部署到公网（Cloudflare）
+## 1.5 可选：临时分享给别人看（仍然只跑本机）
 
-`powershell
+不想上云、但需要让不在同一台电脑上的人看一眼时，用隧道把**本机服务**临时暴露出去：
+
+```powershell
 .\deploy\tunnel.ps1          # 本地服务 + Cloudflare 隧道，打印 https://xxx.trycloudflare.com
-`
+```
 
-- 访问要**账号登录**（飞书「账号」表，见 3 节）；`config.json → server.auth_token` 保留为机器/应急口令，首次访问可用 ?token=... 换 Cookie。
-- 只有入口在 Cloudflare 上，计算仍在本机（FastAPI + Pillow + 本地任务目录没法跑在 Workers 里，原因见 deploy/cloudflare.md）。
-- 记录库 / 定价 / 账号都在**飞书多维表格**（三张表）：python -m skillbridge.feishu --check / --init-fields，配置见 [deploy/feishu.md](deploy/feishu.md)。
-- 详见 [deploy/cloudflare.md](deploy/cloudflare.md)。
+- 访问要**账号登录**（飞书「账号」表，见 3 节）；`config.json → server.auth_token` 保留为机器/应急口令，首次访问可用 `?token=...` 换 Cookie。
+- **计算、存储、成品图全在这台机器上**，隧道只转发 HTTP；关掉窗口即失效，地址每次重开都会变。
+- 记录库 / 定价 / 账号在**飞书多维表格**（三张表），换机也不丢：`python -m skillbridge.feishu --check`，配置见 [deploy/feishu.md](deploy/feishu.md)。
+- 长期给别人用就别开隧道了，让他自己 `git clone` 后双击 `run.bat`，各自跑本地、共用同一张飞书表。
+
+---
+
+## 1.6 已停用的云端部署（留档，可恢复）
+
+早先试过 Render 常驻（`deploy/render.yaml` + `deploy/Render` 脚本），现已停用：
+
+- Render 服务 `srv-dbkok1nf3r2c73fggbt0` 已 `suspended`，`autoDeploy` 已设为 `no` —— **现在 `git push` 不会触发重建**。
+- 站点 `https://apparel-recolor-workbench.onrender.com` 已不可访问（返回 503/suspended）。
+- 要恢复：Render 控制台点 **Resume**，或调 API `POST /v1/services/srv-dbkok1nf3r2c73fggbt0/resume`，再 `PATCH {"autoDeploy":"yes"}`。
+- 云端不再使用的原因：免费实例有月出口流量上限（图片最费），冷启动 30s+，且 `data/` 会随重启丢失；本地跑更快、无流量上限、成品留在自己盘上。
+- 相关文件（`deploy/Dockerfile`、`render.yaml`、`deploy/render_deploy.py` 等）保留不删，需要时还能一键回到云上。
+
+> 之前那份「Cloudflare Workers / HF Spaces」方案也一并搁置，原因见 [deploy/cloudflare.md](deploy/cloudflare.md)。
 
 ---
 
@@ -242,8 +285,9 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 
 ### 历史与成品：以飞书为准
 
-- 每个成品一条记录，**成品图 / 参考图**存在记录的附件字段里（见 `deploy/feishu.md`）。- 界面「历史任务」卡片右上角 **飞书历史 · 打包下载**：列出飞书里的历史成品 → 勾选 → **打包下载 ZIP**
-  （图片是从飞书附件实时下载的，不依赖服务器磁盘，所以 Render 重启丢 `data/` 也不影响）。
+- 每个成品一条记录，**成品图 / 参考图**存在记录的附件字段里（见 `deploy/feishu.md`）。
+- 界面「历史任务」卡片右上角 **飞书历史 · 打包下载**：列出飞书里的历史成品 → 勾选 → **打包下载 ZIP**
+  （图片是从飞书附件实时下载的，不依赖本机 `data/`，所以清理了本地任务目录、甚至换台电脑，历史成品照样能拉回来）。
 - 接口：`GET /api/feishu/records?limit=200&job_id=&color=`、`POST /api/feishu/export {record_ids:[...]}`。
 
 ### 开工前先问需求（DeepSeek agent · 对话框 + 流式输出）
@@ -285,8 +329,7 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 3. 两种收尾：
    - **按默认生成** → 不带任何额外约束，直接用 skill 默认提示词生成；
    - **按分析结果生成** → 把你的需求作为 OPERATOR REQUIREMENTS 追加在默认提示词末尾（skill 的所有硬约束仍然生效）。
-4. 没有在线模型也能跑：默认走本地分析师（
-efiner=local，确定性规则）；若在 config.json → defaults.harness.llm 配了可用的 chat 模型，则改为流式转发模型输出，失败自动降级。
+4. 没有在线模型也能跑：默认走本地分析师（`refiner=local`，确定性规则）；若在 `config.json → defaults.harness` 配了可用的模型，则改为流式转发模型输出，失败自动降级。
 
 ### 改图返工（对话框 + 流式）
 
@@ -294,8 +337,7 @@ efiner=local，确定性规则）；若在 config.json → defaults.harness.llm 
 
 1. 说明要改几张，等你写需求（或点快捷标签）；
 2. harness 流式输出「会动什么 / 锁死什么」，并给出**将提交的完整提示词**（以该成品为参考图的 REVISION REQUEST）；
-3. 确认返工 → 提交 kind=rework 的独立任务（
-efiner=harness，提示词即上一步的成品），只重跑选中的那几张，结果可继续下载 / 再改图 / 批量导出。
+3. 确认返工 → 提交 kind=rework 的独立任务（`refiner=harness`，提示词即上一步的成品），只重跑选中的那几张，结果可继续下载 / 再改图 / 批量导出。
 
 ## 4. 生成方式
 
@@ -304,9 +346,9 @@ efiner=harness，提示词即上一步的成品），只重跑选中的那几张
 
 > 代码里仍保留 `two_phase`（两段式）与 `recolor_only`（仅换色）两种模式，需要时用命令行 `--mode two_phase|recolor_only` 调用，界面不暴露。
 
-### 流量节流（Render 免费额度）
+### 流量与响应速度（本地也是一样省）
 
-Render 免费实例有**每月出口流量上限**，这个工作台最费流量的就是图片。已做的节流（5.7）：
+本机跑虽然在 same-host，但省流量=省**等待时间**（尤其点开历史、批量下载时）：
 
 | 手段 | 效果（实测） |
 |---|---|
@@ -355,7 +397,7 @@ ZIP 原图           532 KB  vs  ZIP JPG 压缩 418 KB
 | 轮询间隔随任务变长而拉长（1.2s → 2s → 3s），跑完即停 | 10 分钟长任务从 ~400 次请求降到 ~120 次 |
 | 跑完不再顺手刷 `/api/pricing`（45s 内复用） | 少一次飞书往返 |
 
-各操作的真实流量账（都走 Render，除了「直链」）：
+各操作的真实流量账（本地也照样省内存和渲染时间）：
 
 | 操作 | 消耗 | 说明 / 省法 |
 |---|---|---|
@@ -363,7 +405,7 @@ ZIP 原图           532 KB  vs  ZIP JPG 压缩 418 KB
 | 点开大图 | **~200 KB/张** | 现在打开的是 `w=1600` 的 WebP（不是原图）；同一张再点走缓存 |
 | 下载原图 | **原图大小** | 1024×1536 PNG ≈ 1~2MB；2048² ≈ 4~6MB；3072² ≈ 8~12MB。只有点了下载才会花 |
 | 打包 ZIP（本服务器任务） | **= 选中原图之和** | PNG 已压缩，ZIP 不会再小；少选几张更省 |
-| 飞书历史「打包 ZIP」 | 原图之和（**Feishu→Render→你**，双倍） | 改用每行的「**直链**」：浏览器直接连飞书下载，**Render 流量 0** |
+| 飞书历史「打包 ZIP」 | 原图之和（**Feishu→本机→你**，双倍） | 改用每行的「**直链**」：浏览器直接连飞书下载，**不经过本机服务** |
 | 飞书写入附件 | 压缩后 ~0.2~0.5MB/张 | 上传前压到长边 1600 / JPEG 85 |
 
 ---
@@ -592,7 +634,9 @@ python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表�
 | 图案像"贴上去"、没有布料质感 | 模型把 logo 重画成了干净矢量图：用「改图」针对那几张返工（写清材质/颗粒要求）；只换颜色的单子直接用 local 本地换色；并确认喂的是高清原图 |
 | 图案被改了（字形/字距/立体感变了） | 这是模型在“重画”logo：改用「仅换色」模式 + `input_fidelity=high`，喂原始分辨率原图；只换颜色的单子直接用 `local` 本地换色 |
 | 出图被压得很小 | 这是 skill 的 2MB 硬规则（`max_bytes` 可在 `config.json` 里调 `defaults`，或改 skill 的数值） |
-| 端口占用 | `python serve.py --port 8899` |
+| 端口占用 | `python serve.py --port 8899`（或改 `config.json → server.port`） |
+| 双击 `run.bat` 窗口一闪而过 | 在命令行里跑 `run.bat` 看报错；常见是没装 Python 或 `pip` 装依赖失败（脚本会自动退到清华镜像） |
+| 换台电脑后历史任务空了 | 正常：`data/` 是本地目录。用「历史任务 → 飞书历史」按记录回拉成品，或把旧机器的 `data/` 整个拷过来 |
 | 任务卡住 | 界面点「取消」，或重启服务（历史任务会标记为中断，可重试失败项） |
 
 ---
@@ -613,5 +657,7 @@ python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表�
 ## 13. 注意
 
 - `.env`、`data/` 属于本地私密数据（含客户原图与成品），不要提交到仓库；`.gitignore` 已忽略。
+- `data/` 会越来越大（原图 + 成品 + 缩略图/压缩版缓存）：定期跑 `python tools/cleanup_local_data.py --days 30`；
+  删本地任务不影响飞书里的记录与附件，历史成品仍可从「飞书历史 · 打包下载」拉回。
 - 原图请用你有权商用/改图的素材；接口返回的图片版权以对应服务条款为准。
 - 每次调用都计费：先用 `本地模拟` 打通流程、用小批量（1 图 × 1 色）验证接口和提示词效果，再全量跑。

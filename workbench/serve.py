@@ -1,6 +1,7 @@
-"""Start the workbench web UI.
+"""Start the workbench web UI（本地版）.
 
-    python serve.py                 # uses config.json
+    python serve.py                 # 用 config.json，默认 127.0.0.1:8787
+    python serve.py --open          # 启动后自动打开浏览器（run.bat 默认这样）
     python serve.py --port 8899
     python serve.py --config other.json
 """
@@ -10,6 +11,9 @@ from __future__ import annotations
 import argparse
 import socket
 import sys
+import threading
+import time
+import webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -21,10 +25,11 @@ from skillbridge.config import load_config, load_env  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="服装改款换色工作台")
+    parser = argparse.ArgumentParser(description="生图工作台（本地版）")
     parser.add_argument("--config", default=None, help="配置文件路径（默认 config.json）")
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
+    parser.add_argument("--open", action="store_true", help="启动后自动打开浏览器")
     parser.add_argument("--reload", action="store_true", help="开发模式：文件改动自动重载")
     args = parser.parse_args()
 
@@ -38,10 +43,8 @@ def main() -> int:
 
     config = load_config(Path(args.config) if args.config else None)
     server = config.get("server") or {}
-    # 云平台（Render/Koyeb/Cloud Run/HF Spaces 等）会注入 PORT，容器里需要监听 0.0.0.0
     env = load_env()
-    # 注意：本机可能已经有别的 PORT 环境变量（例如别的服务），所以裸 PORT 只在"部署上下文"里采用：
-    # 设了 WORKBENCH_DEPLOYED=1 或 WORKBENCH_HOST 时才算（Dockerfile 已设置）。
+    # 只有"部署上下文"才认云平台注入的 PORT（本地常常已经有别的 PORT 变量）
     deployed = bool(env.get("WORKBENCH_DEPLOYED")) or bool(env.get("WORKBENCH_HOST"))
     port = int(
         args.port
@@ -63,12 +66,39 @@ def main() -> int:
         return 2
 
     app = create_app(str(Path(args.config).resolve()) if args.config else None)
-    print("=" * 62)
-    print("  服装改款换色工作台")
-    print(f"  skill : {config['skill_root']}")
-    print(f"  数据  : {config['data_dir']}")
-    print(f"  地址  : http://{host}:{port}")
-    print("=" * 62)
+    url = f"http://{'127.0.0.1' if host in {'0.0.0.0', '::'} else host}:{port}"
+    token = str(server.get("auth_token") or "")
+    feishu = config.get("feishu") or {}
+    print("=" * 64)
+    print("  生图工作台（本地）")
+    print(f"  地址    : {url}")
+    if token:
+        print(f"  应急口令: {url}/?token={token}")
+    print("  登录    : 飞书「账号」表的账号（默认 admin / Asd123456.）")
+    print(f"  skill   : {config['skill_root']}")
+    print(f"  款式库  : {(config.get('library') or {}).get('dir') or '（未启用）'}")
+    print(f"  数据    : {config['data_dir']}（成品、日志、本地缓存都在这）")
+    print(
+        "  飞书    : "
+        + (
+            f"已接入（app_token {feishu.get('app_token')}）"
+            if feishu.get("enabled") and feishu.get("app_token")
+            else "未配置（记录只存本地）"
+        )
+    )
+    print("  说明    : 关掉这个窗口即停止；下次重新双击 run.bat 即可")
+    print("=" * 64, flush=True)
+
+    if args.open:
+        def _open() -> None:
+            time.sleep(1.6)
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+
+        threading.Thread(target=_open, daemon=True).start()
+
     uvicorn.run(app, host=host, port=port, log_level="info" if args.reload else "warning")
     return 0
 

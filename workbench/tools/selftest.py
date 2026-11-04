@@ -353,10 +353,20 @@ def main() -> int:
 
     print()
     if FAILED:
-        print(f"❌ {len(FAILED)} 项失败：{FAILED}")
+        _say(f"FAILED: {len(FAILED)} 项失败：{FAILED}", "X")
         return 1
-    print("✅ 全部通过")
+    _say("全部通过", "OK")
     return 0
+
+
+def _say(text, tag=None):
+    """控制台可能是 GBK（cmd 默认），emoji 会抛 UnicodeEncodeError 把退出码搞脏。"""
+    line = f"[{tag}] {text}" if tag else text
+    try:
+        print(line)
+    except UnicodeEncodeError:
+        enc = sys.stdout.encoding or "ascii"
+        print(line.encode(enc, "replace").decode(enc, "replace"))
 
 
 if __name__ == "__main__":
