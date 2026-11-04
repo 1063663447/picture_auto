@@ -166,6 +166,19 @@ python tools/check_web_static.py                     # 页面/脚本的 id 与�
 5. `python deploy/setup_feishu_tables.py ...` 一次建好三张表并写初始定价/管理员
 6. 把三个 `table_id` 填进 `config.json → feishu`，`python -m skillbridge.feishu --init-fields`
 
+## 同步失败怎么办（5.7）
+
+自动同步在任务跑完后于线程池里执行，**失败会写进该任务的「运行日志」**（`飞书同步异常：…` / `飞书写入失败：…`），
+同时记进 `data/feishu-pending.json`，服务重启时自动补写一次。除此之外还有两个手动入口：
+
+- 界面：跑完的任务卡右上角出现 **补写飞书** 按钮（只在还没写进去时出现），点一下就把这个任务补齐。
+- 接口：`POST /api/jobs/{任务ID}/feishu`（默认不会重复写；加 `?force=true` 强制重写）、
+  `POST /api/feishu/sync-pending`（把账本里所有待补写的一次性补完）。
+
+> 免费实例（Render）闲置会休眠，10 张图附件上传可能耗时几十秒；如果恰好被休眠打断，
+> 下次打开页面点一下「补写飞书」即可。附件上传前会压到长边 1600 / JPEG 85（3~6MB → 0.2~0.5MB），
+> 既省出口流量也明显缩短同步时间。
+
 ## 历史回拉：从飞书批量打包
 
 不需要服务器本地文件，直接以飞书为准：

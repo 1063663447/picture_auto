@@ -789,7 +789,11 @@ class Workbench:
         return None
 
     def sync_to_feishu(self, job: Job, force: bool = False) -> int:
-        """把任务写进飞书多维表格（含图片附件）；未配置就静默跳过。返回写入行数。"""
+        """把任务写进飞书多维表格（含图片附件）；未配置就静默跳过。返回写入行数。
+
+        注意：这个方法跑在线程池里（`_record_after`），异常必须自己记进 job 日志，
+        否则失败是"静默"的——之前就踩过这个坑。
+        """
         if not force and job.params.get("feishu_rows"):
             return int(job.params.get("feishu_rows") or 0)  # 已写过，别重复记账
         cfg = feishu_mod.load_config(self.config, self.env)
@@ -824,13 +828,17 @@ class Workbench:
                         continue
                     try:
                         if task.out:
-                            row["成品图"] = client.attach(root / str(task.out))
+                            row["成品图"] = client.attach(
+                                self._upload_ready(root / str(task.out), job)
+                            )
                         if task.source:
                             ref = self._color_ref_path(task.color_name, garment_slug)
                             if ref is not None and ref.is_file():
-                                row["参考图"] = client.attach(ref)
+                                row["参考图"] = client.attach(self._upload_ready(ref, job))
                         if cfg.upload_source and task.source:
-                            row["原图"] = client.attach(root / str(task.source))
+                            row["原图"] = client.attach(
+                                self._upload_ready(root / str(task.source), job)
+                            )
                     except Exception as exc:  # noqa: BLE001 - 附件失败不拦整体
                         row["备注"] = (str(row.get("备注") or "") + f" [附件失败:{exc}]")[:900]
                     if cfg.per == "job":
@@ -843,11 +851,91 @@ class Workbench:
             job.params["feishu_table"] = f"https://feishu.cn/base/{cfg.app_token}?table={cfg.table_id}"
             job.add_log(f"已写入飞书多维表格 {len(ids)} 行（含图片附件）")
             job.save()
+            self._clear_pending_sync(job.id)
             return len(ids)
         except Exception as exc:  # noqa: BLE001 - 同步失败不影响出图
             job.add_log(f"飞书写入失败：{exc}", level="warn")
             job.save()
+            self._mark_pending_sync(job.id, str(exc))
             return 0
+
+    # ------------------------------------------------------------ 附件瘦身 --
+    def _upload_ready(self, path: Path, job: Job) -> Path:
+        """上传前把图片压一压（长边 1600 / JPEG 85）：飞书那边看的是缩略图，
+        原图 3~6MB 传上去既慢又费出口流量。压缩失败就传原图。"""
+        try:
+            from PIL import Image
+
+            if not path.is_file():
+                return path
+            if path.stat().st_size <= 700 * 1024:
+                return path
+            target = (job.root or self.job_dir(job.id)) / "feishu" / f"{path.stem}.jpg"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.is_file() or target.stat().st_mtime < path.stat().st_mtime:
+                with Image.open(path) as handle:
+                    image = handle.convert("RGB")
+                    image.thumbnail((1600, 1600))
+                    image.save(target, format="JPEG", quality=85, optimize=True)
+            return target
+        except Exception:  # noqa: BLE001
+            return path
+
+    # ------------------------------------------------- 同步失败待补写（简单账本） --
+    def _pending_path(self) -> Path:
+        return Path(self.data_dir) / "feishu-pending.json"
+
+    def _pending_ids(self) -> list[str]:
+        try:
+            import json as _json
+
+            payload = _json.loads(self._pending_path().read_text(encoding="utf-8"))
+            return [str(x) for x in payload.get("jobs") or []]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _mark_pending_sync(self, job_id: str, reason: str) -> None:
+        import json as _json
+
+        ids = self._pending_ids()
+        if job_id not in ids:
+            ids.append(job_id)
+        try:
+            self._pending_path().write_text(
+                _json.dumps({"jobs": ids[-200:], "reason": reason[:200]}, ensure_ascii=False, indent=1),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def _clear_pending_sync(self, job_id: str) -> None:
+        import json as _json
+
+        ids = [x for x in self._pending_ids() if x != job_id]
+        try:
+            self._pending_path().write_text(
+                _json.dumps({"jobs": ids}, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
+        except OSError:
+            pass
+
+    def pending_sync(self) -> list[str]:
+        return self._pending_ids()
+
+    def sync_pending(self) -> int:
+        """把之前失败的同步补一遍（服务启动或手动触发）。返回成功行数。"""
+        total = 0
+        for job_id in self._pending_ids():
+            job = self.jobs.get(job_id)
+            if job is None:
+                self._clear_pending_sync(job_id)
+                continue
+            if job.params.get("feishu_rows"):
+                self._clear_pending_sync(job_id)
+                continue
+            total += self.sync_to_feishu(job, force=True)
+        return total
+
 
     def estimate_for(self, model: str, count: int, size: str | None = None) -> dict:
         return self.pricer.estimate(model, count, size or str(self.defaults().get("size") or "auto"))
@@ -1095,11 +1183,25 @@ class Workbench:
         if job is None:
             return
         # 写飞书多维表格（同步 IO，丢线程池，别堵事件循环）
+        # 线程池里抛的异常默认没人接，这里显式接住并写进 job 日志 + 待补写账本
+        def _sync() -> None:
+            if job.params.get("feishu_rows"):
+                return
+            try:
+                rows = self.sync_to_feishu(job)
+                if rows:
+                    job.add_log(f"飞书同步完成：{rows} 行")
+                    job.save()
+            except Exception as exc:  # noqa: BLE001
+                job.add_log(f"飞书同步异常：{exc}", level="warn")
+                job.save()
+                self._mark_pending_sync(job.id, str(exc))
+
         try:
             loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, self.sync_to_feishu, job)
+            loop.run_in_executor(None, _sync)
         except RuntimeError:
-            pass
+            _sync()
         try:
             entry = self.record_usage(job)
             if entry:
@@ -1175,6 +1277,28 @@ class Workbench:
                 if path.is_file():
                     return path
         raise WorkbenchError("图片不存在")
+
+    def thumbnail_path(self, job_id: str, task_id: str, width: int = 520) -> Path | None:
+        """生成/复用列表用缩略图（WebP）。失败返回 None，调用方退回原图。"""
+        try:
+            from PIL import Image
+
+            source = self.image_path(job_id, task_id)
+            target = source.parent.parent / "thumbs" / f"{Path(source.name).stem}@{width}.webp"
+            if target.is_file() and target.stat().st_mtime >= source.stat().st_mtime:
+                return target
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(source) as handle:
+                image = handle.convert("RGB")
+                if image.width > width:
+                    ratio = width / float(image.width)
+                    image = image.resize(
+                        (width, max(1, int(image.height * ratio))), Image.LANCZOS
+                    )
+                image.save(target, format="WEBP", quality=82, method=4)
+            return target
+        except Exception:  # noqa: BLE001 - 缩略图失败就让前端拿原图
+            return None
 
     def zip_path(self, job_id: str) -> Path:
         job = self.get_job(job_id)

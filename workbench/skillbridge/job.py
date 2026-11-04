@@ -113,7 +113,9 @@ class Job:
         stats["finished"] = stats["done"] + stats["skipped"]
         return stats
 
-    def as_dict(self, *, with_tasks: bool = True, with_log: bool = True) -> dict:
+    def as_dict(
+        self, *, with_tasks: bool = True, with_log: bool = True, with_prompts: bool = False
+    ) -> dict:
         stats = self.counts()
         payload = {
             "id": self.id,
@@ -134,14 +136,21 @@ class Job:
             ),
         }
         if with_tasks:
-            payload["tasks"] = [
-                {**task.as_dict(),
-                 # 图片版本号：用任务自己的完成时间（图片内容不变 → 浏览器/本地缓存可长期命中）；
-                 # 老任务没有时间戳时退回输出文件的 mtime
-                 "version": self._task_version(task),
-                 "thumb": f"/api/jobs/{self.id}/image/{task.id}" if task.out else None}
-                for task in self.tasks
-            ]
+            items = []
+            for task in self.tasks:
+                data = task.as_dict()
+                if not with_prompts:
+                    # 提示词每条 3~4KB，轮询时必须去掉：10 张图每 1.5s 拉一次会白烧几十 KB/次
+                    data.pop("prompt", None)
+                data["version"] = self._task_version(task)
+                # thumb 是原图（下载/大图用），thumb_small 是列表用的缩略图（几 MB → 几十 KB）
+                data["thumb"] = f"/api/jobs/{self.id}/image/{task.id}" if task.out else None
+                data["thumb_small"] = (
+                    f"/api/jobs/{self.id}/thumb/{task.id}?w=520&v={self._task_version(task) or 0}"
+                    if task.out else None
+                )
+                items.append(data)
+            payload["tasks"] = items
         if with_log:
             payload["log"] = self.log[-80:]
         return payload
@@ -165,7 +174,7 @@ class Job:
 
     def save(self) -> None:
         self.updated_at = time.time()
-        payload = self.as_dict(with_tasks=True, with_log=True)
+        payload = self.as_dict(with_tasks=True, with_log=True, with_prompts=True)
         payload["zip_rel"] = self.zip_rel
         payload["dir_rel"] = self.dir_rel
         target = self.path()

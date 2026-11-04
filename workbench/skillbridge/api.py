@@ -34,12 +34,21 @@ def create_app(config_path: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.wb = Workbench(config_path)
+        # 上次没写进飞书的任务，启动后补一遍（在线程里跑，别拖慢启动）
+        try:
+            asyncio.get_running_loop().run_in_executor(None, app.state.wb.sync_pending)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             yield
         finally:
             await app.state.wb.shutdown()
 
     app = FastAPI(title="服装改款换色工作台", version="1.1.0", lifespan=lifespan)
+    # 文本响应压缩（JSON/HTML/JS/CSS），图片本来就不能再压，走 Middleware 只压 text
+    from starlette.middleware.gzip import GZipMiddleware
+
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     @app.middleware("http")
     async def access_guard(request: Request, call_next):
@@ -453,9 +462,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"ok": True, "jobs": wb(request).list_jobs()}
 
     @app.get("/api/jobs/{job_id}")
-    async def get_job(request: Request, job_id: str):
+    async def get_job(request: Request, job_id: str, prompts: bool = False):
         job = wb(request).get_job(job_id)
-        return {"ok": True, "job": job.as_dict(with_tasks=True, with_log=True)}
+        # 默认不带提示词（每条 3~4KB，轮询时纯浪费流量）；需要时加 ?prompts=true
+        return {
+            "ok": True,
+            "job": job.as_dict(with_tasks=True, with_log=True, with_prompts=prompts),
+        }
 
     @app.post("/api/jobs/{job_id}/start")
     async def start_job(request: Request, job_id: str):
@@ -900,11 +913,49 @@ def create_app(config_path: str | None = None) -> FastAPI:
         path = wb(request).image_path(job_id, task_id)
         if download:
             return FileResponse(path, filename=path.name)
-        # 成品图内容不会变（版本由 URL 的 ?t= 区分），可以让浏览器长期缓存
+        # 成品图内容不会变（版本由 URL 的 ?v= 区分），可以让浏览器长期缓存
         return FileResponse(
             path,
             headers={"Cache-Control": "private, max-age=31536000, immutable"},
         )
+
+    @app.get("/api/jobs/{job_id}/thumb/{task_id}")
+    async def job_thumb(request: Request, job_id: str, task_id: str, w: int = 520):
+        """列表用缩略图（WebP）。原图动辄 3~6MB，缩略图只有几十 KB —— 省 Render 出口流量。"""
+        bench = wb(request)
+        path = bench.image_path(job_id, task_id)
+        width = max(120, min(1200, int(w or 520)))
+        thumb_path = await asyncio.to_thread(bench.thumbnail_path, job_id, task_id, width)
+        if thumb_path is None:
+            return FileResponse(path, headers={"Cache-Control": "private, max-age=600"})
+        return FileResponse(
+            thumb_path,
+            media_type="image/webp",
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
+
+    @app.post("/api/jobs/{job_id}/feishu")
+    async def job_feishu_sync(request: Request, job_id: str, force: bool = False):
+        """补写飞书：自动同步失败（或免费实例被休眠打断）时手动补一次。
+
+        默认不 force：已经写过的任务不会重复写（避免飞书里出现重复行）。
+        """
+        bench = wb(request)
+        job = bench.get_job(job_id)
+        rows = await asyncio.to_thread(bench.sync_to_feishu, job, force)
+        return {
+            "ok": True,
+            "rows": rows,
+            "already": bool(job.params.get("feishu_rows")) and not force,
+            "table": job.params.get("feishu_table") or "",
+            "pending": bench.pending_sync(),
+        }
+
+    @app.post("/api/feishu/sync-pending")
+    async def feishu_sync_pending(request: Request):
+        bench = wb(request)
+        rows = await asyncio.to_thread(bench.sync_pending)
+        return {"ok": True, "rows": rows, "pending": bench.pending_sync()}
 
     @app.get("/api/jobs/{job_id}/download")
     async def download(request: Request, job_id: str):

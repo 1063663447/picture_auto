@@ -61,6 +61,7 @@
     requirements: "",
     streamBubble: null,
     session: null,
+    syncingJob: "",
     accountsData: null,
     feishuRecords: [],
     feishuSelected: new Set(),
@@ -829,6 +830,15 @@
     $("retryBtn").hidden = !(stats.failed > 0);
     $("downloadBtn").hidden = !job.has_zip;
     if (job.has_zip) $("downloadBtn").href = job.zip;
+    // 飞书同步：跑完但没写进去时给个补写按钮
+    const syncBtn = $("feishuSyncBtn");
+    if (syncBtn) {
+      const done = TERMINAL.includes(job.status) && (stats.done + stats.skipped) > 0;
+      syncBtn.hidden = !(done && !params.feishu_rows);
+      syncBtn.textContent = job.id === state.syncingJob ? "写入中…" : "补写飞书";
+      syncBtn.disabled = job.id === state.syncingJob;
+      if (params.feishu_table) syncBtn.title = params.feishu_table;
+    }
 
     const grid = $("gridImgs");
     $("emptyState").hidden = job.tasks.length > 0;
@@ -966,8 +976,10 @@
     if (entry.state.textContent !== stateText) entry.state.textContent = stateText;
 
     // 只有真的换了图（版本变化）才动 <img>：否则进度轮询会不停重新解码
-    // 5.6：图片先落到浏览器本地（IndexedDB），之后刷新/切历史都直接读本地，不再回服务器
-    const thumbUrl = task.thumb ? `${task.thumb}?t=${taskVersion(task, job)}` : "";
+    // 5.7：网格用缩略图（几十 KB），原图只在点开大图/下载时才取
+    const thumbUrl = task.thumb
+      ? `${task.thumb_small || task.thumb}`
+      : "";
     if (thumbUrl) {
       if (entry.thumb !== thumbUrl) {
         let img = entry.shot.querySelector("img");
@@ -981,7 +993,8 @@
         }
         entry.thumb = thumbUrl;
         entry.el.classList.add("settled");
-        loadThumb(entry, img, thumbUrl, job.id, task.id);
+        entry.el.dataset.full = task.thumb || "";
+        loadThumb(entry, img, thumbUrl, job.id, `${task.id}@small`);
       }
     } else if (entry.thumb) {
       entry.shot.innerHTML = `<div class="ph">${STATUS[status] || status}</div>`;
@@ -1600,6 +1613,28 @@
     $("previewBtn").addEventListener("click", showPrompt);
     $("cancelBtn").addEventListener("click", cancelJob);
     $("retryBtn").addEventListener("click", retryJob);
+    $("feishuSyncBtn").addEventListener("click", async () => {
+      const jobId = state.jobId || (state.job && state.job.id);
+      if (!jobId) return;
+      state.syncingJob = jobId;
+      if (state.job) renderJob(state.job);
+      try {
+        const data = await api(`/api/jobs/${encodeURIComponent(jobId)}/feishu`, { method: "POST" });
+        toast(
+          data.rows ? "ok" : "bad",
+          data.rows ? `已补写 ${data.rows} 行到飞书` : "写入 0 行（检查飞书配置或权限）"
+        );
+        if (state.job) {
+          state.job.params.feishu_rows = data.rows || state.job.params.feishu_rows;
+          state.job.params.feishu_table = data.table || state.job.params.feishu_table;
+          renderJob(state.job);
+        }
+      } catch (err) {
+        toast("bad", `补写失败：${err.message}`);
+      } finally {
+        state.syncingJob = "";
+      }
+    });
     $("selAll").addEventListener("change", (event) => {
       const ready = (state.job?.tasks || []).filter((t) => t.out);
       state.selected = event.target.checked ? new Set(ready.map((t) => t.id)) : new Set();
@@ -1701,6 +1736,12 @@
       }
       const dl = event.target.closest("[data-dl]");
       if (dl && dl.getAttribute("aria-disabled") === "true") event.preventDefault();
+      // 点图看原图（网格里只加载缩略图，大图按需打开）
+      const shot = event.target.closest(".cardimg .shot");
+      const card = shot && shot.closest(".cardimg");
+      if (card && card.dataset.full) {
+        window.open(card.dataset.full, "_blank", "noopener");
+      }
     });
 
     document.addEventListener("keydown", (event) => {
