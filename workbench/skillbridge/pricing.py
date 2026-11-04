@@ -54,6 +54,7 @@ class Price:
     currency: str = "USD"
     tier: str = ""
     tiers: dict[str, float] | None = None
+    fallback: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -63,20 +64,26 @@ class Price:
             "priced": self.unit is not None,
             "tier": self.tier,
             "tiers": self.tiers,
+            "fallback": self.fallback,
+            "label": self.label(),
         }
 
     def label(self) -> str:
         if self.unit is None:
             return "未定价"
         symbol = "$" if self.currency == "USD" else ("¥" if self.currency == "CNY" else "")
-        suffix = f"/{self.tier}" if self.tiers else "/张"
-        return f"{symbol}{self.unit:g}{suffix}"
+        if self.tiers:
+            suffix = "/其他" if self.fallback else f"/{self.tier}"
+        else:
+            suffix = "/张"
+        return f"{symbol}{self.unit:.3f}{suffix}"
 
 
 class Pricer:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, currency: str = "") -> None:
         self.path = path or DEFAULT_PRICING
         self.currency = "USD"
+        self.currency_override = (currency or "").strip().upper()
         self.note = ""
         self.updated = ""
         self.tier_mp = dict(DEFAULT_TIER_MP)
@@ -94,7 +101,7 @@ class Pricer:
         except (OSError, json.JSONDecodeError):
             self.raw = {}
             return
-        self.currency = str(payload.get("currency") or "USD")
+        self.currency = self.currency_override or str(payload.get("currency") or "USD")
         self.note = str(payload.get("note") or "")
         self.updated = str(payload.get("updated") or "")
         if isinstance(payload.get("tier_mp"), dict):
@@ -122,7 +129,7 @@ class Pricer:
         models = self.parse_feishu_rows(items)
         if models:
             self.raw = models
-            self.currency = "CNY"
+            self.currency = self.currency_override or "CNY"
             self.source = "feishu"
             self.note = "价格取自飞书「模型定价」表（可人工修改）"
         self._feishu_at = time.time()
@@ -182,15 +189,18 @@ class Pricer:
             tiers = entry.get("tiers") or {}
             tiers = {str(k): float(v) for k, v in tiers.items() if v is not None}
             unit = tiers.get(tier)
+            fallback = False
             if unit is None:
                 other = entry.get("other")
                 unit = float(other) if other is not None else None
+                fallback = unit is not None
             return Price(
                 model=model,
                 unit=unit,
                 currency=self.currency,
                 tier=tier if tiers else "",
                 tiers=tiers or None,
+                fallback=fallback,
             )
         return Price(model=model, unit=None, currency=self.currency, tier=tier)
 

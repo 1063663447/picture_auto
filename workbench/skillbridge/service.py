@@ -50,7 +50,14 @@ class Workbench:
         if not pricing_path.is_absolute():
             candidate = WORKBENCH_DIR / pricing_path
             pricing_path = candidate if candidate.is_file() else pricing_path
-        self.pricer = Pricer(pricing_path)
+        self.pricer = Pricer(
+            pricing_path,
+            currency=str(
+                (self.config.get("defaults") or {}).get("pricing_currency")
+                or self.config.get("pricing_currency")
+                or ""
+            ),
+        )
         self.usage = UsageLedger(self.data_dir, self.pricer)
         self.feishu_config = None
         try:

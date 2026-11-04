@@ -15,7 +15,8 @@
     if (value === null || value === undefined) return "—";
     const num = Number(value);
     if (!Number.isFinite(num)) return "—";
-    return `${unit}${num.toLocaleString("zh-CN", { maximumFractionDigits: 4 })}`;
+    // 与工作台一致：金额保留三位小数（0.038 / 0.150 / 15.000）
+    return `${unit}${num.toFixed(3)}`;
   }
 
   function when(ts) {

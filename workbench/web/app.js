@@ -94,7 +94,8 @@
   function money(value, currency) {
     if (value === null || value === undefined) return "未定价";
     const symbol = currency === "USD" ? "$" : (currency === "CNY" ? "¥" : "");
-    return `${symbol}${Number(value).toFixed(value < 0.1 ? 3 : 2)}`;
+    // 报价一律保留三位小数（0.150 / 0.038 / 15.000），避免 0.15 和 0.150 看起来像两个价
+    return `${symbol}${Number(value).toFixed(3)}`;
   }
   function tierFor(size) {
     const limits = state.pricing.tierMp || { "1K": 1.6, "2K": 4.2 };
@@ -105,21 +106,54 @@
     if (megapixels <= Number(limits["2K"] || 4.2)) return "2K";
     return "4K";
   }
+  function megapixelsOf(size) {
+    const match = /^(\d+)x(\d+)$/i.exec(size || "");
+    if (!match) return 0;
+    return (Number(match[1]) * Number(match[2])) / 1e6;
+  }
 
   function priceOf(model, size) {
     const entry = (state.pricing.raw || {})[model];
-    if (entry === null || entry === undefined) return { unit: null, tier: "", tiered: false };
-    if (typeof entry === "number") return { unit: entry, tier: "", tiered: false };
+    if (entry === null || entry === undefined) {
+      return { unit: null, tier: "", tiered: false, fallback: false, tiers: {}, other: null };
+    }
+    if (typeof entry === "number") {
+      return { unit: entry, tier: "", tiered: false, fallback: false, tiers: {}, other: null };
+    }
     const tier = tierFor(size);
     const tiers = entry.tiers || {};
-    const unit = tiers[tier] !== undefined && tiers[tier] !== null ? tiers[tier] : entry.other;
-    return { unit: unit === undefined ? null : unit, tier, tiered: true };
+    const hit = tiers[tier];
+    const unit = hit !== undefined && hit !== null ? hit : entry.other;
+    return {
+      unit: unit === undefined ? null : unit,
+      tier,
+      tiered: true,
+      fallback: hit === undefined || hit === null,
+      tiers,
+      other: entry.other === undefined ? null : entry.other,
+    };
   }
 
   function priceText(model, size) {
     const info = priceOf(model, size);
     if (info.unit === null) return "未定价";
-    return `${money(info.unit, state.pricing.currency)}${info.tiered ? "/" + info.tier : "/张"}`;
+    const suffix = info.tiered ? (info.fallback ? "/其他" : "/" + info.tier) : "/张";
+    return `${money(info.unit, state.pricing.currency)}${suffix}`;
+  }
+
+  // 「分档价：1K ¥0.045 · 2K ¥0.065 · 4K ¥0.095 · 其他 ¥0.095」
+  function tiersText(info) {
+    if (!info.tiered) return "";
+    const parts = [];
+    for (const tier of ["1K", "2K", "4K"]) {
+      if (info.tiers[tier] !== undefined && info.tiers[tier] !== null) {
+        parts.push(`${tier} ${money(info.tiers[tier], state.pricing.currency)}`);
+      }
+    }
+    if (info.other !== null && info.other !== undefined) {
+      parts.push(`其他 ${money(info.other, state.pricing.currency)}`);
+    }
+    return parts.join(" · ");
   }
 
   function icon(id, size = 15) {
@@ -344,14 +378,32 @@
 
   function renderModelLabels() {
     const size = $("size").value;
+    const tier = tierFor(size);
     document.querySelectorAll("#model option[data-model]").forEach((option) => {
-      option.textContent = `${option.dataset.model} · ${priceText(option.dataset.model, size)}`;
+      const model = option.dataset.model;
+      const price = priceText(model, size);
+      option.textContent = `${model} · ${price}`;
     });
-    if (state.modelRows.length) {
-      const priced = state.modelRows.filter((m) => priceOf(m.id, size).unit !== null).length;
-      $("modelTip").textContent =
-        `共 ${state.modelRows.length} 个图片模型 · 已定价 ${priced} 个（按次计费，档位跟随尺寸 ${size === "auto" ? "auto→1K" : size}）`;
+    const model = currentModel();
+    const info = priceOf(model, size);
+    const mp = megapixelsOf(size);
+    const sizeText = size === "auto"
+      ? "自动（跟原图，按 1K 估算）"
+      : `${size}${mp ? ` · ${mp.toFixed(2)}MP` : ""} → ${tier} 档`;
+    if (!state.modelRows.length) return;
+    const priced = state.modelRows.filter((m) => priceOf(m.id, size).unit !== null).length;
+    const source = state.pricing.source === "feishu" ? "飞书「模型定价」表" : "pricing.json";
+    const lines = [
+      `共 ${state.modelRows.length} 个图片模型 · 已定价 ${priced} 个 · 单价来自${source}（可人工改）`,
+      `当前尺寸：${sizeText}${info.unit !== null ? ` · ${priceText(model, size)}` : ""}`,
+    ];
+    const tiers = tiersText(info);
+    if (tiers) lines.push(`分档价：${tiers}（按所选尺寸的像素自动选档）`);
+    if (info.tiered && info.fallback) {
+      lines.push(`注意：${tier} 档没有单独报价，正在用「其他分辨率」价 ${money(info.other, state.pricing.currency)}`);
     }
+    $("modelTip").innerHTML = lines.map((line) => `<span>${esc(line)}</span>`).join("<br/>");
+    $("modelTip").style.whiteSpace = "pre-line";
   }
 
   function updateSummary() {
@@ -364,7 +416,9 @@
     $("concurrency").value = calls || "";
 
     const model = currentModel();
-    const info = priceOf(model, $("size").value);
+    const size = $("size").value;
+    const info = priceOf(model, size);
+    const quality = $("quality").value;
     const line = $("estimateLine");
     if (!calls) {
       line.textContent = "预计花费 —";
@@ -373,10 +427,11 @@
       line.textContent = `预计花费 — · ${model || "未选模型"} 未定价（在飞书「模型定价」表或 pricing.json 里填单价）`;
       line.classList.add("warn");
     } else {
-      const tier = info.tiered ? ` · ${info.tier} 档` : "";
+      const tierText = info.tiered ? ` · ${info.fallback ? "其他档" : info.tier + " 档"}` : "";
       line.textContent =
         `预计花费 ${money(info.unit * calls, state.pricing.currency)} · ` +
-        `${calls} 张 × ${money(info.unit, state.pricing.currency)}${tier}（${model}）`;
+        `${calls} 张 × ${money(info.unit, state.pricing.currency)}${tierText}` +
+        `（${model} · ${size === "auto" ? "auto" : size} · ${quality}）`;
       line.classList.remove("warn");
     }
     $("startBtn").disabled = !(items > 0 && colors > 0) || state.busy;
@@ -438,12 +493,12 @@
       manual.value = "__manual__";
       manual.textContent = "其他（手填模型名）";
       select.appendChild(manual);
-      renderModelLabels();
 
       const wanted = rows.find((m) => m.id === previous) ? previous : (rows[0] ? rows[0].id : "__manual__");
       select.value = wanted;
       $("modelManual").hidden = wanted !== "__manual__";
-      tip.textContent = `共 ${data.count} 个模型 · 可选图片模型 ${rows.length} 个（单价来自 pricing.json，可自行修改）`;
+      tip.style.color = "";
+      renderModelLabels();
       store(`model.${providerName}`, wanted);
     } catch (err) {
       tip.style.color = "var(--danger)";
@@ -1231,7 +1286,7 @@
     });
     $("pickNone").addEventListener("click", () => { state.colors.clear(); renderColors(); });
 
-    ["size", "outputFormat", "sendReference"].forEach((id) =>
+    ["size", "quality", "outputFormat", "sendReference"].forEach((id) =>
       $(id).addEventListener("change", () => {
         saveSettings();
         renderModelLabels();
@@ -1242,9 +1297,13 @@
       const manual = $("model").value === "__manual__";
       $("modelManual").hidden = !manual;
       store(`model.${$("provider").value}`, $("model").value);
+      renderModelLabels();
       updateSummary();
     });
-    $("modelManual").addEventListener("input", updateSummary);
+    $("modelManual").addEventListener("input", () => {
+      renderModelLabels();
+      updateSummary();
+    });
 
     $("startBtn").addEventListener("click", () => {
       const reason = startBlockedReason();
