@@ -64,6 +64,8 @@
     accountsData: null,
     feishuRecords: [],
     feishuSelected: new Set(),
+    settledTasks: new Set(),
+    settledJob: "",
     pendingText: "",
     typerTimer: null,
   };
@@ -209,10 +211,44 @@
   }
   function toast(kind, message) {
     const el = document.createElement("div");
+    const life = kind === "bad" ? 6000 : 3200;
     el.className = `toast ${kind}`;
+    el.style.setProperty("--life", `${life}ms`);
     el.innerHTML = `${icon(kind === "bad" ? "i-alert" : "i-check")}<span>${esc(message)}</span>`;
+    el.addEventListener("click", () => el.remove());
     $("toasts").appendChild(el);
-    setTimeout(() => el.remove(), kind === "bad" ? 6000 : 3200);
+    setTimeout(() => el.remove(), life);
+  }
+
+  // 数字滚动（KPI 用；尊重 prefers-reduced-motion）
+  function animateNumber(el, to, formatter) {
+    if (!el) return;
+    const target = Number(to) || 0;
+    const from = Number(el.dataset.value || 0);
+    if (from === target) {                      // 没变化就别抖，避免每次轮询都在闪
+      el.textContent = formatter ? formatter(target) : String(target);
+      return;
+    }
+    el.dataset.value = String(target);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.classList.remove("bump");
+    void el.offsetWidth;                        // 重置动画
+    el.classList.add("bump");
+    if (reduce) {
+      el.textContent = formatter ? formatter(target) : String(target);
+      return;
+    }
+    const start = performance.now();
+    const duration = 420;
+    function frame(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const value = from + (target - from) * eased;
+      el.textContent = formatter ? formatter(value) : String(Math.round(value));
+      if (t < 1) requestAnimationFrame(frame);
+      else el.textContent = formatter ? formatter(target) : String(target);
+    }
+    requestAnimationFrame(frame);
   }
 
   /* --------------------------------------------------------------- 账号 */
@@ -700,6 +736,7 @@
     saveSettings();
     state.busy = true;
     updateSummary();
+    $("startBtn").classList.add("loading");
     $("startBtn").textContent = "提交中…";
     try {
       const form = new FormData();
@@ -729,6 +766,7 @@
       toast("bad", `创建任务失败：${err.message}`);
     } finally {
       state.busy = false;
+      $("startBtn").classList.remove("loading");
       $("startBtn").innerHTML = `${icon("i-spark")}开始生成`;
       updateSummary();
     }
@@ -773,9 +811,9 @@
     $("jobStage").textContent = job.stage || job.status;
 
     const stats = job.stats;
-    $("kpiTotal").textContent = stats.total;
-    $("kpiDone").textContent = stats.done + stats.skipped;
-    $("kpiFailed").textContent = stats.failed;
+    animateNumber($("kpiTotal"), stats.total);
+    animateNumber($("kpiDone"), stats.done + stats.skipped);
+    animateNumber($("kpiFailed"), stats.failed);
     const est = params.estimate || {};
     const done = stats.done + stats.skipped;
     if (est.priced) {
@@ -787,6 +825,7 @@
     const bar = $("progressBar");
     bar.setAttribute("aria-valuenow", String(Math.round(job.progress)));
     bar.querySelector("i").style.width = `${job.progress}%`;
+    bar.classList.toggle("done", TERMINAL.includes(job.status));
     $("progressLabel").textContent = `${done} / ${stats.total}`;
     $("progressStats").textContent =
       `运行 ${stats.running} · 失败 ${stats.failed}${job.error ? ` · ${job.error}` : ""}`;
@@ -799,10 +838,13 @@
     const grid = $("gridImgs");
     grid.innerHTML = "";
     $("emptyState").hidden = job.tasks.length > 0;
-    for (const task of job.tasks) {
+    const settled = state.settledTasks || new Set();
+    job.tasks.forEach((task, index) => {
       const card = document.createElement("div");
       card.className = `cardimg st-${task.status}` + (state.selected.has(task.id) ? " sel" : "");
       card.dataset.task = task.id;
+      card.style.setProperty("--i", String(Math.min(index, 12)));
+      if (settled.has(task.id) || job.id !== state.settledJob) card.classList.add("settled");
       const thumb = task.thumb
         ? `<img src="${task.thumb}?t=${Math.round(job.updated_at)}" loading="lazy" alt="${esc(task.color_name)}成品"/>`
         : `<div class="ph">${STATUS[task.status] || task.status}</div>`;
@@ -822,7 +864,9 @@
           ${task.status === "failed" ? `<button class="btn btn-danger btn-sm" data-retry="${esc(task.id)}">重试</button>` : ""}
         </div>`;
       grid.appendChild(card);
-    }
+    });
+    state.settledTasks = new Set(job.tasks.map((task) => task.id));
+    state.settledJob = job.id;
 
     grid.querySelectorAll("input[data-task]").forEach((input) => {
       input.addEventListener("change", () => {
@@ -1318,6 +1362,7 @@
     if (state.composedPrompt) form.append("prompt_override", state.composedPrompt);
     form.append("start", "true");
     $("harnessApply").disabled = true;
+    $("harnessApply").classList.add("loading");
     $("harnessApply").textContent = "提交中…";
     try {
       const data = await api(`/api/jobs/${state.reworkSourceJob}/rework`, { method: "POST", body: form });
@@ -1329,6 +1374,7 @@
     } catch (err) {
       toast("bad", `提交返工失败：${err.message}`);
     } finally {
+      $("harnessApply").classList.remove("loading");
       $("harnessApply").disabled = false;
       $("harnessApply").textContent = "确认返工";
     }
@@ -1459,6 +1505,39 @@
       if (!$("feishuDrawer").hidden) closeFeishu();
       if (!$("accountsDrawer").hidden) hideAccounts();
     });
+
+    bindMotion();
+  }
+
+  /* ------------------------------------------------------- 视觉动效（5.0） */
+  function bindMotion() {
+    const bar = $("progressBar");
+    if (bar) bar.classList.add("ready");
+    const appbar = document.querySelector(".appbar");
+    let ticking = false;
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const doc = document.documentElement;
+        const max = Math.max(1, doc.scrollHeight - doc.clientHeight);
+        const ratio = Math.min(1, Math.max(0, doc.scrollTop / max));
+        doc.style.setProperty("--scroll", ratio.toFixed(4));
+        if (appbar) appbar.classList.toggle("scrolled", doc.scrollTop > 6);
+        ticking = false;
+      });
+    }
+    document.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+
+    // 拖放区：拖入高亮 + 离开恢复（已有 over 类，这里补键盘/触控的即时反馈）
+    const drop = $("drop");
+    if (drop) {
+      drop.addEventListener("pointerdown", () => drop.classList.add("pressed"));
+      ["pointerup", "pointerleave", "pointercancel"].forEach((type) =>
+        drop.addEventListener(type, () => drop.classList.remove("pressed"))
+      );
+    }
   }
 
   boot();
