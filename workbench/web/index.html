@@ -126,30 +126,38 @@
             <input type="number" id="concurrency" readonly />
           </div>
           <div class="field">
-            <span class="lbl">尺寸（横:竖 · 档位）</span>
-            <select id="size">
-              <option value="auto">自动 · 跟随原图（按 1K 估算）</option>
-              <option value="1024x1024">1:1 · 1024×1024 · 1K 档</option>
-              <option value="1024x1536">3:4 · 1024×1536 · 1K 档</option>
-              <option value="1536x1024">4:3 · 1536×1024 · 1K 档</option>
-              <option value="2048x2048">1:1 · 2048×2048 · 2K 档</option>
-              <option value="1536x2048">3:4 · 1536×2048 · 2K 档</option>
-              <option value="2048x1536">4:3 · 2048×1536 · 2K 档</option>
-              <option value="3072x3072">1:1 · 3072×3072 · 4K 档</option>
-              <option value="3072x4096">3:4 · 3072×4096 · 4K 档</option>
-              <option value="4096x3072">4:3 · 4096×3072 · 4K 档</option>
+            <span class="lbl">画面比例</span>
+            <select id="aspect">
+              <option value="auto">自动 · 跟随原图</option>
+              <option value="1:1">1:1 方形</option>
+              <option value="3:4">3:4 竖版</option>
+              <option value="4:3">4:3 横版</option>
             </select>
           </div>
         </div>
         <div class="grid2">
           <div class="field">
-            <span class="lbl">质量</span>
+            <span class="lbl">分辨率档位（决定单价）</span>
+            <select id="sizeTier">
+              <option value="1K">1K · 1024 级</option>
+              <option value="2K">2K · 2048 级</option>
+              <option value="4K">4K · 3072 级</option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="lbl">质量（细节，不改档位/价格）</span>
             <select id="quality">
-              <option value="high">high</option>
+              <option value="high">high · 细节最好</option>
               <option value="medium">medium</option>
-              <option value="low">low</option>
+              <option value="low">low · 最快</option>
               <option value="auto">auto</option>
             </select>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <span class="lbl">实际出图尺寸</span>
+            <input type="text" id="sizePreview" readonly />
           </div>
           <div class="field">
             <span class="lbl">输出格式</span>
@@ -328,6 +336,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=4.9.0"></script>
+<script src="/app.js?v=5.0.0"></script>
 </body>
 </html>

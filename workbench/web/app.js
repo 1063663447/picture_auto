@@ -112,6 +112,41 @@
     return (Number(match[1]) * Number(match[2])) / 1e6;
   }
 
+  // 比例 × 档位 → 实际请求的尺寸（档位只决定像素，比例只决定横竖）
+  const SIZE_MATRIX = {
+    "1:1": { "1K": "1024x1024", "2K": "2048x2048", "4K": "3072x3072" },
+    "3:4": { "1K": "1024x1536", "2K": "1536x2048", "4K": "3072x4096" },
+    "4:3": { "1K": "1536x1024", "2K": "2048x1536", "4K": "4096x3072" },
+  };
+
+  function currentAspect() {
+    return $("aspect") ? $("aspect").value : "auto";
+  }
+  function currentTierChoice() {
+    return $("sizeTier") ? $("sizeTier").value : "1K";
+  }
+  function currentSize() {
+    const aspect = currentAspect();
+    if (aspect === "auto") return "auto";
+    const row = SIZE_MATRIX[aspect] || SIZE_MATRIX["1:1"];
+    return row[currentTierChoice()] || "auto";
+  }
+  // 旧版只有「尺寸」下拉时存的是 2048x2048 这类值，开学时映射回 比例 + 档位
+  function applyLegacySize(value) {
+    if (!$("aspect") || !$("sizeTier")) return;
+    const match = /^(\d+)x(\d+)$/i.exec(String(value || ""));
+    if (!match) {
+      $("aspect").value = "auto";
+      return;
+    }
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    const aspect = width === height ? "1:1" : (width < height ? "3:4" : "4:3");
+    const tier = tierFor(`${width}x${height}`);
+    if ([...$("aspect").options].some((o) => o.value === aspect)) $("aspect").value = aspect;
+    if ([...$("sizeTier").options].some((o) => o.value === tier)) $("sizeTier").value = tier;
+  }
+
   function priceOf(model, size) {
     const entry = (state.pricing.raw || {})[model];
     if (entry === null || entry === undefined) {
@@ -377,17 +412,37 @@
   }
 
   function renderModelLabels() {
-    const size = $("size").value;
+    const size = currentSize();
     const tier = tierFor(size);
+    const auto = currentAspect() === "auto";
     document.querySelectorAll("#model option[data-model]").forEach((option) => {
       const model = option.dataset.model;
       const price = priceText(model, size);
       option.textContent = `${model} · ${price}`;
     });
     const model = currentModel();
+
+    // 档位下拉直接标出「这个模型的这一档多少钱」，避免只看一个统一单价
+    if ($("sizeTier")) {
+      for (const option of $("sizeTier").options) {
+        const info = priceOf(model, SIZE_MATRIX["1:1"][option.value]);
+        const label = { "1K": "1K · 1024 级", "2K": "2K · 2048 级", "4K": "4K · 3072 级" }[option.value] || option.value;
+        option.textContent = info.unit === null
+          ? `${label} · 未定价`
+          : `${label} · ${money(info.unit, state.pricing.currency)}/张`;
+      }
+      $("sizeTier").disabled = auto;
+      $("sizeTier").title = auto ? "比例为「自动」时由原图决定尺寸与档位；选具体比例后可手动选档" : "";
+    }
+    if ($("sizePreview")) {
+      $("sizePreview").value = auto
+        ? "auto · 跟随原图（按 1K 估算）"
+        : `${size.replace("x", " × ")} · ${megapixelsOf(size).toFixed(2)}MP · ${tier} 档`;
+    }
+
     const info = priceOf(model, size);
     const mp = megapixelsOf(size);
-    const sizeText = size === "auto"
+    const sizeText = auto
       ? "自动（跟原图，按 1K 估算）"
       : `${size}${mp ? ` · ${mp.toFixed(2)}MP` : ""} → ${tier} 档`;
     if (!state.modelRows.length) return;
@@ -398,7 +453,11 @@
       `当前尺寸：${sizeText}${info.unit !== null ? ` · ${priceText(model, size)}` : ""}`,
     ];
     const tiers = tiersText(info);
-    if (tiers) lines.push(`分档价：${tiers}（按所选尺寸的像素自动选档）`);
+    if (tiers) {
+      lines.push(
+        `分档价：${tiers}（分辨率档位决定单价；比例只决定横竖，质量只影响细节）`
+      );
+    }
     if (info.tiered && info.fallback) {
       lines.push(`注意：${tier} 档没有单独报价，正在用「其他分辨率」价 ${money(info.other, state.pricing.currency)}`);
     }
@@ -416,7 +475,7 @@
     $("concurrency").value = calls || "";
 
     const model = currentModel();
-    const size = $("size").value;
+    const size = currentSize();
     const info = priceOf(model, size);
     const quality = $("quality").value;
     const line = $("estimateLine");
@@ -596,14 +655,31 @@
 
   /* --------------------------------------------------------------- settings */
   function restoreSettings() {
-    setSelect("size", restore("size", state.defaults.size || "auto"));
-    setSelect("quality", state.defaults.quality || "high");
+    // 比例 + 档位分开存；旧版本只存了 "size"（如 2048x2048），映射回来
+    const savedAspect = restore("aspect", null);
+    const savedTier = restore("sizeTier", null);
+    if (savedAspect) {
+      setSelect("aspect", savedAspect);
+      setSelect("sizeTier", savedTier || "1K");
+    } else {
+      const legacy = restore("size", state.defaults.size || "auto");
+      if (legacy && legacy !== "auto") {
+        applyLegacySize(legacy);
+      } else {
+        setSelect("aspect", "auto");
+        setSelect("sizeTier", "1K");
+      }
+    }
+    setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
     $("sendReference").checked = restore("sendReference", true);
+    renderModelLabels();
     updateSummary();
   }
   function saveSettings() {
-    store("size", $("size").value);
+    store("aspect", currentAspect());
+    store("sizeTier", currentTierChoice());
+    store("quality", $("quality").value);
     store("outputFormat", $("outputFormat").value);
     store("sendReference", $("sendReference").checked);
   }
@@ -634,7 +710,7 @@
       form.append("provider", $("provider").value);
       form.append("model", currentModel());
       form.append("concurrency", "auto");
-      form.append("size", $("size").value);
+      form.append("size", currentSize());
       form.append("quality", $("quality").value);
       form.append("output_format", $("outputFormat").value);
       form.append("send_reference", $("sendReference").checked ? "true" : "false");
@@ -1191,7 +1267,7 @@
       payload.colors = [...state.colors];
       payload.model = currentModel();
       payload.count = expectedCalls();
-      payload.size = $("size").value;
+      payload.size = currentSize();
       payload.quality = $("quality").value;
       payload.output_format = $("outputFormat").value;
     }
@@ -1236,7 +1312,7 @@
     form.append("instruction", instruction);
     form.append("provider", $("provider").value);
     form.append("model", currentModel());
-    form.append("size", $("size").value);
+    form.append("size", currentSize());
     form.append("quality", $("quality").value);
     form.append("output_format", $("outputFormat").value);
     if (state.composedPrompt) form.append("prompt_override", state.composedPrompt);
@@ -1286,7 +1362,7 @@
     });
     $("pickNone").addEventListener("click", () => { state.colors.clear(); renderColors(); });
 
-    ["size", "quality", "outputFormat", "sendReference"].forEach((id) =>
+    ["aspect", "sizeTier", "quality", "outputFormat", "sendReference"].forEach((id) =>
       $(id).addEventListener("change", () => {
         saveSettings();
         renderModelLabels();
