@@ -731,3 +731,76 @@ html { scroll-behavior: smooth; }
 .perf-lite .ambient, .perf-lite .cursor-glow { display: none; }
 .perf-lite .controls, .perf-lite .glass, .perf-lite .drawer, .perf-lite .topbar { backdrop-filter: none !important; }
 .perf-lite .cardimg { animation: none; }
+
+/* ==========================================================================
+   7.1 · 画布任务条 + harness 对话加载反馈
+   ========================================================================== */
+
+.canvas-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-width: 0; }
+.job-strip {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+  padding-left: 16px; border-left: 1px solid var(--line);
+}
+.job-strip b {
+  font-size: 12px; font-weight: 500; color: #e7e0fa;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34vw;
+}
+.job-strip span {
+  font-size: 10.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw;
+}
+@media (max-width: 900px) {
+  .job-strip { padding-left: 0; border-left: 0; }
+  .job-strip b, .job-strip span { max-width: 66vw; }
+}
+
+/* 等待回复：三点跳动 */
+.msg.typing .bubble { display: inline-flex; align-items: center; gap: 5px; padding: 11px 14px; }
+.msg.typing .bubble i {
+  width: 6px; height: 6px; border-radius: 50%; background: #b5a0ff;
+  animation: dotJump 1.15s infinite ease-in-out;
+}
+.msg.typing .bubble i:nth-child(2) { animation-delay: 0.15s; }
+.msg.typing .bubble i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dotJump {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* 工具调用行：转圈 → 打勾，结果可折叠 */
+.tool-row { display: grid; gap: 6px; }
+.tool-line {
+  display: flex; align-items: center; gap: 8px; align-self: flex-start;
+  font-size: 10.5px; color: #cfc8e2; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 9px; background: #ffffff05;
+  cursor: pointer; transition: border-color 0.2s, background 0.2s;
+}
+.tool-line:hover { border-color: #b5a0ff55; background: #ffffff0a; }
+.tool-line .spin {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid #b5a0ff33; border-top-color: var(--purple);
+  animation: spin 0.7s linear infinite; flex: 0 0 auto;
+}
+.tool-line .ok { color: var(--cyan); display: grid; place-items: center; }
+.tool-line .ok svg { width: 12px; height: 12px; }
+.tool-line .chev { margin-left: 2px; color: #7e7799; font-size: 9px; }
+.tool-line.done { color: #b9b2d0; }
+.tool-result {
+  font-family: var(--font-mono); font-size: 10px; line-height: 1.65; color: #a9a2c4;
+  background: #07061299; border: 1px solid #b5a0ff1f; border-radius: 9px;
+  padding: 8px 10px; white-space: pre-wrap; word-break: break-word; max-height: 190px; overflow: auto;
+}
+.tool-result:empty { display: none; }
+
+/* 流式输出中的光标 */
+.bubble.streaming::after {
+  content: "▌"; color: var(--purple); margin-left: 1px;
+  animation: caret 1s steps(1) infinite;
+}
+@keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .msg.typing .bubble i { animation: none; opacity: 0.7; }
+  .tool-line .spin { animation: none; border-top-color: var(--purple); }
+  .bubble.streaming::after { animation: none; }
+}

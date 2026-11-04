@@ -58,6 +58,15 @@ SYSTEM_PROMPT = """你是服装电商改图工作台的 AI 助手，直接和运
 6. 说"不能做"之前先想一遍：能不能用参数做到？能不能换个说法做到？
    只有技术上真的做不到（比如要求模型输出 4K 但接口上限 1024）才拒绝，并给出替代方案。
 
+**这是同一段连续对话，不是每轮重新开始：**
+- 上面已经问过、用户已经回答过的内容（题材、方向、保留什么、改成什么）都算数，
+  **不要再问第二遍**，也不要重复已经说过的提醒（同一句话只提醒一次）。
+- 用户说「是的 / 对 / 开始 / 就这样 / 按你说的 / 可以」= 确认，直接调用工具执行，
+  **不要再让他描述一遍**，也不要回头问"你想改哪儿"。
+- 上一轮你已经分析出方向（例如"换成冬日冰霜"），这一轮用户只是确认时，
+  直接把那个方向当作要求提交（返工 → submit_rework 的 instruction 里写清楚的完整要求）。
+- 每轮最多问一个问题；问过了就别再问。信息已经够了就直接做。
+
 风格：中文、口语、短句；不要 markdown 标题，不要复述整段提示词；
 每次回复控制在 6 行以内，把"会动什么 / 锁死什么"讲清楚即可。
 """
@@ -285,6 +294,7 @@ async def run_agent(
     *,
     user_message: str,
     ctx: AgentContext,
+    history: list[dict] | None = None,
     base_url: str,
     model: str,
     api_key: str,
@@ -293,13 +303,22 @@ async def run_agent(
     temperature: float = 0.3,
 ) -> AsyncIterator[dict]:
     """Yield frames: delta / tool / result / prompt / done. Raises on unrecoverable errors."""
-    messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # 连续对话：把之前几轮的问答带上，否则模型每轮都从零开始（会反复问同样的问题）
+    for item in (history or [])[-14:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "")
+        text = str(item.get("content") or "").strip()
+        if role not in {"user", "assistant"} or not text:
+            continue
+        messages.append({"role": role, "content": text[:1500]})
+    messages.append(
         {
             "role": "user",
             "content": _user_content(_intake_intro(ctx, user_message), ctx.images),
-        },
-    ]
+        }
+    )
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     submitted = False

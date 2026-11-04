@@ -544,6 +544,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
         garment_slug = body.get("garment_type")
         colors = [str(c) for c in (body.get("colors") or []) if str(c).strip()]
         model_choice = str(body.get("model") or "")
+        # 连续对话：前端把最近几轮问答带上来（[{role, content}]）
+        history = [
+            {"role": str(item.get("role") or ""), "content": str(item.get("content") or "")}
+            for item in (body.get("history") or [])
+            if isinstance(item, dict)
+        ]
 
         garment = None
         color = ""
@@ -744,6 +750,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             async for event in agent.run_agent(
                 user_message=instruction,
                 ctx=ctx,
+                history=history,
                 base_url=str(config.get("base_url") or ""),
                 model=str(config.get("model") or ""),
                 api_key=agent_key,

@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=7.0.5" />
-<link rel="stylesheet" href="/aurora.css?v=7.0.5" />
+<link rel="stylesheet" href="/style.css?v=7.1.4" />
+<link rel="stylesheet" href="/aurora.css?v=7.1.4" />
 </head>
 <body>
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -83,22 +83,6 @@
         </span>
       </div>
     </header>
-
-    <!-- ------------------------------------------------------------- 开场 -->
-    <div class="intro">
-      <div>
-        <div class="eyebrow">IMAGINATION, IN EVERY SHADE.</div>
-        <h1>让灵感，<span>拥有更多可能。</span></h1>
-        <p>一张原图 · 一个款式 · 一整组配色，剩下的交给工作台批量出图。</p>
-      </div>
-      <div class="session">
-        <div class="session-icon"><svg><use href="#i-image"/></svg></div>
-        <div>
-          <b id="jobTitle">尚未开始</b>
-          <small id="jobStage">选择原图与颜色后开始生成</small>
-        </div>
-      </div>
-    </div>
 
     <div class="workspace">
       <!-- --------------------------------------------------------- 控制台 -->
@@ -200,9 +184,15 @@
       <!-- ----------------------------------------------------------- 画布 -->
       <section class="canvas" aria-label="创作画布">
         <div class="canvas-head">
-          <div class="view-tabs">
-            <button class="view-tab active" type="button" data-view="gallery">成品画廊<span class="count" id="galleryCount">0</span></button>
-            <button class="view-tab" type="button" data-view="logs">运行日志</button>
+          <div class="canvas-left">
+            <div class="view-tabs">
+              <button class="view-tab active" type="button" data-view="gallery">成品画廊<span class="count" id="galleryCount">0</span></button>
+              <button class="view-tab" type="button" data-view="logs">运行日志</button>
+            </div>
+            <div class="job-strip">
+              <b id="jobTitle">尚未开始</b>
+              <span id="jobStage">选择原图与颜色后开始生成</span>
+            </div>
           </div>
           <div class="tools">
             <button class="subtle" type="button" id="cancelBtn" hidden>取消</button>
@@ -293,7 +283,6 @@
 
     <footer class="footer">
       <span>生图工作台 / AURORA</span>
-      <span>LOCAL WORKBENCH · 数据留在本机</span>
     </footer>
   </main>
 </div>
@@ -334,7 +323,6 @@
   <div class="chat" id="chatLog" aria-live="polite"></div>
   <div class="drawer-foot">
     <div class="quick" id="quickChips"></div>
-    <pre class="prompt-preview" id="harnessPrompt" hidden></pre>
     <div class="input-row">
       <textarea id="harnessInput" rows="2" placeholder="直接问它：这图能改吗？多少钱？图案会漂吗？"></textarea>
       <button class="btn btn-primary btn-icon" type="button" id="harnessSend" aria-label="发送" style="height:44px;width:44px"><svg><use href="#i-send"/></svg></button>
@@ -391,6 +379,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=7.0.5"></script>
+<script src="/app.js?v=7.1.4"></script>
 </body>
 </html>

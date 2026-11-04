@@ -21,6 +21,7 @@
     submit_rework: "提交返工任务",
     job_status: "查询任务进度",
     get_prompt: "读取当前提示词",
+    set_requirements: "记录本次要求",
   };
   const QUICK_INTAKE = [
     "图案必须原样不动",
@@ -74,6 +75,10 @@
     typerTimer: null,
     pendingBrief: "",
     view: "gallery",
+    harnessHistory: [],
+    assistantText: "",
+    typingEl: null,
+    toolRows: new Map(),
   };
 
   /* --------------------------------------------------------------- helpers */
@@ -1410,7 +1415,85 @@
     wrap.innerHTML = `<span class="tools">${kind === "tool" ? "· " + esc(title) : esc(title)}</span>
       ${body ? `<div class="tool-result">${esc(body)}</div>` : ""}`;
     $("chatLog").appendChild(wrap);
-    $("chatLog").scrollTop = $("chatLog").scrollHeight;
+    scrollChat();
+  }
+
+  function scrollChat() {
+    const box = $("chatLog");
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+
+  // 等待模型回复：三点跳动气泡（收到第一个字就撤掉）
+  function showTyping() {
+    if (state.typingEl) return;
+    const wrap = document.createElement("div");
+    wrap.className = "msg assistant typing";
+    wrap.innerHTML = `<span class="who">harness</span><div class="bubble"><i></i><i></i><i></i></div>`;
+    $("chatLog").appendChild(wrap);
+    state.typingEl = wrap;
+    scrollChat();
+  }
+
+  function hideTyping() {
+    if (!state.typingEl) return;
+    state.typingEl.remove();
+    state.typingEl = null;
+  }
+
+  // 工具调用：先转圈，结果回来打勾 → 可点开看返回内容
+  function toolStart(name) {
+    const label = TOOL_LABEL[name] || name;
+    const row = document.createElement("div");
+    row.className = "msg assistant tool-row";
+    row.dataset.tool = name;
+    row.innerHTML = `
+      <div class="tool-line running" role="button" tabindex="0" aria-label="${esc(label)}">
+        <span class="spin" aria-hidden="true"></span>
+        <span class="txt">正在${esc(label)}…</span>
+        <span class="chev" hidden>▾</span>
+      </div>
+      <div class="tool-result" hidden></div>`;
+    const line = row.querySelector(".tool-line");
+    const result = row.querySelector(".tool-result");
+    const toggle = () => {
+      if (!result.textContent.trim()) return;
+      result.hidden = !result.hidden;
+      row.querySelector(".chev").textContent = result.hidden ? "▾" : "▴";
+    };
+    line.addEventListener("click", toggle);
+    line.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); }
+    });
+    $("chatLog").appendChild(row);
+    scrollChat();
+    const prev = state.toolRows.get(name);
+    if (prev && prev !== row && prev.isConnected && !prev.dataset.done) prev.remove();
+    state.toolRows.set(name, row);
+    return row;
+  }
+
+  function toolEnd(name, text) {
+    let row = state.toolRows.get(name);
+    const body = String(text || "").trim();
+    if (!row || !row.isConnected) {
+      // 没抓到开始事件（例如降级路径）→ 直接补一条完成态
+      row = toolStart(name);
+    }
+    const line = row.querySelector(".tool-line");
+    line.classList.remove("running");
+    line.classList.add("done");
+    line.querySelector(".spin").outerHTML = `<span class="ok">${icon("i-check", 12)}</span>`;
+    line.querySelector(".txt").textContent = TOOL_LABEL[name] || name;
+    const result = row.querySelector(".tool-result");
+    if (body) {
+      result.textContent = body;
+      row.querySelector(".chev").hidden = false;
+      row.querySelector(".chev").textContent = "▾";
+    }
+    row.dataset.open = "false";
+    row.dataset.done = "1";
+    scrollChat();
+    return row;
   }
 
   function pushTypeText(text) {
@@ -1445,10 +1528,12 @@
     state.pendingText = "";
     state.streamBubble = null;
     $("chatLog").innerHTML = "";
-    $("harnessPrompt").hidden = true;
-    $("harnessPrompt").textContent = "";
     state.composedPrompt = "";
     state.requirements = "";
+    state.harnessHistory = [];
+    state.assistantText = "";
+    state.typingEl = null;
+    state.toolRows.clear();
   }
 
   function renderQuick(list) {
@@ -1545,37 +1630,44 @@
     try { payload = JSON.parse(data); } catch (_) { return; }
 
     if (event === "delta") {
+      hideTyping();
       if (!state.streamBubble) {
         state.streamBubble = chatBubble("assistant", "");
         state.streamBubble.classList.add("streaming");
         state.streamedText = "";
       }
       state.streamedText += payload.text || "";
+      state.assistantText += payload.text || "";
       pushTypeText(payload.text || "");
     } else if (event === "message") {
+      hideTyping();
       flushType(true);
+      if (state.streamBubble) state.streamBubble.classList.remove("streaming");
       state.streamBubble = null;
       const text = String(payload.text || "");
       // 已经流式输出过同一段内容 → 不再重复渲染气泡
-      if (text && text.trim() !== state.streamedText.trim()) chatBubble("assistant", text);
+      if (text && text.trim() !== state.streamedText.trim()) {
+        chatBubble("assistant", text);
+        state.assistantText += (state.assistantText ? "\n" : "") + text;
+      }
       state.streamedText = "";
     } else if (event === "tool") {
+      hideTyping();
       flushType(true);
+      if (state.streamBubble) state.streamBubble.classList.remove("streaming");
       state.streamBubble = null;
-      chatNote(TOOL_LABEL[payload.name] || payload.name, "");
+      toolStart(payload.name);
+      showTyping();           // 工具跑完还要再想一轮 → 继续转圈
     } else if (event === "result") {
-      const text = String(payload.text || "");
-      chatNote(`${TOOL_LABEL[payload.name] || payload.name} 结果`, text, "tool");
+      toolEnd(payload.name, String(payload.text || ""));
+      showTyping();
     } else if (event === "prompt") {
+      hideTyping();
       flushType(true);
       if (state.streamBubble) state.streamBubble.classList.remove("streaming");
       state.streamBubble = null;
       state.composedPrompt = payload.prompt || "";
       state.requirements = payload.requirements || "";
-      if (state.composedPrompt) {
-        $("harnessPrompt").hidden = false;
-        $("harnessPrompt").textContent = `【将提交的提示词 · ${state.composedPrompt.length} 字，可滚动】\n${state.composedPrompt}`;
-      }
       $("harnessApply").disabled = state.harnessMode === "rework"
         ? !state.composedPrompt
         : !state.requirements;
@@ -1585,6 +1677,11 @@
         closeHarness();          // 定价/用量等任务跑完再刷，别在这儿抢带宽和事件循环
         toast("ok", "harness 已提交任务");
       }
+    } else if (event === "done") {
+      hideTyping();
+      flushType(true);
+      if (state.streamBubble) state.streamBubble.classList.remove("streaming");
+      state.streamBubble = null;
     } else if (event === "job") {
       if (payload.job_id) {
         watchJob(payload.job_id);
@@ -1622,6 +1719,7 @@
       payload.output_format = currentOutputFormat();
     }
     payload.pattern_mode = currentPatternMode();
+    payload.history = state.harnessHistory.slice(-10);
     return payload;
   }
 
@@ -1630,23 +1728,38 @@
     const text = ($("harnessInput").value || "").trim();
     if (!text) { toast("bad", "先写一句需求，或直接点「按默认生成」"); return; }
     chatBubble("user", text);
+    state.harnessHistory.push({ role: "user", content: text });
+    state.assistantText = "";
     $("harnessInput").value = "";
     state.harnessBusy = true;
     $("harnessSend").disabled = true;
+    $("harnessSend").classList.add("loading");
     $("harnessApply").disabled = true;
+    showTyping();
     try {
       await streamHarness(harnessPayload(text));
     } catch (err) {
+      hideTyping();
       toast("bad", `harness 出错：${err.message}`);
     } finally {
+      hideTyping();
       state.harnessBusy = false;
       $("harnessSend").disabled = false;
+      $("harnessSend").classList.remove("loading");
+      const answer = state.assistantText.trim();
+      if (answer) state.harnessHistory.push({ role: "assistant", content: answer });
+      state.harnessHistory = state.harnessHistory.slice(-12);
+      state.assistantText = "";
     }
   }
 
   async function harnessDefaultAction() {
     if (state.harnessMode === "rework") { closeHarness(); return; }
     await createJob("");
+  }
+
+  function briefText() {
+    return ($("briefInput") ? $("briefInput").value : "").trim();
   }
 
   async function harnessApplyAction() {
