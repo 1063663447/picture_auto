@@ -102,10 +102,23 @@ data/jobs/20261103-100717-986c/
 
 ---
 
-## 3. 界面上怎么用（UI 3.0）
+## 3. 界面上怎么用（UI 5.1）
 
 界面按 ui-ux-pro-max skill 生成的设计系统重建（记录见 docs/uiux/DESIGN-SYSTEM.md，skill 已导入 .skills/ui-ux-pro-max/）：
 Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图标、44px 触控目标、可见焦点环、toast 代替 alert。
+
+### 视觉层 5.0（`web/glass.css`，独立于 style.css 便于回退）
+
+| 项 | 做法 |
+|---|---|
+| 背景 | 极光渐变（emerald/amber 三团径向光斑，28s 缓慢漂移）；浅色模式额外一层顶部柔光 |
+| 玻璃拟态 | 卡片 / KPI / 工具条 / 成品卡 / 抽屉 / toast 统一 `backdrop-filter: blur(18–28px) saturate(145%)` + 内高光 + 分层投影；输入框也玻璃化，避免白块打断质感 |
+| 层次 | 卡片顶部渐变发丝线、卡头微光泽、序号徽章改为渐变发光胶囊、KPI 右上角柔光晕 |
+| 动效 | 卡片/缩略图错峰入场、成品图渐显、KPI 数字滚动 + bump、进度条流光 + 完成扫光、运行中状态点呼吸 + 卡片扫光、抽屉弹性滑入、toast 弹簧入场 + 存活进度条、按钮流光/回弹/提交转圈、拖放区呼吸、空态插画漂浮、图表条形图生长 |
+| 反馈 | 顶栏滚动进度条（`--scroll`）+ 滚动后加阴影、按钮 active 缩放、chip/历史行悬浮位移、选中成品卡勾选框填充 |
+| 可关 | 所有装饰动画都在 `prefers-reduced-motion: reduce` 下静止；深色模式单独一套玻璃透明度与光斑强度 |
+
+调参入口都在 `glass.css` 顶部 `:root`：`--glass / --glass-strong / --glass-hi / --aurora-1..3 / --shadow-3 / --ease-spring`。
 
 1. **上传原图**：拖拽多张。默认 *一张图 = 一个 item*；同一件衣服多角度命名 item-01_view-01.png / item-01_view-02.png 会归到同一个 item-01/。
 2. **目标款式**：圆领卫衣 / 连帽卫衣 / 短袖，右侧标出参考色数量。
