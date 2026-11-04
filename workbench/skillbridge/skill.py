@@ -140,29 +140,46 @@ class Skill:
     negative_prompt: str
     max_bytes: int
     warnings: list[str] = field(default_factory=list)
+    #: 不在界面「目标款式」下拉里展示的 slug（例如已被款式库取代的原生三款）
+    hidden: set[str] = field(default_factory=set)
 
     def type_by_alias(self, name: str | None) -> GarmentType:
-        """Match a free-form user string (`短袖T恤`, `hoodie`, ...) to a type."""
+        """Match a free-form user string (`短袖T恤`, `hoodie`, ...) to a type.
+
+        界面里隐藏的款式（`hidden`）排在后面：同一个别名同时命中时，
+        优先用界面上能选到的那一款，避免"看到的和实际用的不是一款"。
+        """
         if not name:
-            raise KeyError("请先选择目标服装类型：圆领卫衣 / 连帽卫衣 / 短袖")
+            raise KeyError("请先选择目标服装类型")
         raw = name.strip()
         lowered = raw.lower()
+        ordered = [
+            (slug, garment) for slug, garment in self.types.items() if slug not in self.hidden
+        ] + [
+            (slug, garment) for slug, garment in self.types.items() if slug in self.hidden
+        ]
         if lowered in self.types:
             return self.types[lowered]
-        for slug, garment in self.types.items():
+        for _slug, garment in ordered:
             for alias in garment.aliases:
                 if alias.lower() == lowered:
                     return garment
-        for slug, garment in self.types.items():
+        for _slug, garment in ordered:
             for alias in garment.aliases:
                 if alias.lower() in lowered or lowered in alias.lower():
                     return garment
         raise KeyError(f"无法识别目标服装类型 `{name}`")
 
-    def as_dict(self) -> dict:
+    def as_dict(self, *, include_hidden: bool = False) -> dict:
+        items = {
+            slug: garment.as_dict()
+            for slug, garment in self.types.items()
+            if include_hidden or slug not in self.hidden
+        }
         return {
             "root": str(self.root),
-            "types": {slug: g.as_dict() for slug, g in self.types.items()},
+            "types": items,
+            "hidden": sorted(self.hidden),
             "prompt_template": self.prompt_template,
             "negative_prompt": self.negative_prompt,
             "max_bytes": self.max_bytes,

@@ -900,7 +900,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
         path = wb(request).image_path(job_id, task_id)
         if download:
             return FileResponse(path, filename=path.name)
-        return FileResponse(path)
+        # 成品图内容不会变（版本由 URL 的 ?t= 区分），可以让浏览器长期缓存
+        return FileResponse(
+            path,
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
 
     @app.get("/api/jobs/{job_id}/download")
     async def download(request: Request, job_id: str):

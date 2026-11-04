@@ -73,6 +73,8 @@ class Task:
             "bytes": self.bytes,
             "prompt": self.prompt,
             "source": self.source,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
         }
 
 
@@ -134,12 +136,26 @@ class Job:
         if with_tasks:
             payload["tasks"] = [
                 {**task.as_dict(),
+                 # 图片版本号：用任务自己的完成时间（图片内容不变 → 浏览器/本地缓存可长期命中）；
+                 # 老任务没有时间戳时退回输出文件的 mtime
+                 "version": self._task_version(task),
                  "thumb": f"/api/jobs/{self.id}/image/{task.id}" if task.out else None}
                 for task in self.tasks
             ]
         if with_log:
             payload["log"] = self.log[-80:]
         return payload
+
+    def _task_version(self, task: "Task") -> int | None:
+        """成品图版本号（毫秒）。图片内容一旦产出就不再变，所以可以拿它当缓存键的一部分。"""
+        if task.finished_at:
+            return int(task.finished_at * 1000)
+        if task.out and self.root:
+            try:
+                return int((self.root / str(task.out)).stat().st_mtime * 1000)
+            except OSError:
+                return None
+        return None
 
     # -- persistence -------------------------------------------------------- #
     def path(self) -> Path:

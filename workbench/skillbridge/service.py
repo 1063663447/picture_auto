@@ -89,6 +89,7 @@ class Workbench:
     # ------------------------------------------------------------------ setup #
     def reload_skill(self) -> Skill:
         self.skill = load_skill(self.config["skill_root"])
+        base_slugs = list(self.skill.types)     # 原 skill 自带的款式
         # 叠加工作台自己的款式库（《墨西哥-服装款式代号表》解析出来的款式/颜色）
         try:
             from .library import merge_into_skill
@@ -102,6 +103,9 @@ class Workbench:
                 added = merge_into_skill(self.skill, base)
                 if added:
                     self.library_added = added
+                    # 款式库里有对应款式时，把原生的三款从界面下拉里隐藏（仍可按名字调用）
+                    if library_block.get("hide_original_types", True):
+                        self.skill.hidden.update(base_slugs)
         except Exception as exc:  # noqa: BLE001 - 款式库坏了也不能让工作台起不来
             self.skill.warnings.append(f"款式库加载失败：{exc}")
         # optional override of the skill's 2,000,000-byte packaging limit

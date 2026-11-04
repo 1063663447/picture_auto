@@ -5,7 +5,8 @@
   "library": {
     "enabled": true,
     "dir": "library",
-    "note": "《墨西哥-服装款式代号表》解析出的款式/颜色（library/styles.json + library/refs）"
+    "hide_original_types": true,
+    "note": "《墨西哥-服装款式代号表》解析出的款式/颜色（library/styles.json + library/refs）；hide_original_types 为 true 时原生的圆领卫衣/连帽卫衣/短袖不再出现在下拉里"
   },
   "server": {
     "host": "127.0.0.1",

@@ -396,6 +396,7 @@
     } catch (_) { /* ignore */ }
     bind();
     loadHistory();
+    refreshCacheInfo();
     const params = new URLSearchParams(location.search);
     if (params.get("denied") === "admin") {
       toast("bad", "管理后台只对管理员开放，请联系管理员开通");
@@ -912,6 +913,44 @@
     };
   }
 
+  // 图片版本：优先用任务自己的版本号（完成后不再变）→ 浏览器/本地缓存能长期命中
+  function taskVersion(task, job) {
+    if (task.version) return task.version;
+    const stamp = task.finished_at || task.started_at || 0;
+    if (stamp) return Math.round(stamp * 1000);
+    return Math.round(job.updated_at || 0);
+  }
+
+  // 读图：优先本地 IndexedDB 缓存，miss 才回服务器（并顺手存下来）
+  async function loadThumb(entry, img, url, jobId, taskId) {
+    const cache = window.WBImageCache;
+    if (!cache) {
+      img.src = url;
+      return;
+    }
+    try {
+      const localUrl = await cache.resolve({ jobId, taskId, url });
+      if (img.src !== localUrl) img.src = localUrl;
+      refreshCacheInfo();
+    } catch (error) {
+      console.warn("[thumb] 本地缓存失败，退回直连", error.message);
+      img.src = url;
+    }
+  }
+
+  async function refreshCacheInfo() {
+    const label = $("cacheInfo");
+    const clearBtn = $("cacheClear");
+    if (!label || !window.WBImageCache) return;
+    try {
+      const { count, bytes } = await window.WBImageCache.stats();
+      label.textContent = count
+        ? `本地缓存 ${count} 张 · ${(bytes / 1024 / 1024).toFixed(1)} MB`
+        : "";
+      if (clearBtn) clearBtn.hidden = count === 0;
+    } catch (_) { /* ignore */ }
+  }
+
   function updateCard(entry, task, job) {
     const status = task.status;
     if (entry.status !== status) {
@@ -926,8 +965,9 @@
     const stateText = `${STATUS[status] || status}${task.duration ? ` ${task.duration}s` : ""}`;
     if (entry.state.textContent !== stateText) entry.state.textContent = stateText;
 
-    // 只有真的换了图（URL 变化）才动 <img>：否则进度轮询会不停重新解码
-    const thumbUrl = task.thumb ? `${task.thumb}?t=${Math.round(job.updated_at)}` : "";
+    // 只有真的换了图（版本变化）才动 <img>：否则进度轮询会不停重新解码
+    // 5.6：图片先落到浏览器本地（IndexedDB），之后刷新/切历史都直接读本地，不再回服务器
+    const thumbUrl = task.thumb ? `${task.thumb}?t=${taskVersion(task, job)}` : "";
     if (thumbUrl) {
       if (entry.thumb !== thumbUrl) {
         let img = entry.shot.querySelector("img");
@@ -939,9 +979,9 @@
           entry.shot.innerHTML = "";
           entry.shot.appendChild(img);
         }
-        img.src = thumbUrl;
         entry.thumb = thumbUrl;
         entry.el.classList.add("settled");
+        loadThumb(entry, img, thumbUrl, job.id, task.id);
       }
     } else if (entry.thumb) {
       entry.shot.innerHTML = `<div class="ph">${STATUS[status] || status}</div>`;
@@ -1622,6 +1662,20 @@
     $("usageChip").addEventListener("click", () => {
       if (state.session && state.session.admin) showAccounts();
     });
+
+    if ($("cacheClear")) {
+      $("cacheClear").addEventListener("click", async () => {
+        if (!window.WBImageCache) return;
+        await window.WBImageCache.clear();
+        state.cards.forEach((entry) => {
+          entry.thumb = "";
+          entry.shot.innerHTML = `<div class="ph">重新载入…</div>`;
+        });
+        refreshCacheInfo();
+        if (state.job) renderJob(state.job);
+        toast("ok", "已清空本地图片缓存，下次打开会重新从服务器读取");
+      });
+    }
 
     // 成品卡用事件委托：卡片是增量更新的，不再每次轮询重复绑定监听
     const grid = $("gridImgs");

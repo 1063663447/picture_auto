@@ -254,7 +254,9 @@
       <section class="card">
         <div class="card-head">
           <h2>历史任务</h2>
-          <button class="btn btn-quiet btn-sm" id="feishuBtn" type="button" style="margin-left:auto">
+          <span class="hint" id="cacheInfo" style="margin-left:auto"></span>
+          <button class="btn btn-quiet btn-sm" id="cacheClear" type="button" hidden>清空本地缓存</button>
+          <button class="btn btn-quiet btn-sm" id="feishuBtn" type="button">
             飞书历史 · 打包下载
           </button>
         </div>
@@ -345,6 +347,7 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=5.5.3"></script>
+<script src="/imgcache.js?v=5.6.0"></script>
+<script src="/app.js?v=5.6.0"></script>
 </body>
 </html>
