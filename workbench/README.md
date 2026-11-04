@@ -102,10 +102,39 @@ data/jobs/20261103-100717-986c/
 
 ---
 
-## 3. 界面上怎么用（UI 5.1）
+## 3. 界面上怎么用（UI 5.3）
 
 界面按 ui-ux-pro-max skill 生成的设计系统重建（记录见 docs/uiux/DESIGN-SYSTEM.md，skill 已导入 .skills/ui-ux-pro-max/）：
 Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图标、44px 触控目标、可见焦点环、toast 代替 alert。
+
+### 款式库（《墨西哥-服装款式代号表》已接入）
+
+原 skill（`apparel-style-recolor`）保持不动，工作台用**叠加层**把款式表并进「目标款式」：
+
+| 位置 | 内容 |
+|---|---|
+| `workbench/library/styles.json` | 10 个款式 → 代号 / 展示名 / 版型英文短语 / 别名 / 颜色（label、中文名、色号、HEX、参考图） |
+| `workbench/library/refs/<slug>/<label>.jpg` | 每种颜色一张效果图（从 xlsx 里抽出来、缩到长边 900），既当界面缩略图，也作为「参考图」发给模型 |
+| `config.json → library` | `enabled` + `dir`（可关闭叠加） |
+
+已接入的 10 个款式（共 49 个颜色）：
+
+| 代号 | 款式 | 颜色数 | 版型短语（喂给模型） |
+|---|---|---|---|
+| 03 | 03 圆领卫衣 | 5 | crewneck sweatshirt, ribbed collar/cuffs/hem, brushed fleece |
+| 06 | 06 连帽卫衣 | 3 | pullover hoodie, drawstrings, kangaroo pocket |
+| 07 | 07 水洗T恤 | 1 | oversized washed / vintage-finish t-shirt |
+| 10 | 10 弹力短袖 | 7 | stretch short-sleeve t-shirt (poly-spandex jersey) |
+| 21 | 21 童装索罗娜 | 9 | kids short-sleeve tee in Sorona blend |
+| 23 | 23 索罗娜短袖 | 10 | relaxed-fit short-sleeve tee in Sorona blend |
+| 24 | 24 长袖成人 | 5 | long-sleeve t-shirt (adult) |
+| 25 | 25 长袖童装 | 5 | kids long-sleeve t-shirt |
+| 28 | 28 卫衣童装 | 3 | kids sweatshirt, crewneck, brushed fleece |
+| 29 | 29 水洗童装 | 1 | kids washed / vintage-finish tee |
+
+- 颜色按色号取名字（`BK[0]` 黑色 / `FGY[0]` 花灰色 …），HEX 是从效果图中间区域剔除背景后算出的主色，界面上的色点、提示词里的色值都用它。
+- 中文名、代号（`23#SLNDX`）、英文名都能被 `type_by_alias` 识别；命令行 `--garment-type "23 索罗娜短袖"` 同样可用。
+- 换新的 xlsx 重新生成：`python tools/build_library_from_xlsx.py <新表.xlsx>`（幂等，会重建 `library/refs` 与清单）；`python tools/show_library.py` 核对清单，`python tools/check_library.py` 检查线上/本机接口。
 
 ### 视觉层 5.0（`web/glass.css`，独立于 style.css 便于回退）
 

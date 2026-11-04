@@ -1,0 +1,502 @@
+[
+ {
+  "slug": "23-sorona-tee",
+  "style_code": "23",
+  "display_name": "23 索罗娜短袖",
+  "aliases": [
+   "23 索罗娜短袖",
+   "23 索罗娜",
+   "23#SLNDX",
+   "sorona tee",
+   "sorona t-shirt"
+  ],
+  "phrase": "a relaxed-fit short-sleeve t-shirt in Sorona polyester blend (soft drape, short sleeves, ribbed neckband)",
+  "source": "23索罗娜短袖 / 23#SLNDX&#10;宽松款短袖索罗娜材质",
+  "colors": [
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#161614",
+    "image": "refs/23-sorona-tee/black.jpg"
+   },
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#F0EFED",
+    "image": "refs/23-sorona-tee/white.jpg"
+   },
+   {
+    "label": "pink",
+    "name_zh": "粉色",
+    "color_code": "PK[0]",
+    "hex": "#EEB3B5",
+    "image": "refs/23-sorona-tee/pink.jpg"
+   },
+   {
+    "label": "apricot",
+    "name_zh": "杏色",
+    "color_code": "APR[0]",
+    "hex": "#EFE6D5",
+    "image": "refs/23-sorona-tee/apricot.jpg"
+   },
+   {
+    "label": "grey",
+    "name_zh": "灰色",
+    "color_code": "GY[0]",
+    "hex": "#3D403F",
+    "image": "refs/23-sorona-tee/grey.jpg"
+   },
+   {
+    "label": "red",
+    "name_zh": "红色",
+    "color_code": "RD[0]",
+    "hex": "#E7100E",
+    "image": "refs/23-sorona-tee/red.jpg"
+   },
+   {
+    "label": "heather-grey",
+    "name_zh": "花灰色",
+    "color_code": "FGY[0]",
+    "hex": "#D4D4D3",
+    "image": "refs/23-sorona-tee/heather-grey.jpg"
+   },
+   {
+    "label": "brown",
+    "name_zh": "棕色",
+    "color_code": "BN[0]",
+    "hex": "#896743",
+    "image": "refs/23-sorona-tee/brown.jpg"
+   },
+   {
+    "label": "blue",
+    "name_zh": "蓝色",
+    "color_code": "BU[0]",
+    "hex": "#303DAE",
+    "image": "refs/23-sorona-tee/blue.jpg"
+   },
+   {
+    "label": "forest-green",
+    "name_zh": "墨绿色",
+    "color_code": "GN[0]",
+    "hex": "#2B5F48",
+    "image": "refs/23-sorona-tee/forest-green.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "07-washed-tee",
+  "style_code": "07",
+  "display_name": "07 水洗T恤",
+  "aliases": [
+   "07 水洗T恤",
+   "水洗T恤",
+   "07#SXT",
+   "washed tee",
+   "vintage t-shirt"
+  ],
+  "phrase": "an oversized washed / vintage-finish t-shirt (garment-dyed, slightly faded cotton surface, dropped shoulders, ribbed neckband)",
+  "source": "07水洗T恤 / 07#SXT&#10;宽松T恤水洗款",
+  "colors": [
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#212224",
+    "image": "refs/07-washed-tee/black.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "24-long-sleeve",
+  "style_code": "24",
+  "display_name": "24 长袖成人",
+  "aliases": [
+   "24 长袖成人",
+   "24 长袖",
+   "24#CXCR",
+   "long-sleeve tee",
+   "long sleeve t-shirt"
+  ],
+  "phrase": "a long-sleeve t-shirt for adults (cotton jersey, ribbed cuffs and neckband)",
+  "source": "24长袖成人 / 24#CXCR&#10;长袖成人",
+  "colors": [
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#EAEAEA",
+    "image": "refs/24-long-sleeve/white.jpg"
+   },
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#1B1B1B",
+    "image": "refs/24-long-sleeve/black.jpg"
+   },
+   {
+    "label": "royal-blue",
+    "name_zh": "宝蓝色",
+    "color_code": "BU[0]",
+    "hex": "#1B1A94",
+    "image": "refs/24-long-sleeve/royal-blue.jpg"
+   },
+   {
+    "label": "red",
+    "name_zh": "红色",
+    "color_code": "RD[0]",
+    "hex": "#C80000",
+    "image": "refs/24-long-sleeve/red.jpg"
+   },
+   {
+    "label": "forest-green",
+    "name_zh": "墨绿色",
+    "color_code": "GN[0]",
+    "hex": "#1B4139",
+    "image": "refs/24-long-sleeve/forest-green.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "21-kids-sorona-tee",
+  "style_code": "21",
+  "display_name": "21 童装索罗娜",
+  "aliases": [
+   "21 童装索罗娜",
+   "21 童装",
+   "21#TZSLN",
+   "kids tee",
+   "kids t-shirt"
+  ],
+  "phrase": "a kids short-sleeve t-shirt in Sorona polyester blend (small child fit, short sleeves, ribbed neckband)",
+  "source": "21童装索罗娜 / 21#TZSLN&#10;童装,索罗娜材质",
+  "colors": [
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#F0EFEE",
+    "image": "refs/21-kids-sorona-tee/white.jpg"
+   },
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#121212",
+    "image": "refs/21-kids-sorona-tee/black.jpg"
+   },
+   {
+    "label": "pink",
+    "name_zh": "粉色",
+    "color_code": "PK[0]",
+    "hex": "#F0B4B4",
+    "image": "refs/21-kids-sorona-tee/pink.jpg"
+   },
+   {
+    "label": "purple",
+    "name_zh": "紫色",
+    "color_code": "VT[0]",
+    "hex": "#C7BFF2",
+    "image": "refs/21-kids-sorona-tee/purple.jpg"
+   },
+   {
+    "label": "bright-red",
+    "name_zh": "大红色",
+    "color_code": "RD[0]",
+    "hex": "#D5000C",
+    "image": "refs/21-kids-sorona-tee/bright-red.jpg"
+   },
+   {
+    "label": "apricot",
+    "name_zh": "杏色",
+    "color_code": "APR[0]",
+    "hex": "#FBF4D6",
+    "image": "refs/21-kids-sorona-tee/apricot.jpg"
+   },
+   {
+    "label": "brown",
+    "name_zh": "棕色",
+    "color_code": "BN[0]",
+    "hex": "#664129",
+    "image": "refs/21-kids-sorona-tee/brown.jpg"
+   },
+   {
+    "label": "blue",
+    "name_zh": "蓝色",
+    "color_code": "BU[0]",
+    "hex": "#1E3AA5",
+    "image": "refs/21-kids-sorona-tee/blue.jpg"
+   },
+   {
+    "label": "forest-green",
+    "name_zh": "墨绿色",
+    "color_code": "GN[0]",
+    "hex": "#01493A",
+    "image": "refs/21-kids-sorona-tee/forest-green.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "10-stretch-tee",
+  "style_code": "10",
+  "display_name": "10 弹力短袖",
+  "aliases": [
+   "10 弹力短袖",
+   "弹力短袖",
+   "10#TLDX",
+   "stretch t-shirt",
+   "stretch tee"
+  ],
+  "phrase": "a stretch short-sleeve t-shirt (polyester-spandex jersey, fitted body, short sleeves, ribbed neckband)",
+  "source": "10弹力短袖 / 10#TLDX&#10;弹力短袖",
+  "colors": [
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#E6E6E8",
+    "image": "refs/10-stretch-tee/white.jpg"
+   },
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#1C1D1F",
+    "image": "refs/10-stretch-tee/black.jpg"
+   },
+   {
+    "label": "apricot",
+    "name_zh": "杏色",
+    "color_code": "APR[0]",
+    "hex": "#E9E2C5",
+    "image": "refs/10-stretch-tee/apricot.jpg"
+   },
+   {
+    "label": "burgundy",
+    "name_zh": "酒红色",
+    "color_code": "DRD[0]",
+    "hex": "#7D1725",
+    "image": "refs/10-stretch-tee/burgundy.jpg"
+   },
+   {
+    "label": "pink",
+    "name_zh": "粉色",
+    "color_code": "PK[0]",
+    "hex": "#EFCAD4",
+    "image": "refs/10-stretch-tee/pink.jpg"
+   },
+   {
+    "label": "heather-grey",
+    "name_zh": "花灰色",
+    "color_code": "FGY[0]",
+    "hex": "#D1D2D5",
+    "image": "refs/10-stretch-tee/heather-grey.jpg"
+   },
+   {
+    "label": "brown",
+    "name_zh": "棕色",
+    "color_code": "BN[0]",
+    "hex": "#77583B",
+    "image": "refs/10-stretch-tee/brown.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "03-crewneck-sweatshirt",
+  "style_code": "03",
+  "display_name": "03 圆领卫衣",
+  "aliases": [
+   "03 圆领卫衣",
+   "圆领卫衣",
+   "03#YLWY",
+   "crewneck sweatshirt",
+   "sweatshirt"
+  ],
+  "phrase": "a crewneck sweatshirt (no hood, ribbed collar, cuffs and hem, mid-weight brushed fleece body)",
+  "source": "03圆领卫衣 / 03#YLWY&#10;圆领卫衣",
+  "colors": [
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#ECECEC",
+    "image": "refs/03-crewneck-sweatshirt/white.jpg"
+   },
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#131313",
+    "image": "refs/03-crewneck-sweatshirt/black.jpg"
+   },
+   {
+    "label": "heather-grey",
+    "name_zh": "花灰色",
+    "color_code": "FGY[0]",
+    "hex": "#DCDCDC",
+    "image": "refs/03-crewneck-sweatshirt/heather-grey.jpg"
+   },
+   {
+    "label": "burgundy",
+    "name_zh": "酒红色",
+    "color_code": "DRD[0]",
+    "hex": "#7A1D30",
+    "image": "refs/03-crewneck-sweatshirt/burgundy.jpg"
+   },
+   {
+    "label": "apricot",
+    "name_zh": "杏色",
+    "color_code": "APR[0]",
+    "hex": "#EFE9D9",
+    "image": "refs/03-crewneck-sweatshirt/apricot.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "06-hoodie",
+  "style_code": "06",
+  "display_name": "06 连帽卫衣",
+  "aliases": [
+   "06 连帽卫衣",
+   "连帽卫衣",
+   "06#LMWY",
+   "hoodie",
+   "hooded sweatshirt"
+  ],
+  "phrase": "a pullover hoodie (attached hood with drawstrings, kangaroo pocket, ribbed cuffs and hem, mid-weight brushed fleece body)",
+  "source": "06连帽卫衣 / 06#LMWY&#10;连帽卫衣",
+  "colors": [
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#DFDFE0",
+    "image": "refs/06-hoodie/white.jpg"
+   },
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#1E1E1E",
+    "image": "refs/06-hoodie/black.jpg"
+   },
+   {
+    "label": "heather-grey",
+    "name_zh": "花灰色",
+    "color_code": "FGY[0]",
+    "hex": "#BEBDC2",
+    "image": "refs/06-hoodie/heather-grey.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "25-kids-long-sleeve",
+  "style_code": "25",
+  "display_name": "25 长袖童装",
+  "aliases": [
+   "25 长袖童装",
+   "25 童装长袖",
+   "25#CXTZ",
+   "kids long-sleeve"
+  ],
+  "phrase": "a kids long-sleeve t-shirt (small child fit, cotton jersey, ribbed cuffs and neckband)",
+  "source": "25长袖童装 / 25#CXTZ&#10;长袖童装",
+  "colors": [
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#EAEAEA",
+    "image": "refs/25-kids-long-sleeve/white.jpg"
+   },
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#1B1B1B",
+    "image": "refs/25-kids-long-sleeve/black.jpg"
+   },
+   {
+    "label": "royal-blue",
+    "name_zh": "宝蓝色",
+    "color_code": "BU[0]",
+    "hex": "#1B1A94",
+    "image": "refs/25-kids-long-sleeve/royal-blue.jpg"
+   },
+   {
+    "label": "red",
+    "name_zh": "红色",
+    "color_code": "RD[0]",
+    "hex": "#C80000",
+    "image": "refs/25-kids-long-sleeve/red.jpg"
+   },
+   {
+    "label": "forest-green",
+    "name_zh": "墨绿色",
+    "color_code": "GN[0]",
+    "hex": "#1B4139",
+    "image": "refs/25-kids-long-sleeve/forest-green.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "28-kids-sweatshirt",
+  "style_code": "28",
+  "display_name": "28 卫衣童装",
+  "aliases": [
+   "28 卫衣童装",
+   "28 童装卫衣",
+   "28#WYTZ",
+   "kids sweatshirt"
+  ],
+  "phrase": "a kids sweatshirt (small child fit, crewneck, ribbed cuffs and hem, brushed fleece body)",
+  "source": "28卫衣童装 / 28#WYTZ&#10;卫衣童装",
+  "colors": [
+   {
+    "label": "white",
+    "name_zh": "白色",
+    "color_code": "WH[0]",
+    "hex": "#ECECEC",
+    "image": "refs/28-kids-sweatshirt/white.jpg"
+   },
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#131313",
+    "image": "refs/28-kids-sweatshirt/black.jpg"
+   },
+   {
+    "label": "heather-grey",
+    "name_zh": "花灰色",
+    "color_code": "FGY[0]",
+    "hex": "#DCDCDC",
+    "image": "refs/28-kids-sweatshirt/heather-grey.jpg"
+   }
+  ]
+ },
+ {
+  "slug": "29-kids-washed-tee",
+  "style_code": "29",
+  "display_name": "29 水洗童装",
+  "aliases": [
+   "29 水洗童装",
+   "29 童装水洗",
+   "29#SXTZ",
+   "kids washed tee"
+  ],
+  "phrase": "a kids washed / vintage-finish t-shirt (garment-dyed cotton, slightly faded surface, ribbed neckband)",
+  "source": "29水洗童装 / 29#SXTZ&#10;水洗童装",
+  "colors": [
+   {
+    "label": "black",
+    "name_zh": "黑色",
+    "color_code": "BK[0]",
+    "hex": "#2F2F2F",
+    "image": "refs/29-kids-washed-tee/black.jpg"
+   }
+  ]
+ }
+]

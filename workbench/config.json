@@ -2,6 +2,11 @@
   "skill_root": "../apparel-style-recolor",
   "data_dir": "data",
   "default_provider": "terra",
+  "library": {
+    "enabled": true,
+    "dir": "library",
+    "note": "《墨西哥-服装款式代号表》解析出的款式/颜色（library/styles.json + library/refs）"
+  },
   "server": {
     "host": "127.0.0.1",
     "port": 8787,

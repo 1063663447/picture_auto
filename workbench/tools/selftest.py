@@ -86,11 +86,14 @@ def make_print_garment(path: Path) -> None:
 
 
 def build_bench(
-    name: str, *, fail_rate: float = 0.0, extra_providers: dict | None = None
+    name: str, *, fail_rate: float = 0.0, extra_providers: dict | None = None,
+    library: bool = False,
 ) -> Workbench:
     config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     config["data_dir"] = str(SANDBOX / name / "data")
     config["skill_root"] = str(ROOT.parent / "apparel-style-recolor")
+    # 结构类断言只看原 skill；款式库单独在第 1.5 组测
+    config["library"] = {"enabled": library, "dir": str(ROOT / "library")}
     config["providers"] = {
         "mock": {"type": "mock", "enabled": True, "mock_delay_sec": 0.01,
                  "mock_fail_rate": fail_rate, "concurrency": 8}
@@ -135,6 +138,28 @@ def main() -> int:
     check("解析到负面提示词", "Do not change the person" in bench.skill.negative_prompt)
     check("2MB 限制", bench.skill.max_bytes == 2_000_000, str(bench.skill.max_bytes))
     check("解析无警告", not bench.skill.warnings, str(bench.skill.warnings))
+
+    print("\n[1.5] 款式库（墨西哥款式代号表）")
+    lib_bench = build_bench("library", library=True)
+    lib_types = [s for s in lib_bench.skill.types if s[0].isdigit()]
+    check("叠加 10 个款式", len(lib_types) == 10, str(lib_types))
+    total_colors = sum(len(lib_bench.skill.types[s].colors) for s in lib_types)
+    check("共 49 个颜色", total_colors == 49, str(total_colors))
+    missing = [
+        f"{slug}/{c.label}"
+        for slug in lib_types
+        for c in lib_bench.skill.types[slug].colors
+        if not c.path.is_file()
+    ]
+    check("每色都有参考图", not missing, str(missing[:4]))
+    check(
+        "版型短语非空",
+        all(lib_bench.skill.types[s].phrase for s in lib_types),
+    )
+    check(
+        "中文别名可选中",
+        lib_bench.skill.type_by_alias("23 索罗娜短袖").slug == "23-sorona-tee",
+    )
 
     inputs = SANDBOX / "inputs"
     inputs.mkdir()

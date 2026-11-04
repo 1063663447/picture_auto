@@ -343,10 +343,23 @@ def create_app(config_path: str | None = None) -> FastAPI:
     @app.get("/api/refs/{type_dir}/{filename}")
     async def reference_image(request: Request, type_dir: str, filename: str):
         bench = wb(request)
-        path = bench.skill.root / "assets" / "color-references" / Path(type_dir).name / Path(filename).name
-        if not path.is_file():
-            return JSONResponse({"ok": False, "error": "参考图不存在"}, status_code=404)
-        return FileResponse(path)
+        safe_dir = Path(type_dir).name
+        safe_file = Path(filename).name
+        candidates = [
+            # 原 skill 自带的色卡
+            bench.skill.root / "assets" / "color-references" / safe_dir / safe_file,
+            # 工作台自建款式库（library/refs/<slug>/<label>.jpg）
+            WORKBENCH_DIR / "library" / "refs" / safe_dir / safe_file,
+        ]
+        library_dir = (bench.config.get("library") or {}).get("dir")
+        if library_dir:
+            base = Path(str(library_dir))
+            base = base if base.is_absolute() else WORKBENCH_DIR / base
+            candidates.append(base / "refs" / safe_dir / safe_file)
+        for path in candidates:
+            if path.is_file():
+                return FileResponse(path)
+        return JSONResponse({"ok": False, "error": "参考图不存在"}, status_code=404)
 
     @app.post("/api/preview")
     async def preview_prompt(request: Request):

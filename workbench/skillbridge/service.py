@@ -89,6 +89,21 @@ class Workbench:
     # ------------------------------------------------------------------ setup #
     def reload_skill(self) -> Skill:
         self.skill = load_skill(self.config["skill_root"])
+        # 叠加工作台自己的款式库（《墨西哥-服装款式代号表》解析出来的款式/颜色）
+        try:
+            from .library import merge_into_skill
+
+            library_block = self.config.get("library") or {}
+            base = None
+            if library_block.get("dir"):
+                candidate = Path(str(library_block["dir"]))
+                base = candidate if candidate.is_absolute() else WORKBENCH_DIR / candidate
+            if library_block.get("enabled", True):
+                added = merge_into_skill(self.skill, base)
+                if added:
+                    self.library_added = added
+        except Exception as exc:  # noqa: BLE001 - 款式库坏了也不能让工作台起不来
+            self.skill.warnings.append(f"款式库加载失败：{exc}")
         # optional override of the skill's 2,000,000-byte packaging limit
         override = self.config.get("max_bytes") or (self.config.get("defaults") or {}).get(
             "max_bytes"
