@@ -400,7 +400,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 parsed_concurrency = int(concurrency)
             except (TypeError, ValueError):
                 parsed_concurrency = "auto"
-        job = bench.create_job(
+        job = await asyncio.to_thread(
+            bench.create_job,
             uploads,
             garment_type=garment_type,
             colors=colors,
@@ -453,11 +454,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
     # ------------------------------------------------- pricing / usage ------
     @app.get("/api/pricing")
     async def pricing(request: Request):
-        return {"ok": True, **wb(request).pricing_payload()}
+        bench = wb(request)
+        # 会去飞书读定价（同步 HTTP），必须丢线程池，否则出图轮询/SSE 会被卡住
+        return {"ok": True, **await asyncio.to_thread(bench.pricing_payload)}
 
     @app.get("/api/usage")
     async def usage(request: Request):
-        return {"ok": True, **wb(request).usage_payload()}
+        bench = wb(request)
+        return {"ok": True, **await asyncio.to_thread(bench.usage_payload)}
 
     @app.post("/api/drafts")
     async def create_draft(request: Request, files: list[UploadFile] = File(...)):
@@ -467,7 +471,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             data = await item.read()
             if data:
                 uploads.append((item.filename or "upload.png", data))
-        return {"ok": True, **bench.save_draft(uploads)}
+        return {"ok": True, **(await asyncio.to_thread(bench.save_draft, uploads))}
 
     # ----------------------------------------------------------- harness --
     @app.post("/api/harness/stream")
@@ -613,8 +617,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             async def tool_submit(extra: str) -> str:
                 if not draft_id:
                     return "失败：没有待生成的图片草稿"
-                uploads = bench.draft_uploads(draft_id)
-                job = bench.create_job(
+                uploads = await asyncio.to_thread(bench.draft_uploads, draft_id)
+                job = await asyncio.to_thread(
+                    bench.create_job,
                     uploads,
                     garment_type=garment.slug if garment else None,
                     colors=colors or None,

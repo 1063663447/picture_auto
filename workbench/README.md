@@ -109,6 +109,14 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 
 ### 视觉层 5.0（`web/glass.css`，独立于 style.css 便于回退）
 
+**出图不卡的三条硬规则**（5.2 起，改动请别破坏）：
+
+1. **结果区增量更新**：`renderJob()` 不再 `grid.innerHTML = ""`，改成按 `task.id` 复用卡片（`state.cards`），只改状态文字/图片 URL/按钮，图片只有在 `thumb` 真的变化时才换 `src` —— 以前每 1.2s 轮询会把所有已出图的 `<img>` 全部重建，10 张图就会触发 10 次重新解码。
+2. **成品卡不用 `backdrop-filter`**：几十个毛玻璃层同时重绘会掉帧；成品卡用半透明底 + 内高光近似质感，另外 `content-visibility: auto` 让屏幕外的卡跳过绘制。
+3. **轮询降频**：任务 >6 张 1.6s、>12 张 2.2s、页面在后台 5s；出图 >12 张时 `<html>` 自动加 `.perf-lite`，一键关掉毛玻璃与装饰动画。
+4. **服务端不堵事件循环**：读定价/用量、建任务、存草稿、飞书读表这些同步 HTTP 全部走 `asyncio.to_thread`，否则 SSE（harness）和出图轮询会互相卡住（"聊着聊着突然跳到出图"就是这个原因）。
+5. **提交即渲染**：`POST /api/jobs`、`/rework` 的响应里已经带完整任务列表，前端 `watchJob(id, seedJob)` 立刻渲染一帧，不用等第一次轮询，改图也不会"等很久突然跳"。
+
 | 项 | 做法 |
 |---|---|
 | 背景 | 极光渐变（emerald/amber 三团径向光斑，28s 缓慢漂移）；浅色模式额外一层顶部柔光 |
@@ -427,6 +435,8 @@ python tools/check_login_http.py  # 登录页、会话 Cookie、账号用量接�
 python tools/check_account_e2e.py --sync   # mock 跑一单，验证「账号」写进飞书记录
 python tools/check_real_job.py --base http://127.0.0.1:8787   # 真接口跑一单并核对用量（会花 ¥0.038）
 python tools/probe_quality.py --model gpt-image-2 --size 1024x1024   # 验证 quality 不影响分辨率/计价
+python tools/check_incremental.py --base http://127.0.0.1:8789       # 10 张任务：验证轮询不会重复加载图片
+python tools/check_rework_flow.py --base http://127.0.0.1:8789 <任务ID>  # 改图提交耗时 + 响应自带可渲染任务
 python tools/check_price_table.py    # 打印飞书定价表现状（三位小数 / 分档）
 python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表维护
 ```

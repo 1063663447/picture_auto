@@ -64,8 +64,9 @@
     accountsData: null,
     feishuRecords: [],
     feishuSelected: new Set(),
-    settledTasks: new Set(),
-    settledJob: "",
+    cards: new Map(),
+    cardsJob: "",
+    logSig: "",
     pendingText: "",
     typerTimer: null,
   };
@@ -755,9 +756,9 @@
       form.append("start", "true");
       const data = await api("/api/jobs", { method: "POST", body: form });
       closeHarness();
-      watchJob(data.job.id);
+      watchJob(data.job.id, data.job);
       loadHistory();
-      loadPricing();
+      setTimeout(loadPricing, 1500);   // 先让结果区渲染出来，用量芯片稍后再刷
       const est = data.job.params.estimate || {};
       toast("ok", est.priced
         ? `已开工：${data.job.stats.total} 张，预计 ${money(est.total, est.currency)}`
@@ -773,7 +774,7 @@
   }
 
   /* ----------------------------------------------------------------- watch */
-  function watchJob(jobId) {
+  function watchJob(jobId, seed) {
     state.jobId = jobId;
     state.selected = new Set();
     try {
@@ -782,8 +783,11 @@
       history.replaceState(null, "", url);
     } catch (_) { /* ignore */ }
     if (state.pollTimer) clearTimeout(state.pollTimer);
+    // POST 的响应里已经带完整任务列表 → 先渲染一帧，别让用户干等第一次轮询
+    if (seed && seed.id === jobId) renderJob(seed);
     const tick = async () => {
       if (!state.jobId) return;
+      let delay = 1200;
       try {
         const data = await api(`/api/jobs/${state.jobId}`);
         renderJob(data.job);
@@ -793,10 +797,16 @@
           state.pollTimer = null;
           return;
         }
+        // 任务多 / 页面在后台时降低轮询频率，别让渲染和网络互相抢
+        const total = (data.job.stats || {}).total || 0;
+        if (document.hidden) delay = 5000;
+        else if (total > 12) delay = 2200;
+        else if (total > 6) delay = 1600;
       } catch (err) {
         $("jobStage").textContent = `读取任务失败：${err.message}`;
+        delay = 2500;
       }
-      state.pollTimer = setTimeout(tick, 1200);
+      state.pollTimer = setTimeout(tick, delay);
     };
     tick();
   }
@@ -836,61 +846,178 @@
     if (job.has_zip) $("downloadBtn").href = job.zip;
 
     const grid = $("gridImgs");
-    grid.innerHTML = "";
     $("emptyState").hidden = job.tasks.length > 0;
-    const settled = state.settledTasks || new Set();
+    // 换了任务才重建；同一任务的轮询只增量更新，避免"出一张图就整片重载"
+    if (state.cardsJob !== job.id) {
+      grid.innerHTML = "";
+      state.cards = new Map();
+      state.cardsJob = job.id;
+      state.logSig = "";
+    }
+    const seen = new Set();
     job.tasks.forEach((task, index) => {
-      const card = document.createElement("div");
-      card.className = `cardimg st-${task.status}` + (state.selected.has(task.id) ? " sel" : "");
-      card.dataset.task = task.id;
-      card.style.setProperty("--i", String(Math.min(index, 12)));
-      if (settled.has(task.id) || job.id !== state.settledJob) card.classList.add("settled");
-      const thumb = task.thumb
-        ? `<img src="${task.thumb}?t=${Math.round(job.updated_at)}" loading="lazy" alt="${esc(task.color_name)}成品"/>`
-        : `<div class="ph">${STATUS[task.status] || task.status}</div>`;
-      card.innerHTML = `
-        <label class="pick" title="选择"><input type="checkbox" data-task="${esc(task.id)}" ${state.selected.has(task.id) ? "checked" : ""} aria-label="选择 ${esc(task.item)} ${esc(task.color_name)}"/></label>
-        <span class="state">${STATUS[task.status] || task.status}${task.duration ? ` ${task.duration}s` : ""}</span>
-        <div class="shot">${thumb}</div>
-        <div class="meta">
-          <span class="dot" style="background:${task.color_hex}"></span>
-          <span class="name">${esc(task.color_name)}</span>
-          <span class="time">${esc(task.item)}</span>
-        </div>
-        ${task.error ? `<div class="err" title="${esc(task.error)}">${esc(task.error)}</div>` : ""}
-        <div class="acts">
-          <a class="btn btn-ghost btn-sm" ${task.thumb ? `href="/api/jobs/${job.id}/image/${encodeURIComponent(task.id)}?download=true" download` : "aria-disabled=\"true\" style=\"pointer-events:none;opacity:.45\""}>${icon("i-download", 13)}下载</a>
-          <button class="btn btn-ghost btn-sm" data-rework="${esc(task.id)}" ${task.status === "done" ? "" : "disabled"}>${icon("i-chat", 13)}改图</button>
-          ${task.status === "failed" ? `<button class="btn btn-danger btn-sm" data-retry="${esc(task.id)}">重试</button>` : ""}
-        </div>`;
-      grid.appendChild(card);
+      let entry = state.cards.get(task.id);
+      if (!entry) {
+        entry = cardShell(task, job);
+        entry.el.style.setProperty("--i", String(Math.min(index, 14)));
+        state.cards.set(task.id, entry);
+        grid.appendChild(entry.el);
+      }
+      seen.add(task.id);
+      updateCard(entry, task, job);
     });
-    state.settledTasks = new Set(job.tasks.map((task) => task.id));
-    state.settledJob = job.id;
+    for (const [id, entry] of [...state.cards]) {
+      if (!seen.has(id)) { entry.el.remove(); state.cards.delete(id); }
+    }
 
-    grid.querySelectorAll("input[data-task]").forEach((input) => {
-      input.addEventListener("change", () => {
-        if (input.checked) state.selected.add(input.dataset.task);
-        else state.selected.delete(input.dataset.task);
-        syncSelection();
-      });
-    });
-    grid.querySelectorAll("[data-rework]").forEach((button) => {
-      button.addEventListener("click", () => openHarness("rework", [button.dataset.rework]));
-    });
-    grid.querySelectorAll("[data-retry]").forEach((button) => {
-      button.addEventListener("click", () => retrySingle(button.dataset.retry));
-    });
+    // 日志只在真有新增时才重绘
+    const entries = job.log || [];
+    const sig = `${job.id}:${entries.length}:${entries.length ? entries[entries.length - 1].t : 0}`;
+    if (sig !== state.logSig) {
+      const log = $("log");
+      const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+      const html = entries
+        .map((entry) => `<div class="${entry.level}">${fmtTime(entry.t)} ${esc(entry.msg)}</div>`)
+        .join("");
+      if (log.innerHTML !== html) log.innerHTML = html;
+      if (stick) log.scrollTop = log.scrollHeight;
+      state.logSig = sig;
+    }
 
-    const log = $("log");
-    const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
-    log.innerHTML = (job.log || [])
-      .map((entry) => `<div class="${entry.level}">${fmtTime(entry.t)} ${esc(entry.msg)}</div>`)
-      .join("");
-    if (stick) log.scrollTop = log.scrollHeight;
+    // 出图多的时候自动降级毛玻璃/装饰动画，优先保住流畅度
+    document.documentElement.classList.toggle("perf-lite", job.tasks.length > 12);
 
     $("resultToolbar").hidden = !job.tasks.length;
     syncSelection();
+  }
+
+  /* 成品卡：建壳 + 增量更新（只有变化的部分才动 DOM） */
+  function cardShell(task, job) {
+    const el = document.createElement("div");
+    el.className = "cardimg";
+    el.dataset.task = task.id;
+    el.innerHTML = `
+      <label class="pick" title="选择"><input type="checkbox" data-task="${esc(task.id)}" aria-label="选择 ${esc(task.item)} ${esc(task.color_name)}"/></label>
+      <span class="state"></span>
+      <div class="shot"><div class="ph"></div></div>
+      <div class="meta">
+        <span class="dot" style="background:${esc(task.color_hex || "#94a3b8")}"></span>
+        <span class="name">${esc(task.color_name)}</span>
+        <span class="time">${esc(task.item)}</span>
+      </div>
+      <div class="acts">
+        <a class="btn btn-ghost btn-sm" data-dl>${icon("i-download", 13)}下载</a>
+        <button class="btn btn-ghost btn-sm" data-rework="${esc(task.id)}">${icon("i-chat", 13)}改图</button>
+      </div>`;
+    return {
+      el,
+      shot: el.querySelector(".shot"),
+      state: el.querySelector(".state"),
+      input: el.querySelector("input[data-task]"),
+      dl: el.querySelector("[data-dl]"),
+      rework: el.querySelector("[data-rework]"),
+      acts: el.querySelector(".acts"),
+      err: null,
+      retry: null,
+      thumb: "",
+      status: "",
+      errorText: "",
+      jobId: job.id,
+    };
+  }
+
+  function updateCard(entry, task, job) {
+    const status = task.status;
+    if (entry.status !== status) {
+      entry.el.classList.remove(
+        "st-pending", "st-running", "st-done", "st-failed", "st-skipped", "st-canceled"
+      );
+      entry.el.classList.add(`st-${status}`);
+      entry.status = status;
+    }
+    entry.el.classList.toggle("sel", state.selected.has(task.id));
+
+    const stateText = `${STATUS[status] || status}${task.duration ? ` ${task.duration}s` : ""}`;
+    if (entry.state.textContent !== stateText) entry.state.textContent = stateText;
+
+    // 只有真的换了图（URL 变化）才动 <img>：否则进度轮询会不停重新解码
+    const thumbUrl = task.thumb ? `${task.thumb}?t=${Math.round(job.updated_at)}` : "";
+    if (thumbUrl) {
+      if (entry.thumb !== thumbUrl) {
+        let img = entry.shot.querySelector("img");
+        if (!img) {
+          img = document.createElement("img");
+          img.decoding = "async";
+          img.loading = "lazy";
+          img.alt = `${task.color_name}成品`;
+          entry.shot.innerHTML = "";
+          entry.shot.appendChild(img);
+        }
+        img.src = thumbUrl;
+        entry.thumb = thumbUrl;
+        entry.el.classList.add("settled");
+      }
+    } else if (entry.thumb) {
+      entry.shot.innerHTML = `<div class="ph">${STATUS[status] || status}</div>`;
+      entry.thumb = "";
+      entry.el.classList.add("settled");
+    } else {
+      const ph = entry.shot.querySelector(".ph");
+      const label = STATUS[status] || status;
+      if (ph && ph.textContent !== label) ph.textContent = label;
+    }
+
+    if (task.error && entry.errorText !== task.error) {
+      if (!entry.err) {
+        entry.err = document.createElement("div");
+        entry.err.className = "err";
+        entry.el.insertBefore(entry.err, entry.acts);
+      }
+      entry.err.textContent = task.error;
+      entry.err.title = task.error;
+      entry.errorText = task.error;
+    } else if (!task.error && entry.err) {
+      entry.err.remove();
+      entry.err = null;
+      entry.errorText = "";
+    }
+
+    if (task.thumb) {
+      const href = `/api/jobs/${job.id}/image/${encodeURIComponent(task.id)}?download=true`;
+      if (entry.dl.getAttribute("href") !== href) {
+        entry.dl.setAttribute("href", href);
+        entry.dl.setAttribute("download", "");
+        entry.dl.removeAttribute("aria-disabled");
+        entry.dl.style.pointerEvents = "";
+        entry.dl.style.opacity = "";
+      }
+    } else if (entry.dl.hasAttribute("href")) {
+      entry.dl.removeAttribute("href");
+      entry.dl.removeAttribute("download");
+      entry.dl.setAttribute("aria-disabled", "true");
+      entry.dl.style.pointerEvents = "none";
+      entry.dl.style.opacity = "0.45";
+    }
+
+    entry.rework.disabled = status !== "done";
+
+    if (status === "failed") {
+      if (!entry.retry) {
+        entry.retry = document.createElement("button");
+        entry.retry.className = "btn btn-danger btn-sm";
+        entry.retry.dataset.retry = task.id;
+        entry.retry.textContent = "重试";
+        entry.acts.appendChild(entry.retry);
+      }
+    } else if (entry.retry) {
+      entry.retry.remove();
+      entry.retry = null;
+    }
+
+    // 选中状态：勾选框只在变化时写，避免覆盖用户正在点的那一下
+    if (entry.input.checked !== state.selected.has(task.id)) {
+      entry.input.checked = state.selected.has(task.id);
+    }
   }
 
   function syncSelection() {
@@ -1274,16 +1401,14 @@
       if (payload.job_id) {
         watchJob(payload.job_id);
         loadHistory();
-        loadPricing();
-        closeHarness();
+        closeHarness();          // 定价/用量等任务跑完再刷，别在这儿抢带宽和事件循环
         toast("ok", "harness 已提交任务");
       }
     } else if (event === "job") {
       if (payload.job_id) {
         watchJob(payload.job_id);
         loadHistory();
-        loadPricing();
-        closeHarness();
+        closeHarness();          // 定价/用量等任务跑完再刷，别在这儿抢带宽和事件循环
         toast("ok", "harness 已提交任务");
       }
     } else if (event === "done") {
@@ -1367,9 +1492,9 @@
     try {
       const data = await api(`/api/jobs/${state.reworkSourceJob}/rework`, { method: "POST", body: form });
       closeHarness();
-      watchJob(data.job.id);
+      watchJob(data.job.id, data.job);
       loadHistory();
-      loadPricing();
+      setTimeout(loadPricing, 1500);
       toast("ok", `已提交 ${state.reworkTargets.length} 张返工`);
     } catch (err) {
       toast("bad", `提交返工失败：${err.message}`);
@@ -1496,6 +1621,32 @@
     $("logoutBtn").addEventListener("click", logout);
     $("usageChip").addEventListener("click", () => {
       if (state.session && state.session.admin) showAccounts();
+    });
+
+    // 成品卡用事件委托：卡片是增量更新的，不再每次轮询重复绑定监听
+    const grid = $("gridImgs");
+    grid.addEventListener("change", (event) => {
+      const input = event.target.closest("input[data-task]");
+      if (!input) return;
+      if (input.checked) state.selected.add(input.dataset.task);
+      else state.selected.delete(input.dataset.task);
+      syncSelection();
+    });
+    grid.addEventListener("click", (event) => {
+      const rework = event.target.closest("[data-rework]");
+      if (rework) {
+        event.preventDefault();
+        if (!rework.disabled) openHarness("rework", [rework.dataset.rework]);
+        return;
+      }
+      const retry = event.target.closest("[data-retry]");
+      if (retry) {
+        event.preventDefault();
+        retrySingle(retry.dataset.retry);
+        return;
+      }
+      const dl = event.target.closest("[data-dl]");
+      if (dl && dl.getAttribute("aria-disabled") === "true") event.preventDefault();
     });
 
     document.addEventListener("keydown", (event) => {

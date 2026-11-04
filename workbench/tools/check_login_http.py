@@ -27,7 +27,7 @@ with TestClient(app) as client:
     r = client.post("/login", data={"username": "admin", "password": "wrong"}, follow_redirects=False)
     print("login bad ->", r.status_code, r.headers.get("location"))
 
-    r = client.post("/login", data={"username": "admin", "password": "Apparel@2026"},
+    r = client.post("/login", data={"username": "admin", "password": "Asd123456."},
                     follow_redirects=False)
     print("login ok ->", r.status_code, r.headers.get("location"),
           "cookie:", bool(r.cookies.get("wb_session")))
