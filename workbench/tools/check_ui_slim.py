@@ -10,6 +10,7 @@ BASE = "https://apparel-recolor-workbench.onrender.com"
 
 def main() -> int:
     with httpx.Client(base_url=BASE, timeout=180, follow_redirects=False) as client:
+        login_page = client.get("/login").text      # 先看未登录的登录页
         print("login", client.post("/login", data={"username": "admin", "password": "Asd123456."}).status_code)
         page = client.get("/").text
         title = re.search(r"<title>(.*?)</title>", page)
@@ -34,8 +35,8 @@ def main() -> int:
         print("  JS 无 sendReference:", "sendReference" not in js,
               "| JS 无 modelTip:", "modelTip" not in js,
               "| JS 有 selectGarment:", "selectGarment" in js)
-        login = client.get("/login").text
-        print("  登录页标题=生图工作台:", "生图工作台" in login)
+        print("  登录页标题=生图工作台:", "生图工作台" in login_page,
+              "| 旧名残留:", "服装改款换色工作台" in login_page)
     return 0
 
 
