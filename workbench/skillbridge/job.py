@@ -41,7 +41,9 @@ class Task:
     color: str
     color_hex: str
     color_name: str
-    source: str                     # relative to the job dir
+    source: str = ""                # relative to the job dir
+    garment: str = ""               # 款式 slug（多款式任务时用于区分目录/命名）
+    garment_name: str = ""          # 款式展示名
     prompt: str = ""
     status: str = "pending"          # pending|running|done|failed|skipped|canceled
     attempts: int = 0
@@ -144,6 +146,8 @@ class Job:
                     data.pop("prompt", None)
                 data["version"] = self._task_version(task)
                 # thumb 是原图（下载/大图用），thumb_small 是列表用的缩略图（几 MB → 几十 KB）
+                data["garment"] = task.garment
+                data["garment_name"] = task.garment_name
                 data["thumb"] = f"/api/jobs/{self.id}/image/{task.id}" if task.out else None
                 data["thumb_small"] = (
                     f"/api/jobs/{self.id}/thumb/{task.id}?w=520&v={self._task_version(task) or 0}"
@@ -214,6 +218,8 @@ class Job:
                     color=raw["color"],
                     color_hex=raw.get("color_hex") or "",
                     color_name=raw.get("color_name") or raw["color"],
+                    garment=raw.get("garment") or "",
+                    garment_name=raw.get("garment_name") or "",
                     source=raw.get("source") or "",
                     prompt=raw.get("prompt") or "",
                     status=raw.get("status") or "pending",

@@ -107,7 +107,7 @@ TOOL_DEFS = [
         "type": "function",
         "function": {
             "name": "submit_generation",
-            "description": "按当前上传的图片、款式、颜色开工生成。只有用户明确同意后才调用。",
+            "description": "按当前上传的图片、款式、颜色开工生成（可能一次包含多个款式，每个款式各自全色）。只有用户明确同意后才调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -193,6 +193,8 @@ class AgentContext:
     garment: str = ""
     color: str = ""
     count: int = 0
+    # 多款式：每人一项 {garment_type, garment_name, colors:[...]}
+    selections: list[dict] = field(default_factory=list)
     model: str = ""
     base_prompt: str = ""
     requirements: str = ""
@@ -434,9 +436,15 @@ async def run_agent(
 
 def _intake_intro(ctx: AgentContext, user_message: str) -> str:
     parts = [f"当前模式：{'返工' if ctx.mode == 'rework' else '开工前沟通'}"]
-    if ctx.garment:
+    if len(ctx.selections) > 1:
+        detail = "、".join(
+            f"{item.get('garment_name') or item.get('garment_type')}（{len(item.get('colors') or [])} 色）"
+            for item in ctx.selections
+        )
+        parts.append(f"本批一次出 {len(ctx.selections)} 个款式：{detail}")
+    elif ctx.garment:
         parts.append(f"目标款式：{ctx.garment}")
-    if ctx.color:
+    if ctx.color and len(ctx.selections) <= 1:
         parts.append(f"颜色：{ctx.color}")
     if ctx.count:
         parts.append(f"预计调用：{ctx.count} 次")

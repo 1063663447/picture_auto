@@ -45,8 +45,8 @@
     modelRows: [],
     streamedText: "",
     usage: null,
-    garment: null,
-    colors: new Set(),
+    // 多款式：每项 { slug, colors:Set<label> }；默认一个款式且全色选中
+    styles: [],
     files: [],
     jobId: null,
     pollTimer: null,
@@ -446,12 +446,8 @@
         $("skillWarn").textContent = `解析提示 ${skill.warnings.length} 条`;
         $("skillWarn").title = skill.warnings.join("\n");
       }
-      const slugs = Object.keys(skill.types);
-      const saved = restore("garment", null);
-      state.garment = slugs.includes(saved) ? saved : slugs[0];
-      state.colors = new Set(skill.types[state.garment].colors.map((c) => c.label));
-      renderTypes();
-      renderColors();
+      restoreStyles();
+      renderStyles();
     } catch (err) {
       console.warn("skill 读取失败", err);
     }
@@ -485,53 +481,179 @@
     if (params.get("panel") === "prompt") showPrompt();
   }
 
-  /* ----------------------------------------------------------------- types */
-  function renderTypes() {
-    const select = $("garment");
-    select.innerHTML = "";
-    for (const [slug, type] of Object.entries(state.skill.types)) {
-      const option = document.createElement("option");
-      option.value = slug;
-      option.textContent = `${type.display_name} · ${type.colors.length} 色`;
-      select.appendChild(option);
+  /* ---------------------------------------------------------- styles 篇 */
+  function allLabels(slug) {
+    const type = state.skill && state.skill.types[slug];
+    return type ? type.colors.map((c) => c.label) : [];
+  }
+  function styleName(slug) {
+    const type = state.skill && state.skill.types[slug];
+    return type ? type.display_name : slug;
+  }
+  function styleType(slug) {
+    return (state.skill && state.skill.types[slug]) || null;
+  }
+
+  // 恢复上次的选择；没有就用第一个款式、全色
+  function restoreStyles() {
+    const slugs = Object.keys(state.skill.types);
+    const saved = restore("styles", null);
+    const list = [];
+    if (Array.isArray(saved)) {
+      for (const item of saved) {
+        const slug = String((item && item.slug) || "");
+        if (!slugs.includes(slug)) continue;
+        if (list.some((s) => s.slug === slug)) continue;
+        const wanted = new Set((item.colors || []).filter((c) => allLabels(slug).includes(c)));
+        list.push({ slug, colors: wanted.size ? wanted : new Set(allLabels(slug)) });
+      }
     }
-    if (state.skill.types[state.garment]) select.value = state.garment;
-    const current = state.skill.types[state.garment];
-    $("typeHint").textContent = current ? `${current.colors.length} 个内置颜色` : "";
+    if (!list.length) {
+      // 兼容老版本的 garment 键
+      const legacy = restore("garment", null);
+      const slug = slugs.includes(legacy) ? legacy : slugs[0];
+      list.push({ slug, colors: new Set(allLabels(slug)) });
+    }
+    state.styles = list;
   }
 
-  function selectGarment(slug) {
-    if (!state.skill || !state.skill.types[slug]) return;
-    state.garment = slug;
-    store("garment", slug);
-    state.colors = new Set(state.skill.types[slug].colors.map((c) => c.label));
-    renderTypes();
-    renderColors();
+  function primaryStyle() {
+    return state.styles[0] || { slug: "", colors: new Set() };
+  }
+  function totalColors() {
+    return state.styles.reduce((sum, item) => sum + item.colors.size, 0);
+  }
+  function selectionsPayload() {
+    return state.styles
+      .filter((item) => item.colors.size)
+      .map((item) => ({
+        garment_type: item.slug,
+        garment_name: styleName(item.slug),
+        colors: [...item.colors],
+      }));
   }
 
-  /* ---------------------------------------------------------------- colors */
-  function renderColors() {
-    const type = state.skill.types[state.garment];
-    const box = $("colors");
-    box.innerHTML = "";
-    type.colors.forEach((color) => {
-      const on = state.colors.has(color.label);
-      const chip = document.createElement("label");
-      chip.className = "chip" + (on ? " sel" : "");
-      chip.title = `${color.name_zh} ${color.hex}`;
-      chip.innerHTML = `<span class="dot" style="background:${color.hex}"></span>${esc(color.name_zh)}`;
-      chip.addEventListener("click", () => {
-        if (state.colors.has(color.label)) state.colors.delete(color.label);
-        else state.colors.add(color.label);
-        renderColors();
-      });
-      box.appendChild(chip);
-    });
+  function renderStyles() {
+    const box = $("styleList");
+    if (!box || !state.skill) return;
+    const slugs = Object.keys(state.skill.types);
+    box.innerHTML = state.styles.map((item, index) => {
+      const type = styleType(item.slug);
+      const colors = type ? type.colors : [];
+      const options = slugs.map((slug) => {
+        const t = state.skill.types[slug];
+        return `<option value="${esc(slug)}"${slug === item.slug ? " selected" : ""}>${esc(t.display_name)} · ${t.colors.length} 色</option>`;
+      }).join("");
+      const chips = colors.map((color) => {
+        const on = item.colors.has(color.label);
+        return `<button class="chip${on ? " sel" : ""}" type="button" data-color="${esc(color.label)}"
+          title="${esc(color.name_zh)} ${esc(color.hex)}" aria-pressed="${on}">
+          <span class="dot" style="background:${esc(color.hex)}"></span>${esc(color.name_zh)}</button>`;
+      }).join("");
+      return `<div class="style-block" data-index="${index}">
+        <div class="style-top">
+          <label class="field style-field">
+            <span class="lbl">款式 ${state.styles.length > 1 ? `#${index + 1}` : ""}
+              <span class="count">${colors.length} 色</span></span>
+            <select class="style-select" data-slug="${esc(item.slug)}" aria-label="款式 ${index + 1}">${options}</select>
+          </label>
+          <button class="style-drop" type="button" data-drop="${index}" title="移除这个款式"
+            ${state.styles.length > 1 ? "" : "hidden"}><svg><use href="#i-x"/></svg></button>
+        </div>
+        <div class="style-colors">${chips}</div>
+        <div class="style-foot">
+          <span class="hint">已选 ${item.colors.size} / ${colors.length} 色</span>
+          <span class="style-acts">
+            <button class="tiny-button" type="button" data-pick="all">全选</button>
+            <button class="tiny-button" type="button" data-pick="none">清空</button>
+          </span>
+        </div>
+      </div>`;
+    }).join("");
     updateSummary();
   }
 
+  function addStyle() {
+    if (!state.skill) return;
+    const slugs = Object.keys(state.skill.types);
+    const used = new Set(state.styles.map((s) => s.slug));
+    const next = slugs.find((slug) => !used.has(slug)) || slugs[0];
+    state.styles.push({ slug: next, colors: new Set(allLabels(next)) });
+    saveSettings();
+    renderStyles();
+    const list = $("styleList");
+    if (list && list.lastElementChild) {
+      list.lastElementChild.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+
+  function setStyleSlug(index, slug) {
+    const item = state.styles[index];
+    if (!item || !styleType(slug)) return;
+    // 同一款式不重复（已经是别的卡片的那款就换回来）
+    const clash = state.styles.findIndex((s, i) => i !== index && s.slug === slug);
+    if (clash >= 0) {
+      state.styles[index].slug = state.styles[clash].slug === slug ? item.slug : slug;
+    }
+    item.slug = slug;
+    item.colors = new Set(allLabels(slug));   // 换款式 → 默认全色
+    saveSettings();
+    renderStyles();
+  }
+
+  // 款式卡片上的一切交互（换款式 / 点色块 / 全选清空 / 删除）
+  function bindStyleList() {
+    const box = $("styleList");
+    if (!box) return;
+    box.addEventListener("change", (event) => {
+      const select = event.target.closest(".style-select");
+      if (!select) return;
+      const card = select.closest(".style-block");
+      setStyleSlug(Number(card.dataset.index), select.value);
+    });
+    box.addEventListener("click", (event) => {
+      const card = event.target.closest(".style-block");
+      if (!card) return;
+      const index = Number(card.dataset.index);
+      const chip = event.target.closest("[data-color]");
+      if (chip) {
+        event.preventDefault();
+        toggleStyleColor(index, chip.dataset.color);
+        return;
+      }
+      const pick = event.target.closest("[data-pick]");
+      if (pick) {
+        event.preventDefault();
+        const item = state.styles[index];
+        if (!item) return;
+        item.colors = pick.dataset.pick === "all"
+          ? new Set(allLabels(item.slug))
+          : new Set();
+        saveSettings();
+        renderStyles();
+        return;
+      }
+      const drop = event.target.closest("[data-drop]");
+      if (drop && state.styles.length > 1) {
+        event.preventDefault();
+        state.styles.splice(index, 1);
+        saveSettings();
+        renderStyles();
+      }
+    });
+  }
+
+  function toggleStyleColor(index, label) {
+    const item = state.styles[index];
+    if (!item) return;
+    if (item.colors.has(label)) item.colors.delete(label);
+    else item.colors.add(label);
+    saveSettings();
+    renderStyles();
+  }
+
   function expectedCalls() {
-    return state.files.length * state.colors.size;
+    return state.files.length * totalColors();
   }
 
   function currentModel() {
@@ -574,7 +696,7 @@
 
   function updateSummary() {
     const items = state.files.length;
-    const colors = state.colors.size;
+    const colors = totalColors();
     const calls = expectedCalls();
     $("outputCount").textContent = state.skill
       ? `将产出 ${items * colors} 张成品（${items} 图 × ${colors} 色）· 预计调用 ${calls} 次`
@@ -791,6 +913,10 @@
     updateSummary();
   }
   function saveSettings() {
+    store("styles", state.styles.map((item) => ({
+      slug: item.slug,
+      colors: [...item.colors],
+    })));
     store("aspect", currentAspect());
     store("sizeTier", currentTierChoice());
     store("quality", $("quality").value);
@@ -819,8 +945,11 @@
     try {
       const form = new FormData();
       state.files.forEach((entry) => form.append("files", entry.file, entry.file.name));
-      form.append("garment_type", state.garment);
-      for (const label of state.colors) form.append("colors", label);
+      const picked = selectionsPayload();
+      form.append("selections", JSON.stringify(picked));
+      const head = primaryStyle();
+      form.append("garment_type", head.slug || "");
+      for (const label of head.colors) form.append("colors", label);
       form.append("mode", "single_pass");
       form.append("provider", $("provider").value);
       form.append("model", currentModel());
@@ -912,9 +1041,12 @@
     state.job = job;
     const params = job.params || {};
     const isRework = params.kind === "rework";
+    const styleCount = (params.selections || []).length;
     $("jobTitle").textContent = isRework
       ? `改图返工 · ${job.stats.total} 张`
-      : `${params.garment_name || "任务"} · ${job.stats.total} 张`;
+      : styleCount > 1
+        ? `${styleCount} 个款式 · ${job.stats.total} 张`
+        : `${params.garment_name || "任务"} · ${job.stats.total} 张`;
     $("jobStage").textContent = job.stage || job.status;
 
     const stats = job.stats;
@@ -1003,7 +1135,12 @@
   }
 
   /* 成品卡：建壳 + 增量更新（只有变化的部分才动 DOM） */
+  function shortName(name) {
+    return String(name || "").replace(/^\d+\s*/, "") || "";
+  }
+
   function cardShell(task, job) {
+    const multi = ((job.params || {}).selections || []).length > 1;
     const el = document.createElement("div");
     el.className = "cardimg";
     el.dataset.task = task.id;
@@ -1014,6 +1151,7 @@
       <div class="meta">
         <span class="dot" style="background:${esc(task.color_hex || "#94a3b8")}"></span>
         <span class="name">${esc(task.color_name)}</span>
+        ${multi ? `<span class="garment" title="${esc(task.garment_name || "")}">${esc(shortName(task.garment_name))}</span>` : ""}
         <span class="time">${esc(task.item)}</span>
       </div>
       <div class="acts">
@@ -1203,7 +1341,12 @@
       for (const job of data.jobs) {
         const item = document.createElement("div");
         item.className = "hitem" + (job.id === state.jobId ? " on" : "");
-        const name = job.params.kind === "rework" ? "改图返工" : (job.params.garment_name || job.id);
+        const styles = (job.params.selections || []).length;
+        const name = job.params.kind === "rework"
+          ? "改图返工"
+          : styles > 1
+            ? `${styles} 个款式`
+            : (job.params.garment_name || job.id);
         item.innerHTML = `<span class="grow">${esc(name)} · ${job.stats.total} 张</span>
           <span class="badge ${job.status}">${job.stats.done}/${job.stats.total}</span>`;
         item.title = `${job.id} · ${job.stage || ""}`;
@@ -1251,12 +1394,13 @@
   async function showPrompt() {
     await withLoading($("previewBtn"), async () => {
     try {
-      const color = state.colors.values().next().value || null;
+      const pick = primaryStyle();
+      const color = pick.colors.values().next().value || null;
       const data = await api("/api/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          garment_type: state.garment,
+          garment_type: pick.slug,
           color,
           requirement: state.requirements || "",
           pattern_mode: currentPatternMode(),
@@ -1266,7 +1410,10 @@
       const head = [
         `【一次到位】图案策略：${modeLabel}`,
         state.requirements ? `【本次需求】${state.requirements}` : "【本次需求】无（按默认规范）",
-      ].join("\n");
+        state.styles.length > 1
+          ? `【多款式】本批共 ${state.styles.length} 个款式，这里预览第 1 个：${styleName(pick.slug)}（每个款式按自己的版型短语各自组装提示词）`
+          : "",
+      ].filter(Boolean).join("\n");
       $("promptBody").textContent =
         `${head}\n\n${data.single_pass}\n\n【负面提示词】\n\n${data.negative}`;
       openDrawer("prompt");
@@ -1569,8 +1716,10 @@
       try { await ensureDraft(); }
       catch (err) { toast("bad", `上传草稿失败：${err.message}`); return; }
       const items = state.files.length;
-      const colors = state.colors.size;
-      const name = state.skill ? state.skill.types[state.garment].display_name : "";
+      const colors = totalColors();
+      const styleText = state.styles
+        .map((entry) => `${styleName(entry.slug)}（${entry.colors.size} 色）`)
+        .join(" + ");
       $("harnessTitle").textContent = "需求沟通";
       $("harnessSub").textContent = `${items} 图 × ${colors} 色 · 预计 ${items * colors} 次调用`;
       $("harnessApply").textContent = "按分析结果生成";
@@ -1583,7 +1732,7 @@
         : "该模型未定价";
       chatBubble(
         "assistant",
-        `这批：${name} × ${colors} 色 × ${items} 图，${model}，${cost}。\n有特殊要求可以直接说，也可以让我先看图判断风险。`
+        `这批：${styleText} · ${items} 图 × 共 ${colors} 色，${model}，${cost}。\n有特殊要求可以直接说，也可以让我先看图判断风险。`
       );
     }
     $("harnessApply").disabled = true;
@@ -1710,8 +1859,10 @@
       payload.model = currentModel();
     } else {
       payload.draft_id = state.draftId;
-      payload.garment_type = state.garment;
-      payload.colors = [...state.colors];
+      const head = primaryStyle();
+      payload.garment_type = head.slug || "";
+      payload.colors = [...head.colors];
+      payload.selections = selectionsPayload();
       payload.model = currentModel();
       payload.count = expectedCalls();
       payload.size = currentSize();
@@ -1804,7 +1955,7 @@
   /* ------------------------------------------------------------------ bind */
   function startBlockedReason() {
     if (!state.files.length) return "请先上传至少一张原图";
-    if (!state.colors.size) return "请至少选择一个颜色";
+    if (!totalColors()) return "请至少选择一个颜色";
     if (!currentModel()) return "请选择模型";
     if (!$("provider").value) return "请选择生图接口";
     return "";
@@ -1813,7 +1964,7 @@
   function bind() {
     const drop = $("drop");
     const input = $("fileInput");
-    $("garment").addEventListener("change", (event) => selectGarment(event.target.value));
+    bindStyleList();
     drop.addEventListener("click", () => input.click());
     input.addEventListener("change", () => { addFiles(input.files); input.value = ""; });
     ["dragenter", "dragover"].forEach((type) =>
@@ -1824,11 +1975,8 @@
       if (event.dataTransfer && event.dataTransfer.files) addFiles(event.dataTransfer.files);
     });
 
-    $("pickAll").addEventListener("click", () => {
-      state.colors = new Set(state.skill.types[state.garment].colors.map((c) => c.label));
-      renderColors();
-    });
-    $("pickNone").addEventListener("click", () => { state.colors.clear(); renderColors(); });
+    const addStyleBtn = $("addStyle");
+    if (addStyleBtn) addStyleBtn.addEventListener("click", () => addStyle());
 
     ["aspect", "sizeTier", "patternMode", "quality", "outputFormat", "downloadFmt"]
       .filter((id) => $(id))

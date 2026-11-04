@@ -395,8 +395,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def create_job(
         request: Request,
         files: list[UploadFile] = File(...),
-        garment_type: str = Form(...),
+        garment_type: str = Form(""),
         colors: list[str] = Form(default=[]),
+        selections: str = Form(""),
         mode: str = Form("single_pass"),
         provider: str = Form(""),
         model: str = Form(""),
@@ -430,11 +431,26 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 parsed_concurrency = int(concurrency)
             except (TypeError, ValueError):
                 parsed_concurrency = "auto"
+        parsed_selections: list[dict] = []
+        if str(selections or "").strip():
+            try:
+                raw = json.loads(selections)
+                if isinstance(raw, list):
+                    parsed_selections = [item for item in raw if isinstance(item, dict)]
+            except json.JSONDecodeError as exc:
+                return JSONResponse(
+                    {"ok": False, "error": f"selections 不是合法 JSON：{exc}"}, status_code=400
+                )
+        if not parsed_selections and not garment_type:
+            return JSONResponse(
+                {"ok": False, "error": "请至少选择一个款式"}, status_code=400
+            )
         job = await asyncio.to_thread(
             bench.create_job,
             uploads,
-            garment_type=garment_type,
+            garment_type=garment_type or None,
             colors=colors,
+            selections=parsed_selections or None,
             mode=mode,
             provider=provider,
             model=model,
@@ -545,6 +561,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         colors = [str(c) for c in (body.get("colors") or []) if str(c).strip()]
         model_choice = str(body.get("model") or "")
         # 连续对话：前端把最近几轮问答带上来（[{role, content}]）
+        parsed_selections = [
+            {"garment_type": str(item.get("garment_type") or ""),
+             "garment_name": str(item.get("garment_name") or item.get("garment_type") or ""),
+             "colors": [str(c) for c in (item.get("colors") or [])]}
+            for item in (body.get("selections") or [])
+            if isinstance(item, dict)
+        ]
         history = [
             {"role": str(item.get("role") or ""), "content": str(item.get("content") or "")}
             for item in (body.get("history") or [])
@@ -618,6 +641,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 garment=garment.display_name if garment else "",
                 color=color,
                 count=count,
+                selections=parsed_selections,
                 model=model_choice,
                 base_prompt=base_prompt,
                 draft_id=draft_id,
@@ -686,6 +710,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     uploads,
                     garment_type=garment.slug if garment else None,
                     colors=colors or None,
+                    selections=ctx.selections or None,
+
                     provider=provider_obj.name,
                     model=model_choice,
                     concurrency="auto",

@@ -78,13 +78,19 @@ class JobRunner:
         colors: list[ColorRef],
         provider: Provider,
         *,
+        selections: list[tuple[GarmentType, list[ColorRef]]] | None = None,
         data_dir: Path,
         provider_sem: asyncio.Semaphore | None = None,
     ) -> None:
         self.job = job
         self.skill = skill
-        self.garment = garment
-        self.colors = colors
+        # 多款式：selections = [(款式, [颜色...]), ...]；单款式时只有一个元素
+        self.selections: list[tuple[GarmentType, list[ColorRef]]] = [
+            (g, list(c)) for g, c in (selections or [(garment, colors)])
+        ]
+        self.garment = self.selections[0][0]
+        self.colors = self.selections[0][1]
+        self.multi_style = len(self.selections) > 1
         self.provider = provider
         self.data_dir = data_dir
 
@@ -191,33 +197,41 @@ class JobRunner:
         if not sources:
             raise ValueError("没有可处理的输入图片")
         tasks: list[Task] = []
-        for item, view, path in sources:
-            base = f"{item}-{view}" if view else item
-            for color in self.colors:
-                task_id = f"{base}__{color.label}"
-                if self.mode in {"two_phase", "recolor_only"}:
-                    prompt = prompts.build_recolor_only(color, pattern_mode=self.pattern_mode)
-                else:
-                    prompt = prompts.build_single_pass(
-                        self.skill,
-                        self.garment,
-                        color,
-                        self.extra_requirements,
-                        pattern_mode=self.pattern_mode,
-                        pattern_brief=self.pattern_brief,
+        for garment, colors in self.selections:
+            for item, view, path in sources:
+                base = f"{item}-{view}" if view else item
+                for color in colors:
+                    # 多款式时 id 里带上款式，避免「同图同色不同款」撞号
+                    task_id = (
+                        f"{base}__{garment.slug}__{color.label}"
+                        if self.multi_style
+                        else f"{base}__{color.label}"
                     )
-                tasks.append(
-                    Task(
-                        id=task_id,
-                        item=item,
-                        view=view,
-                        color=color.label,
-                        color_hex=color.hex,
-                        color_name=color.name_zh,
-                        source=str(path.relative_to(self.root)).replace("\\", "/"),
-                        prompt=prompt,
+                    if self.mode in {"two_phase", "recolor_only"}:
+                        prompt = prompts.build_recolor_only(color, pattern_mode=self.pattern_mode)
+                    else:
+                        prompt = prompts.build_single_pass(
+                            self.skill,
+                            garment,
+                            color,
+                            self.extra_requirements,
+                            pattern_mode=self.pattern_mode,
+                            pattern_brief=self.pattern_brief,
+                        )
+                    tasks.append(
+                        Task(
+                            id=task_id,
+                            item=item,
+                            view=view,
+                            color=color.label,
+                            color_hex=color.hex,
+                            color_name=color.name_zh,
+                            garment=garment.slug,
+                            garment_name=garment.display_name,
+                            source=str(path.relative_to(self.root)).replace("\\", "/"),
+                            prompt=prompt,
+                        )
                     )
-                )
         self.job.tasks = tasks
         self.job.total = len(tasks)
         self._save(force=True)
@@ -553,7 +567,8 @@ class JobRunner:
             if suffix != wanted:
                 data = self._convert(data, wanted)
                 suffix = wanted
-        item_dir = self.staging_dir / task.item
+        folder = task.item if not self.multi_style else f"{task.item}__{task.garment or 'style'}"
+        item_dir = self.staging_dir / folder
         item_dir.mkdir(parents=True, exist_ok=True)
         stem = f"{task.item}-{task.view}" if task.view else task.item
         target = item_dir / f"{stem}_{task.color}{suffix}"
@@ -594,6 +609,7 @@ class JobRunner:
         expected = (
             len(self.colors)
             if self.mode == "single_pass"
+            and not self.multi_style
             and stats["failed"] == 0
             and stats["canceled"] == 0
             else None

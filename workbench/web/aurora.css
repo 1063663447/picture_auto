@@ -804,3 +804,81 @@ html { scroll-behavior: smooth; }
   .tool-line .spin { animation: none; border-top-color: var(--purple); }
   .bubble.streaming::after { animation: none; }
 }
+
+/* ==========================================================================
+   7.2 · 多款式：每个款式一个圆角卡片（款式 + 颜色 + 全选/清空），底部加号继续加
+   ========================================================================== */
+
+.style-list { display: grid; gap: 10px; }
+
+.style-block {
+  position: relative;
+  border: 1px solid #b5a0ff26;
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 90% at 12% 0%, #b5a0ff12, transparent 60%),
+    #14131f99;
+  padding: 11px 12px 10px;
+  transition: border-color 0.25s var(--ease), box-shadow 0.25s var(--ease), background 0.25s;
+}
+.style-block:hover { border-color: #b5a0ff55; box-shadow: 0 10px 26px -18px #b5a0ff66; }
+.style-block + .style-block::before {
+  content: "";
+  position: absolute; left: 14px; right: 14px; top: -6px; height: 1px;
+  background: linear-gradient(90deg, transparent, #b5a0ff33, transparent);
+}
+
+.style-top { display: flex; align-items: flex-end; gap: 8px; }
+.style-field { flex: 1; min-width: 0; margin: 0 0 8px; }
+.style-field .lbl { margin-bottom: 6px; }
+.style-field .lbl .count {
+  margin-left: 6px; padding: 1px 6px; font-size: 9px;
+  background: #b5a0ff14; color: #c3b4ef; border-radius: 5px;
+}
+.style-select { width: 100%; }
+
+.style-drop {
+  flex: 0 0 auto; width: 28px; height: 28px; margin-bottom: 8px;
+  display: grid; place-items: center; border-radius: 9px;
+  border: 1px solid var(--line); background: #ffffff05; color: #8f88a8;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.style-drop:hover { color: var(--danger); border-color: #ff8f8f55; background: #ff8f8f12; }
+.style-drop svg { width: 13px; height: 13px; }
+
+.style-colors {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  padding: 9px 0 2px;
+}
+
+.style-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 6px;
+}
+.style-foot .hint { margin: 0; }
+.style-acts { display: flex; gap: 10px; }
+.style-acts .tiny-button { font-size: 10px; }
+.style-acts .tiny-button:hover { color: #dbcfff; }
+
+/* 加号：虚线圆角框，点了再加一个款式 */
+.add-style {
+  width: 100%; margin-top: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 12px; border-radius: 14px;
+  border: 1px dashed #b5a0ff40; background: #b5a0ff08;
+  color: #bda9f0; font-size: 11px;
+  transition: border-color 0.25s, background 0.25s, color 0.25s, transform 0.25s var(--ease);
+}
+.add-style svg { width: 13px; height: 13px; }
+.add-style:hover {
+  border-color: #c2aaff; background: #b5a0ff14; color: #e6dcff;
+  transform: translateY(-1px);
+}
+.add-style:active { transform: scale(0.99); }
+
+/* 卡片上的款式小标签（多款式任务时用） */
+.cardimg .meta .garment {
+  font-size: 9px; color: #9d94bd; background: #b5a0ff12;
+  border: 1px solid #b5a0ff26; border-radius: 5px; padding: 1px 5px;
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

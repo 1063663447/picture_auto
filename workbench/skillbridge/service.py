@@ -311,6 +311,7 @@ class Workbench:
         *,
         garment_type: str | None,
         colors: list[str] | None = None,
+        selections: list[dict] | None = None,
         mode: str = "single_pass",
         provider: str | None = None,
         model: str | None = None,
@@ -332,11 +333,40 @@ class Workbench:
         if not uploads:
             raise WorkbenchError("请先上传至少一张图片")
 
-        garment = self._resolve_garment(garment_type)
-        try:
-            selected = garment.resolve_colors(colors)
-        except KeyError as exc:
-            raise WorkbenchError(str(exc)) from exc
+        plan: list[tuple[object, list]] = []
+        seen: dict[str, int] = {}
+        for raw in selections or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                picked = self._resolve_garment(raw.get("garment_type") or raw.get("slug"))
+            except WorkbenchError as exc:
+                raise WorkbenchError(f"款式不存在：{exc}") from exc
+            try:
+                wanted = picked.resolve_colors(raw.get("colors") or [])
+            except KeyError as exc:
+                raise WorkbenchError(str(exc)) from exc
+            if not wanted:
+                raise WorkbenchError(f"{picked.display_name} 至少选一个颜色")
+            if picked.slug in seen:
+                # 同一个款式被加了两次 → 合并颜色，不重复排任务
+                index = seen[picked.slug]
+                merged = {c.label: c for c in plan[index][1]}
+                for color in wanted:
+                    merged.setdefault(color.label, color)
+                plan[index] = (plan[index][0], list(merged.values()))
+                continue
+            seen[picked.slug] = len(plan)
+            plan.append((picked, wanted))
+        if not plan:
+            garment = self._resolve_garment(garment_type)
+            try:
+                picked_colors = garment.resolve_colors(colors)
+            except KeyError as exc:
+                raise WorkbenchError(str(exc)) from exc
+            plan = [(garment, picked_colors)]
+        garment = plan[0][0]
+        selected = plan[0][1]
         if not selected:
             raise WorkbenchError("请至少选择一个颜色参考")
 
@@ -379,6 +409,17 @@ class Workbench:
             "garment_type": garment.slug,
             "garment_name": garment.display_name,
             "colors": [color.label for color in selected],
+            # 多款式：每一项是「款式 + 该款式要出的颜色」
+            "selections": [
+                {
+                    "garment_type": g.slug,
+                    "garment_name": g.display_name,
+                    "colors": [c.label for c in cols],
+                }
+                for g, cols in plan
+            ],
+            "style_count": len(plan),
+            "total_colors": sum(len(cols) for _, cols in plan),
             "mode": (
                 str(mode)
                 if str(mode) in {"single_pass", "two_phase", "recolor_only"}
@@ -409,11 +450,18 @@ class Workbench:
             "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto")),
         }
 
-        job = Job(id=job_id, params=params, batch_name=garment.batch_name)
+        batch_name = (
+            garment.batch_name if len(plan) == 1 else f"{len(plan)}styles-recolor-batch"
+        )
+        job = Job(id=job_id, params=params, batch_name=batch_name)
         job.root = root
+        style_text = (
+            f"{garment.display_name}，{len(selected)} 色"
+            if len(plan) == 1
+            else " + ".join(f"{g.display_name}({len(c)} 色)" for g, c in plan)
+        )
         job.add_log(
-            f"任务创建：{garment.display_name}，{len(selected)} 色，"
-            f"{len(uploads)} 张原图，接口 {provider_obj.name}"
+            f"任务创建：{style_text}，{len(uploads)} 张原图，接口 {provider_obj.name}"
         )
         # plan up-front so the UI can show the whole task list immediately
         try:
@@ -423,6 +471,7 @@ class Workbench:
                 garment,
                 selected,
                 provider_obj,
+                selections=plan,
                 data_dir=self.data_dir,
             ).plan()
         except Exception as exc:  # noqa: BLE001
@@ -1199,11 +1248,27 @@ class Workbench:
         garment = self._resolve_garment(job.params.get("garment_type"))
         is_rework = str(job.params.get("kind") or "") == "rework"
         colors: list[ColorRef] = []
+        selections: list[tuple[object, list]] = []
         if not is_rework:
-            try:
-                colors = garment.resolve_colors(job.params.get("colors") or [])
-            except KeyError as exc:
-                raise WorkbenchError(str(exc)) from exc
+            for raw in job.params.get("selections") or []:
+                if not isinstance(raw, dict):
+                    continue
+                try:
+                    picked = self._resolve_garment(raw.get("garment_type"))
+                    picked_colors = picked.resolve_colors(raw.get("colors") or [])
+                except (WorkbenchError, KeyError):
+                    continue
+                if picked_colors:
+                    selections.append((picked, picked_colors))
+            if not selections:
+                try:
+                    colors = garment.resolve_colors(job.params.get("colors") or [])
+                except KeyError as exc:
+                    raise WorkbenchError(str(exc)) from exc
+                if colors:
+                    selections = [(garment, colors)]
+        if selections:
+            garment, colors = selections[0][0], selections[0][1]
         provider = self.get_provider(job.params.get("provider"))
         return JobRunner(
             job,
@@ -1211,6 +1276,7 @@ class Workbench:
             garment,
             colors,
             provider,
+            selections=selections or None,
             data_dir=self.data_dir,
             provider_sem=self._provider_sem(provider),
         )
