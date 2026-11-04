@@ -489,6 +489,14 @@ body::before {
 .perf-lite .progress > i { animation: none !important; }
 .perf-lite .toast { animation-duration: 0.15s; }
 
+/* 出图期间：暂停整屏极光 + 关掉悬停位移，把 GPU 全留给图片解码和进度更新 */
+body.busy::before { animation-play-state: paused; }
+body.busy .cardimg:hover,
+body.busy .kpi:hover,
+body.busy .hitem:hover,
+body.busy .frow:hover { transform: none; box-shadow: none; }
+body.busy .cardimg:not(.settled) { animation: none; }
+
 /* ----------------------------------------------- 管理后台（/admin）同一套语言 */
 .admin-shell .kpi { position: relative; overflow: hidden; }
 .admin-shell .kpi .v { animation: bump 0.42s var(--ease-spring); }

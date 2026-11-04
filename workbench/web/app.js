@@ -885,7 +885,9 @@
     }
 
     // 出图多的时候自动降级毛玻璃/装饰动画，优先保住流畅度
-    document.documentElement.classList.toggle("perf-lite", job.tasks.length > 12);
+    document.documentElement.classList.toggle("perf-lite", job.tasks.length > 8);
+    // 出图过程中暂停极光动画（持续重绘整屏背景最吃 GPU），跑完自动恢复
+    document.body.classList.toggle("busy", !TERMINAL.includes(job.status));
 
     $("resultToolbar").hidden = !job.tasks.length;
     syncSelection();
