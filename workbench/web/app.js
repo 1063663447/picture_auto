@@ -224,12 +224,15 @@
   function showAccounts() {
     $("accountsScrim").hidden = false;
     $("accountsDrawer").hidden = false;
+    requestAnimationFrame(() => {
+      $("accountsScrim").classList.add("on");
+      $("accountsDrawer").classList.add("on");
+    });
     loadAccounts();
   }
 
   function hideAccounts() {
-    $("accountsScrim").hidden = true;
-    $("accountsDrawer").hidden = true;
+    closePanel("accountsDrawer", "accountsScrim");
   }
 
   /* ------------------------------------------------------------- bootstrap */
