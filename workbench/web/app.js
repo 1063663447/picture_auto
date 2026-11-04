@@ -86,8 +86,14 @@
   }
   function setSelect(id, value) {
     const el = $(id);
+    if (!el) return;
     const exists = Array.from(el.options).some((option) => option.value === value);
     el.value = exists ? value : (el.options[0] ? el.options[0].value : "");
+  }
+  // 界面已收起的选项：有元素就取元素值，没有就用固定默认值
+  function fixedValue(id, fallback) {
+    const el = $(id);
+    return el ? el.value : fallback;
   }
   function esc(text) {
     return String(text).replace(/[&<>"']/g, (ch) => (
@@ -128,40 +134,26 @@
   function currentAspect() {
     return $("aspect") ? $("aspect").value : "auto";
   }
-  // 图案策略：空字符串 = 让后端按需求自动判断
+  // 图案策略：界面已收起，空字符串 = 让后端按需求自动判断
   function currentPatternMode() {
     return $("patternMode") ? $("patternMode").value : "";
   }
+  // 下载一律给原图（不再做压缩版）
   function currentDownloadFmt() {
-    return $("downloadFmt") ? $("downloadFmt").value : "jpg";
+    return "png";
+  }
+  function currentOutputFormat() {
+    return fixedValue("outputFormat", "png");
   }
 
-  // 下载链接：JPG 压缩版（默认，省流量）或原图 PNG
+  // 下载链接：始终是 API 返回的原图（PNG/JPG/WEBP 由出图接口决定）
   function downloadUrl(jobId, taskId) {
-    const base = `/api/jobs/${jobId}/image/${encodeURIComponent(taskId)}?download=true`;
-    return currentDownloadFmt() === "png" ? base : `${base}&fmt=jpg&q=88`;
+    return `/api/jobs/${jobId}/image/${encodeURIComponent(taskId)}?download=true`;
   }
 
-  function renderDownloadHint() {
-    const hint = $("downloadHint");
-    if (!hint) return;
-    hint.value = currentDownloadFmt() === "png"
-      ? "原图最大，按原图大小消耗流量"
-      : "压缩版约 1/10，肉眼看不出差别";
-  }
+  function renderDownloadHint() { /* 已从界面移除：固定原图下载 */ }
 
-  function renderPatternHint() {
-    const el = $("patternHint");
-    if (!el) return;
-    const map = {
-      "": "按需求自动判断",
-      preserve: "图案逐像素照抄",
-      per_color_variant: "每色一套图案",
-      replace: "整批换新图案",
-      free: "图案可重绘",
-    };
-    el.value = map[currentPatternMode()] ?? "";
-  }
+  function renderPatternHint() { /* 已从界面移除：图案策略按需求自动判断 */ }
   function currentTierChoice() {
     return $("sizeTier") ? $("sizeTier").value : "1K";
   }
@@ -234,18 +226,69 @@
   function icon(id, size = 15) {
     return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#${id}"/></svg>`;
   }
+  /* 全局请求反馈：本机接口通常 10~30ms，所以只有「明显卡住」时才亮进度条，
+     既不闪也不误报；慢请求（飞书、打包、拉模型）会一直亮着。 */
+  let netPending = 0;
+  let netShowTimer = null;
+  let netHideTimer = null;
+  function netStart() {
+    netPending += 1;
+    if (netPending > 1) return;
+    clearTimeout(netHideTimer);
+    clearTimeout(netShowTimer);
+    netShowTimer = setTimeout(() => {
+      const bar = $("netbar");
+      if (bar && netPending > 0) bar.classList.add("on");
+    }, 180);
+  }
+  function netEnd() {
+    netPending = Math.max(0, netPending - 1);
+    if (netPending > 0) return;
+    clearTimeout(netShowTimer);
+    netHideTimer = setTimeout(() => {
+      const bar = $("netbar");
+      if (bar) bar.classList.remove("on");
+    }, 260);
+  }
+
   async function api(path, options) {
-    const res = await fetch(path, options);
-    let payload = null;
-    try { payload = await res.json(); } catch (_) { /* ignore */ }
-    if (res.status === 401 && payload && payload.login_required) {
-      location.href = "/login";
-      throw new Error("登录已过期，正在跳转登录…");
+    netStart();
+    try {
+      const res = await fetch(path, options);
+      let payload = null;
+      try { payload = await res.json(); } catch (_) { /* ignore */ }
+      if (res.status === 401 && payload && payload.login_required) {
+        location.href = "/login";
+        throw new Error("登录已过期，正在跳转登录…");
+      }
+      if (!res.ok || (payload && payload.ok === false)) {
+        throw new Error((payload && payload.error) || `请求失败 HTTP ${res.status}`);
+      }
+      return payload;
+    } finally {
+      netEnd();
     }
-    if (!res.ok || (payload && payload.ok === false)) {
-      throw new Error((payload && payload.error) || `请求失败 HTTP ${res.status}`);
+  }
+
+  /* 按钮级反馈：转圈 + 禁用 + 文案，结束后原样恢复 */
+  async function withLoading(btn, task, label) {
+    if (!btn) return task();
+    const original = btn.innerHTML;
+    btn.classList.add("loading");
+    btn.disabled = true;
+    if (label) btn.textContent = label;
+    try {
+      return await task();
+    } finally {
+      btn.classList.remove("loading");
+      btn.innerHTML = original;
+      btn.disabled = false;
     }
-    return payload;
+  }
+
+  function skeletonHTML(rows = 3, height = 34) {
+    return Array.from({ length: rows },
+      (_, i) => `<div class="sk" style="height:${height}px;--d:${i * 90}ms"></div>`).join("");
   }
   function toast(kind, message) {
     const el = document.createElement("div");
@@ -313,13 +356,15 @@
 
   async function loadAccounts() {
     const list = $("accountsList");
-    list.innerHTML = `<div class="bubble muted">${icon("i-users")}<div>正在读取账号用量…</div></div>`;
+    list.innerHTML = skeletonHTML(3, 64);
+    $("accountsTotal").textContent = "读取中…";
     try {
       const data = await api("/api/accounts");
       state.accountsData = data;
       renderAccounts(data);
     } catch (err) {
       list.innerHTML = `<div class="bubble muted">${icon("i-alert")}<div>读取失败：${esc(err.message)}</div></div>`;
+      $("accountsTotal").textContent = "读取失败";
     }
   }
 
@@ -578,6 +623,15 @@
   }
 
   async function loadModels(providerName, refresh) {
+    const select = $("model");
+    // 慢的时候先给一个明确的「正在读取」，别让下拉长时间空白
+    if (select && !select.options.length) {
+      const stub = document.createElement("option");
+      stub.value = "";
+      stub.textContent = "正在读取模型…";
+      select.appendChild(stub);
+      select.disabled = true;
+    }
     try {
       const data = await api(
         `/api/models?provider=${encodeURIComponent(providerName)}&refresh=${refresh ? "true" : "false"}`
@@ -600,13 +654,16 @@
 
       const wanted = rows.find((m) => m.id === previous) ? previous : (rows[0] ? rows[0].id : "__manual__");
       select.value = wanted;
+      select.disabled = false;
       $("modelManual").hidden = wanted !== "__manual__";
       renderModelLabels();
       store(`model.${providerName}`, wanted);
     } catch (err) {
       console.warn("模型拉取失败", err.message);
       const select = $("model");
-      if (!select.options.length) {
+      select.disabled = false;
+      select.innerHTML = "";
+      {
         const provider = state.providers.find((p) => p.name === $("provider").value) || {};
         const fallback = restore(`model.${$("provider").value}`, provider.model || "");
         if (fallback) {
@@ -715,19 +772,18 @@
       }
     }
     setSelect("patternMode", restore("patternMode", state.defaults.pattern_mode || ""));
-    setSelect("downloadFmt", restore("downloadFmt", "jpg"));
     setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
+    setSelect("downloadFmt", "png");
     renderModelLabels();
     updateSummary();
   }
   function saveSettings() {
     store("aspect", currentAspect());
     store("sizeTier", currentTierChoice());
-    if ($("patternMode")) store("patternMode", $("patternMode").value);
-    if ($("downloadFmt")) store("downloadFmt", $("downloadFmt").value);
     store("quality", $("quality").value);
-    store("outputFormat", $("outputFormat").value);
+    store("patternMode", currentPatternMode());
+    store("outputFormat", currentOutputFormat());
   }
 
   /* ---------------------------------------------------------------- drafts */
@@ -759,7 +815,7 @@
       form.append("concurrency", "auto");
       form.append("size", currentSize());
       form.append("quality", $("quality").value);
-      form.append("output_format", $("outputFormat").value);
+      form.append("output_format", currentOutputFormat());
       form.append("pattern_mode", currentPatternMode());
       form.append("send_reference", "true");   // 默认总是带颜色参考图
       if (extraRequirements) form.append("extra_requirements", extraRequirements);
@@ -974,35 +1030,45 @@
     return Math.round(job.updated_at || 0);
   }
 
-  // 读图：优先本地 IndexedDB 缓存，miss 才回服务器（并顺手存下来）
-  async function loadThumb(entry, img, url, jobId, taskId) {
-    const cache = window.WBImageCache;
-    if (!cache) {
-      img.src = url;
-      return;
+  // 网格直接用**原图**（不再走缩略图/IndexedDB）：本地读盘本来就快，
+  // 只做两件事保证滚动流畅 —— 视口外不加载（IntersectionObserver + rootMargin）、
+  // 加载完成前留位占位（.shot 已有 aspect-ratio，不会抖）。
+  let imageIO = null;
+  function lazyObserver() {
+    if (imageIO || typeof IntersectionObserver === "undefined") return imageIO;
+    imageIO = new IntersectionObserver((rows) => {
+      for (const row of rows) {
+        if (!row.isIntersecting) continue;
+        const img = row.target;
+        imageIO.unobserve(img);
+        if (img.dataset.src) img.src = img.dataset.src;
+      }
+    }, { rootMargin: "500px 0px" });
+    return imageIO;
+  }
+
+  function mountImage(entry, url, task) {
+    let img = entry.shot.querySelector("img");
+    if (!img) {
+      img = document.createElement("img");
+      img.decoding = "async";
+      img.alt = `${task.color_name}成品`;
+      entry.shot.innerHTML = "";
+      entry.shot.appendChild(img);
     }
-    try {
-      const localUrl = await cache.resolve({ jobId, taskId, url });
-      if (img.src !== localUrl) img.src = localUrl;
-      refreshCacheInfo();
-    } catch (error) {
-      console.warn("[thumb] 本地缓存失败，退回直连", error.message);
+    // 浏览器 HTTP 缓存（immutable + 版本号）负责重复命中，不再自己存一份
+    img.removeAttribute("src");
+    img.dataset.src = url;
+    const io = lazyObserver();
+    if (io) {
+      img.loading = "lazy";
+      io.observe(img);
+    } else {
       img.src = url;
     }
   }
 
-  async function refreshCacheInfo() {
-    const label = $("cacheInfo");
-    const clearBtn = $("cacheClear");
-    if (!label || !window.WBImageCache) return;
-    try {
-      const { count, bytes } = await window.WBImageCache.stats();
-      label.textContent = count
-        ? `本地缓存 ${count} 张 · ${(bytes / 1024 / 1024).toFixed(1)} MB`
-        : "";
-      if (clearBtn) clearBtn.hidden = count === 0;
-    } catch (_) { /* ignore */ }
-  }
+  function refreshCacheInfo() { /* 已取消 IndexedDB 图片缓存 */ }
 
   function updateCard(entry, task, job) {
     const status = task.status;
@@ -1019,25 +1085,15 @@
     if (entry.state.textContent !== stateText) entry.state.textContent = stateText;
 
     // 只有真的换了图（版本变化）才动 <img>：否则进度轮询会不停重新解码
-    // 5.7：网格用缩略图（几十 KB），原图只在点开大图/下载时才取
-    const thumbUrl = task.thumb
-      ? `${task.thumb_small || task.thumb}`
+    const imageUrl = task.thumb
+      ? `${task.thumb}?v=${taskVersion(task, job) || 0}`
       : "";
-    if (thumbUrl) {
-      if (entry.thumb !== thumbUrl) {
-        let img = entry.shot.querySelector("img");
-        if (!img) {
-          img = document.createElement("img");
-          img.decoding = "async";
-          img.loading = "lazy";
-          img.alt = `${task.color_name}成品`;
-          entry.shot.innerHTML = "";
-          entry.shot.appendChild(img);
-        }
-        entry.thumb = thumbUrl;
+    if (imageUrl) {
+      if (entry.thumb !== imageUrl) {
+        entry.thumb = imageUrl;
         entry.el.classList.add("settled");
-        entry.el.dataset.full = task.preview || task.thumb || "";
-        loadThumb(entry, img, thumbUrl, job.id, `${task.id}@small`);
+        entry.el.dataset.full = imageUrl;
+        mountImage(entry, imageUrl, task);
       }
     } else if (entry.thumb) {
       entry.shot.innerHTML = `<div class="ph">${STATUS[status] || status}</div>`;
@@ -1119,6 +1175,8 @@
 
   /* ---------------------------------------------------------------- history */
   async function loadHistory() {
+    const box = $("history");
+    if (box && !box.children.length) box.innerHTML = skeletonHTML(3);
     try {
       const data = await api("/api/jobs");
       const box = $("history");
@@ -1137,21 +1195,27 @@
         item.addEventListener("click", () => watchJob(job.id));
         box.appendChild(item);
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      if (box && !box.children.length) box.innerHTML = `<p class="tip" style="padding:6px 2px">读取历史失败</p>`;
+    }
   }
 
   /* --------------------------------------------------------------- actions */
   async function cancelJob() {
     if (!state.jobId) return;
-    try { await api(`/api/jobs/${state.jobId}/cancel`, { method: "POST" }); }
-    catch (err) { toast("bad", err.message); }
+    await withLoading($("cancelBtn"), async () => {
+      try { await api(`/api/jobs/${state.jobId}/cancel`, { method: "POST" }); }
+      catch (err) { toast("bad", err.message); }
+    }, "取消中…");
   }
   async function retryJob() {
     if (!state.jobId) return;
-    try {
-      await api(`/api/jobs/${state.jobId}/retry`, { method: "POST" });
-      watchJob(state.jobId);
-    } catch (err) { toast("bad", err.message); }
+    await withLoading($("retryBtn"), async () => {
+      try {
+        await api(`/api/jobs/${state.jobId}/retry`, { method: "POST" });
+        watchJob(state.jobId);
+      } catch (err) { toast("bad", err.message); }
+    }, "重试中…");
   }
   async function retrySingle(taskId) {
     if (!state.jobId) return;
@@ -1165,19 +1229,12 @@
   function exportSelection() {
     if (!state.jobId) return;
     const ids = [...state.selected];
-    const parts = [];
-    if (ids.length) parts.push(`tasks=${encodeURIComponent(ids.join(","))}`);
-    const fmt = currentDownloadFmt();
-    if (fmt !== "png") parts.push(`fmt=${encodeURIComponent(fmt)}`);   // 压缩 JPG，省流量
-    const query = parts.length ? `?${parts.join("&")}` : "";
+    const query = ids.length ? `?tasks=${encodeURIComponent(ids.join(","))}` : "";
     window.location.href = `/api/jobs/${state.jobId}/export${query}`;
-    toast(
-      "ok",
-      (ids.length ? `正在导出 ${ids.length} 张` : "正在导出全部成品") +
-        (fmt !== "png" ? `（${fmt.toUpperCase()} 压缩）` : "（原图）")
-    );
+    toast("ok", ids.length ? `正在导出 ${ids.length} 张原图` : "正在导出全部成品（原图）");
   }
   async function showPrompt() {
+    await withLoading($("previewBtn"), async () => {
     try {
       const color = state.colors.values().next().value || null;
       const data = await api("/api/preview", {
@@ -1199,12 +1256,14 @@
         `${head}\n\n${data.single_pass}\n\n【负面提示词】\n\n${data.negative}`;
       openDrawer("prompt");
     } catch (err) { toast("bad", err.message); }
+    });
   }
 
   /* --------------------------------------------------------- 飞书历史 --- */
   async function loadFeishuRecords() {
     const box = $("feishuList");
-    box.innerHTML = `<p class="tip" style="padding:6px 2px">正在从飞书读取…</p>`;
+    box.innerHTML = skeletonHTML(4, 44);
+    $("feishuSub").textContent = "正在从飞书读取…";
     try {
       const data = await api("/api/feishu/records?limit=200&links=true");
       state.feishuRecords = data.records || [];
@@ -1234,10 +1293,10 @@
       const when = record.time ? fmtTime(Math.floor(record.time / 1000)) : "";
       const money0 = record.amount === null || record.amount === undefined
         ? "" : `¥${Number(record.amount).toFixed(3)}`;
-      // 直链：浏览器直接找飞书要图，不经过服务器（不花 Render 流量）
+      // 直链：浏览器直接找飞书要图，不经过本机服务
       const direct = record.download_url
         ? `<a class="badge ok" href="${esc(record.download_url)}" target="_blank" rel="noopener"
-              title="飞书直链下载（不经过服务器）">直链</a>`
+              title="飞书直链下载（不经过本机服务）">直链</a>`
         : "";
       row.innerHTML = `
         <input type="checkbox" data-record="${esc(record.record_id)}" ${selected} ${has ? "" : "disabled"} />
@@ -1545,7 +1604,7 @@
       payload.count = expectedCalls();
       payload.size = currentSize();
       payload.quality = $("quality").value;
-      payload.output_format = $("outputFormat").value;
+      payload.output_format = currentOutputFormat();
     }
     payload.pattern_mode = currentPatternMode();
     return payload;
@@ -1591,7 +1650,7 @@
     form.append("model", currentModel());
     form.append("size", currentSize());
     form.append("quality", $("quality").value);
-    form.append("output_format", $("outputFormat").value);
+    form.append("output_format", currentOutputFormat());
     form.append("pattern_mode", currentPatternMode());
     if (state.composedPrompt) form.append("prompt_override", state.composedPrompt);
     form.append("start", "true");
@@ -1643,13 +1702,15 @@
     });
     $("pickNone").addEventListener("click", () => { state.colors.clear(); renderColors(); });
 
-    ["aspect", "sizeTier", "patternMode", "quality", "outputFormat", "downloadFmt"].forEach((id) =>
-      $(id).addEventListener("change", () => {
-        saveSettings();
-        renderModelLabels();
-        updateSummary();
-      })
-    );
+    ["aspect", "sizeTier", "patternMode", "quality", "outputFormat", "downloadFmt"]
+      .filter((id) => $(id))
+      .forEach((id) =>
+        $(id).addEventListener("change", () => {
+          saveSettings();
+          renderModelLabels();
+          updateSummary();
+        })
+      );
     $("model").addEventListener("change", () => {
       const manual = $("model").value === "__manual__";
       $("modelManual").hidden = !manual;
@@ -1675,6 +1736,7 @@
       if (!jobId) return;
       state.syncingJob = jobId;
       if (state.job) renderJob(state.job);
+      $("feishuSyncBtn").classList.add("loading");
       try {
         const data = await api(`/api/jobs/${encodeURIComponent(jobId)}/feishu`, { method: "POST" });
         toast(
@@ -1690,6 +1752,7 @@
         toast("bad", `补写失败：${err.message}`);
       } finally {
         state.syncingJob = "";
+        $("feishuSyncBtn").classList.remove("loading");
       }
     });
     $("selAll").addEventListener("change", (event) => {
@@ -1732,10 +1795,12 @@
     $("feishuBtn").addEventListener("click", openFeishu);
     $("feishuClose").addEventListener("click", closeFeishu);
     $("feishuScrim").addEventListener("click", closeFeishu);
-    $("feishuReload").addEventListener("click", () => {
-      state.feishuSelected = new Set();
-      loadFeishuRecords();
-    });
+    $("feishuReload").addEventListener("click", () =>
+      withLoading($("feishuReload"), async () => {
+        state.feishuSelected = new Set();
+        await loadFeishuRecords();
+      }, "读取中…")
+    );
     $("feishuAll").addEventListener("change", (event) => {
       const rows = (state.feishuRecords || []).filter((r) => r.attachment_count > 0);
       state.feishuSelected = event.target.checked
@@ -1749,25 +1814,13 @@
     $("accountsBtn").addEventListener("click", showAccounts);
     $("accountsClose").addEventListener("click", hideAccounts);
     $("accountsScrim").addEventListener("click", hideAccounts);
-    $("accountsReload").addEventListener("click", loadAccounts);
+    $("accountsReload").addEventListener("click", () =>
+      withLoading($("accountsReload"), loadAccounts, "读取中…")
+    );
     $("logoutBtn").addEventListener("click", logout);
     $("usageChip").addEventListener("click", () => {
       if (state.session && state.session.admin) showAccounts();
     });
-
-    if ($("cacheClear")) {
-      $("cacheClear").addEventListener("click", async () => {
-        if (!window.WBImageCache) return;
-        await window.WBImageCache.clear();
-        state.cards.forEach((entry) => {
-          entry.thumb = "";
-          entry.shot.innerHTML = `<div class="ph">重新载入…</div>`;
-        });
-        refreshCacheInfo();
-        if (state.job) renderJob(state.job);
-        toast("ok", "已清空本地图片缓存，下次打开会重新从服务器读取");
-      });
-    }
 
     // 成品卡用事件委托：卡片是增量更新的，不再每次轮询重复绑定监听
     const grid = $("gridImgs");

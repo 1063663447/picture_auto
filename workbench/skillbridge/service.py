@@ -1107,14 +1107,19 @@ class Workbench:
 
         * `width=0` 表示保持原分辨率，只转格式（PNG 3~6MB → JPG 0.3~0.8MB）
         * 生成失败返回 None，调用方退回原图
+        * 缓存必须放在**任务根目录**，不能放进 staging/ —— staging 的每个子目录
+          都会被 skill 的 package_outputs.py 当成一个 item 来数图（曾经把
+          staging/thumbs 当成 item，导致「contains 2 images; expected 3」打包失败）。
         """
         try:
             from PIL import Image
 
             fmt = "webp" if str(fmt).lower() == "webp" else "jpg"
+            job = self.get_job(job_id)
+            root = job.root or self.job_dir(job_id)
             source = self.image_path(job_id, task_id)
             tag = f"{Path(source.name).stem}@{width or 'full'}"
-            target = source.parent.parent / "derived" / f"{tag}.{fmt}"
+            target = root / "derived" / f"{tag}.{fmt}"
             if target.is_file() and target.stat().st_mtime >= source.stat().st_mtime:
                 return target
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1324,12 +1329,18 @@ class Workbench:
         raise WorkbenchError("图片不存在")
 
     def thumbnail_path(self, job_id: str, task_id: str, width: int = 520) -> Path | None:
-        """生成/复用列表用缩略图（WebP）。失败返回 None，调用方退回原图。"""
+        """生成/复用列表用缩略图（WebP），缓存到 <job>/thumbs/。
+
+        失败返回 None，调用方退回原图。同样**不能写进 staging/**，否则 skill 的
+        打包脚本会把 thumbs 目录当成一个 item，数图数量对不上而整批打包失败。
+        """
         try:
             from PIL import Image
 
+            job = self.get_job(job_id)
+            root = job.root or self.job_dir(job_id)
             source = self.image_path(job_id, task_id)
-            target = source.parent.parent / "thumbs" / f"{Path(source.name).stem}@{width}.webp"
+            target = root / "thumbs" / f"{Path(source.name).stem}@{width}.webp"
             if target.is_file() and target.stat().st_mtime >= source.stat().st_mtime:
                 return target
             target.parent.mkdir(parents=True, exist_ok=True)

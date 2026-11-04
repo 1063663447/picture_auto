@@ -9,8 +9,8 @@
    ========================================================================== */
 
 :root {
-  --glass: color-mix(in srgb, var(--surface) 64%, transparent);
-  --glass-strong: color-mix(in srgb, var(--surface) 80%, transparent);
+  --glass: color-mix(in srgb, var(--surface) 89%, transparent);
+  --glass-strong: color-mix(in srgb, var(--surface) 95%, transparent);
   --glass-line: color-mix(in srgb, var(--border) 62%, transparent);
   --glass-hi: rgba(255, 255, 255, 0.66);
   --glass-tint: color-mix(in srgb, var(--primary) 6%, transparent);
@@ -25,8 +25,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --glass: color-mix(in srgb, var(--surface) 62%, transparent);
-    --glass-strong: color-mix(in srgb, var(--surface) 78%, transparent);
+    --glass: color-mix(in srgb, var(--surface) 90%, transparent);
+    --glass-strong: color-mix(in srgb, var(--surface) 96%, transparent);
     --glass-line: color-mix(in srgb, var(--border) 68%, transparent);
     --glass-hi: rgba(255, 255, 255, 0.09);
     --glass-tint: color-mix(in srgb, var(--primary) 12%, transparent);
@@ -53,7 +53,7 @@ body::before {
     radial-gradient(30% 32% at 92% 0%, var(--aurora-2), transparent 68%),
     radial-gradient(46% 44% at 74% 98%, var(--aurora-3), transparent 70%),
     radial-gradient(34% 30% at 34% 62%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 72%);
-  filter: blur(10px);
+  will-change: transform;
   animation: aurora 28s ease-in-out infinite alternate;
 }
 @keyframes aurora {
@@ -74,8 +74,10 @@ body::before {
 .appbar { z-index: 30; }
 
 /* ------------------------------------------------------------- 毛玻璃层 */
-/* 注：成品卡（.cardimg）数量最多、且每次出图都会更新，故意不给它 backdrop-filter
-   —— 几十个模糊层同时重绘会明显掉帧，这里用半透明底 + 细边框近似质感。 */
+/* 性能（6.0）：大面积的 backdrop-filter 已全部拿掉 —— 页面上十几个卡片同时做背景模糊，
+   滚动时浏览器每帧都要重新采样背景，是「滑动不流畅」的主要原因。
+   现在只用「更高不透明度的底色 + 内高光 + 细边框 + 分层阴影」近似毛玻璃，
+   观感几乎一致，滚动手感回到 60fps。模糊只留在一小块固定/浮层上（顶栏、抽屉、toast）。 */
 .card,
 .kpi,
 .toolbar,
@@ -85,16 +87,15 @@ body::before {
 .locked-mode {
   background: var(--glass);
   border: 1px solid var(--glass-line);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
   box-shadow: inset 0 1px 0 var(--glass-hi), 0 10px 30px -20px rgba(6, 32, 25, 0.4), var(--shadow-1);
 }
 .cardimg {
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--glass-line);
   box-shadow: inset 0 1px 0 var(--glass-hi), 0 8px 22px -18px rgba(6, 32, 25, 0.45);
-  /* 屏幕外的成品卡跳过绘制/布局，长列表滚动和轮询都更轻 */
+  /* 屏幕外的成品卡跳过绘制/布局；contain 把重绘限制在卡片内，滚动更轻 */
   content-visibility: auto;
+  contain: layout paint style;
   contain-intrinsic-size: 240px;
 }
 
@@ -127,8 +128,8 @@ body::before {
 /* --------------------------------------------------------------- appbar */
 .appbar {
   background: var(--glass-strong);
-  -webkit-backdrop-filter: blur(22px) saturate(165%);
-  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
   border-bottom-color: var(--glass-line);
   transition: box-shadow 0.25s var(--ease), background-color 0.25s var(--ease);
 }
@@ -139,11 +140,13 @@ body::before {
 .appbar::after {
   content: "";
   position: absolute; left: 0; bottom: -1px; height: 2px;
-  width: calc(var(--scroll, 0) * 100%);
+  width: 100%;
   background: linear-gradient(90deg, var(--primary), #34d399);
   border-radius: 0 2px 2px 0;
   opacity: 0.85;
-  transition: width 0.08s linear;
+  transform: scaleX(var(--scroll, 0));
+  transform-origin: left center;
+  will-change: transform;
   pointer-events: none;
 }
 .brand-mark {
@@ -287,7 +290,7 @@ body::before {
 .cardimg .acts .btn { transition: transform 0.16s var(--ease-spring), background-color 0.18s var(--ease),
   border-color 0.18s var(--ease), box-shadow 0.18s var(--ease); }
 .cardimg .acts .btn:hover:not(:disabled) { transform: translateY(-1px); }
-.cardimg.st-done:hover .shot { will-change: transform; }
+.cardimg .shot img { display: block; }
 
 /* ------------------------------------------------------------- 抽屉/遮罩 */
 .scrim {
@@ -298,8 +301,8 @@ body::before {
 }
 .drawer {
   background: color-mix(in srgb, var(--surface) 84%, transparent);
-  -webkit-backdrop-filter: blur(28px) saturate(155%);
-  backdrop-filter: blur(28px) saturate(155%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
   border-left: 1px solid var(--glass-line);
   box-shadow: -20px 0 60px -30px rgba(6, 32, 25, 0.6), inset 1px 0 0 var(--glass-hi);
   transition: transform 0.42s var(--ease-spring);
@@ -321,8 +324,8 @@ body::before {
 .toast {
   position: relative; overflow: hidden;
   background: var(--glass-strong);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(155%);
+  backdrop-filter: blur(12px) saturate(155%);
   box-shadow: var(--shadow-3), inset 0 1px 0 var(--glass-hi);
   animation: toastIn 0.34s var(--ease-spring) both;
 }
@@ -437,9 +440,7 @@ body::before {
 
 /* 日志面板：深色玻璃，保持可读性 */
 .log, .prompt-preview {
-  background: color-mix(in srgb, #071410 88%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, #071410 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
@@ -511,4 +512,63 @@ body.busy .cardimg:not(.settled) { animation: none; }
 .days .col i {
   background-image: linear-gradient(180deg, color-mix(in srgb, var(--primary) 55%, transparent), var(--primary));
   transition: height 0.45s var(--ease-spring);
+}
+
+/* ==========================================================================
+   6.0 · 响应与加载反馈（配套 app.js：netbar / skeleton / .loading 按钮）
+   - 顶部细进度条：接口明显卡住时才亮（>180ms），本机 10~30ms 的请求不闪
+   - 骨架屏：历史 / 飞书 / 账号列表在读取时先占位，不再是一片空白
+   - 图片直接显示原图：.shot 有固定 aspect-ratio 占位，加载前后都不跳动
+   - 全部是合成层动画（transform / opacity / background-position），不触发重排
+   ========================================================================== */
+
+.netbar {
+  position: fixed; inset: 0 0 auto; height: 2px; z-index: 60;
+  pointer-events: none; opacity: 0;
+  transition: opacity 0.18s var(--ease);
+}
+.netbar i {
+  display: block; height: 100%; width: 42%;
+  background: linear-gradient(90deg, transparent, var(--primary), #34d399, transparent);
+  transform: translateX(-110%);
+}
+.netbar.on { opacity: 1; }
+.netbar.on i { animation: netslide 1s linear infinite; }
+@keyframes netslide {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(255%); }
+}
+
+.sk {
+  border-radius: 8px;
+  background:
+    linear-gradient(100deg,
+      color-mix(in srgb, var(--surface-2) 92%, transparent) 32%,
+      color-mix(in srgb, var(--primary) 12%, var(--surface)) 50%,
+      color-mix(in srgb, var(--surface-2) 92%, transparent) 68%);
+  background-size: 220% 100%;
+  animation: skslide 1.15s linear infinite;
+  animation-delay: var(--d, 0ms);
+}
+.sk + .sk { margin-top: 6px; }
+@keyframes skslide {
+  from { background-position: 150% 0; }
+  to   { background-position: -30% 0; }
+}
+
+/* 按钮转圈：.loading 时文字换成转圈（-ghost 用主题色） */
+.btn.loading { position: relative; }
+.btn.loading::before {
+  content: ""; position: absolute; left: 50%; top: 50%; margin: -8px 0 0 -8px;
+}
+.btn-ghost.loading::before, .btn-quiet.loading::before { border-color: var(--border-strong); border-top-color: var(--primary); }
+
+/* 图片固定铺满 .shot（aspect-ratio 已占位，加载前后都不跳） */
+.cardimg .shot { overflow: hidden; }
+
+/* 长列表滚动：历史/飞书/账号沿用同一套避重绘策略 */
+.hitem, .frow, .acc-card { contain: layout paint; }
+
+@media (prefers-reduced-motion: reduce) {
+  .netbar.on i, .sk { animation: none !important; }
 }

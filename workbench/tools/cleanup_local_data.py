@@ -58,7 +58,12 @@ def main() -> int:
     freed = 0
 
     if args.derived_only:
-        for cache in list(jobs_dir.glob("*/thumbs")) + list(jobs_dir.glob("*/derived")):
+        caches = (
+            list(jobs_dir.glob("*/thumbs")) + list(jobs_dir.glob("*/derived"))
+            # 旧版本把缓存错写进了 staging/，也一并清（这正是打包失败的根因）
+            + list(jobs_dir.glob("*/staging/thumbs")) + list(jobs_dir.glob("*/staging/derived"))
+        )
+        for cache in caches:
             size = size_of(cache)
             print(f"  {'[dry] ' if args.dry_run else ''}清缓存 {cache.relative_to(DATA)} {human(size)}")
             if not args.dry_run:

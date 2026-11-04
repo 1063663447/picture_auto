@@ -6,6 +6,7 @@ import asyncio
 import collections
 import io
 import random
+import shutil
 import time
 from pathlib import Path
 
@@ -18,6 +19,31 @@ from .providers.base import EditRequest, Provider, ProviderError, sniff_extensio
 from .skill import ColorRef, GarmentType, Skill
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+# staging/ 下只允许出现 "每个 item 一个目录"。缓存目录曾经被写进 staging（thumbs / derived），
+# 被 skill 的打包脚本当成 item 数图 → 「contains 2 images; expected 3」整批失败。
+# 这里在打包前兜底清掉，防止历史数据/旧版本留下的目录再次踩坑。
+STAGING_JUNK_DIRS = {"thumbs", "derived", "exports", ".cache"}
+
+
+def clean_staging(staging_dir: Path) -> list[str]:
+    """打包前把 staging 收拾干净：只留「每个 item 一个目录」。
+
+    返回被清掉的目录名（缓存目录），方便写日志/排查。
+    """
+    removed: list[str] = []
+    if not staging_dir.is_dir():
+        return removed
+    for item_dir in sorted(p for p in staging_dir.iterdir() if p.is_dir()):
+        if item_dir.name in STAGING_JUNK_DIRS:
+            shutil.rmtree(item_dir, ignore_errors=True)
+            removed.append(item_dir.name)
+            continue
+        if not any(p.is_file() for p in item_dir.iterdir()):
+            try:
+                item_dir.rmdir()
+            except OSError:
+                pass
+    return removed
 
 
 class RateLimiter:
@@ -92,6 +118,8 @@ class JobRunner:
         self._aspect_cache: dict[Path, float] = {}
         self._tasks_running: set[asyncio.Task] = set()
         self._last_save = 0.0
+        # 打包失败但图片都在时不再让整批变 failed（成品还能单张下载/批量导出）
+        self.package_error = ""
 
     # ------------------------------------------------------------------ paths #
     @property
@@ -252,11 +280,20 @@ class JobRunner:
             await self._package()
 
             stats = self.job.counts()
-            self.job.status = "done" if stats["failed"] == 0 else "partial"
-            self.job.stage = (
-                f"完成：{stats['done']} 张成功"
-                + (f"，{stats['failed']} 张失败" if stats["failed"] else "")
-            )
+            if self.package_error and stats["failed"] == 0:
+                # 图片都在、只是 ZIP 没打成：别整批判失败，成品照样能下载/导出
+                self.job.status = "partial"
+                self.job.stage = f"图片已出，打包失败：{self.package_error[:120]}"
+                self.job.add_log(
+                    "打包没成功，但成品都可用：单张「下载」或「批量导出」仍能全部取走",
+                    level="warn",
+                )
+            else:
+                self.job.status = "done" if stats["failed"] == 0 else "partial"
+                self.job.stage = (
+                    f"完成：{stats['done']} 张成功"
+                    + (f"，{stats['failed']} 张失败" if stats["failed"] else "")
+                )
             self.job.add_log(self.job.stage, level="warn" if stats["failed"] else "info")
         except asyncio.CancelledError:
             self._mark_unfinished_canceled()
@@ -542,9 +579,8 @@ class JobRunner:
     async def _package(self) -> None:
         if not self.staging_dir.is_dir():
             raise ValueError("没有生成任何图片，无法打包")
-        for item_dir in sorted(p for p in self.staging_dir.iterdir() if p.is_dir()):
-            if not any(p.is_file() for p in item_dir.iterdir()):
-                item_dir.rmdir()
+        for name in clean_staging(self.staging_dir):
+            self.job.add_log(f"清理 staging 里的缓存目录：{name}", level="warn")
 
         produced = [
             p for p in self.staging_dir.rglob("*")
@@ -587,5 +623,6 @@ class JobRunner:
             )
         else:
             self.job.add_log(f"打包失败：{result.error}", level="error")
-            if stats["failed"] == 0:
-                raise ValueError(f"打包失败：{result.error}")
+            # 不再整批抛错：成品已落盘，让用户至少能单张下载/批量导出
+            self.package_error = str(result.error or "打包失败")
+            self._save(force=True)

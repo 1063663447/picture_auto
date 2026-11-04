@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+# staging 下只应有「每个 item 一个目录」；这些是缓存目录，绝不能进 ZIP
+JUNK_DIRS = {"thumbs", "derived", "exports", ".cache"}
 
 
 @dataclass
@@ -33,9 +35,13 @@ def _fallback_zip(staging_dir: Path, output_dir: Path, batch_name: str) -> Packa
     count = 0
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(staging_dir.rglob("*")):
-            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES:
-                archive.write(path, Path(batch_name) / path.relative_to(staging_dir))
-                count += 1
+            if not path.is_file() or path.suffix.lower() not in IMAGE_SUFFIXES:
+                continue
+            relative = path.relative_to(staging_dir)
+            if any(part in JUNK_DIRS for part in relative.parts[:-1]):
+                continue        # 缩略图/压缩版缓存不进 ZIP
+            archive.write(path, Path(batch_name) / relative)
+            count += 1
     return PackageResult(
         ok=count > 0,
         zip_path=zip_path if count else None,
