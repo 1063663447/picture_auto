@@ -936,16 +936,37 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"ok": True, "job": job.as_dict(with_tasks=True, with_log=True)}
 
     @app.get("/api/jobs/{job_id}/export")
-    async def export_selected(request: Request, job_id: str, tasks: str = ""):
+    async def export_selected(request: Request, job_id: str, tasks: str = "", fmt: str = ""):
         bench = wb(request)
         ids = [part.strip() for part in tasks.split(",") if part.strip()]
-        path = bench.export_zip(job_id, ids)
+        path = await asyncio.to_thread(bench.export_zip, job_id, ids, fmt)
         return FileResponse(path, filename=path.name, media_type="application/zip")
 
     # ---------------------------------------------------------------- files --
     @app.get("/api/jobs/{job_id}/image/{task_id}")
-    async def job_image(request: Request, job_id: str, task_id: str, download: bool = False):
-        path = wb(request).image_path(job_id, task_id)
+    async def job_image(
+        request: Request, job_id: str, task_id: str, download: bool = False,
+        fmt: str = "", w: int = 0, q: int = 85,
+    ):
+        bench = wb(request)
+        path = bench.image_path(job_id, task_id)
+        # fmt=jpg|webp 时给压缩版（PNG 3~6MB → 0.3~0.8MB），原图仍留在服务器
+        if str(fmt).lower() in {"jpg", "jpeg", "webp"}:
+            derived = await asyncio.to_thread(
+                bench.derived_image,
+                job_id,
+                task_id,
+                width=max(0, min(3000, int(w or 0))),
+                fmt="webp" if str(fmt).lower() == "webp" else "jpg",
+                quality=max(60, min(95, int(q or 85))),
+            )
+            if derived is not None:
+                return FileResponse(
+                    derived,
+                    filename=derived.name if download else None,
+                    media_type="image/webp" if str(fmt).lower() == "webp" else "image/jpeg",
+                    headers={"Cache-Control": "private, max-age=31536000, immutable"},
+                )
         if download:
             return FileResponse(path, filename=path.name)
         # 成品图内容不会变（版本由 URL 的 ?v= 区分），可以让浏览器长期缓存

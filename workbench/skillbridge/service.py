@@ -1100,33 +1100,78 @@ class Workbench:
         self.jobs[job_id] = job
         return job
 
-    def export_zip(self, job_id: str, task_ids: list[str] | None = None) -> Path:
-        """把选中的成品打成 ZIP（不传 task_ids 则导出全部成功图片）。"""
+    def derived_image(
+        self, job_id: str, task_id: str, *, width: int = 0, fmt: str = "jpg", quality: int = 85
+    ) -> Path | None:
+        """按需生成"压缩版"图片（JPG/WebP），并缓存到 <job>/derived/。
+
+        * `width=0` 表示保持原分辨率，只转格式（PNG 3~6MB → JPG 0.3~0.8MB）
+        * 生成失败返回 None，调用方退回原图
+        """
+        try:
+            from PIL import Image
+
+            fmt = "webp" if str(fmt).lower() == "webp" else "jpg"
+            source = self.image_path(job_id, task_id)
+            tag = f"{Path(source.name).stem}@{width or 'full'}"
+            target = source.parent.parent / "derived" / f"{tag}.{fmt}"
+            if target.is_file() and target.stat().st_mtime >= source.stat().st_mtime:
+                return target
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(source) as handle:
+                image = handle.convert("RGB")
+                if width and image.width > width:
+                    ratio = width / float(image.width)
+                    image = image.resize((width, max(1, int(image.height * ratio))), Image.LANCZOS)
+                if fmt == "webp":
+                    image.save(target, format="WEBP", quality=quality, method=4)
+                else:
+                    image.save(target, format="JPEG", quality=quality, optimize=True)
+            return target
+        except Exception:  # noqa: BLE001 - 压缩失败就用原图
+            return None
+
+    def export_zip(
+        self, job_id: str, task_ids: list[str] | None = None, fmt: str = ""
+    ) -> Path:
+        """把选中的成品打成 ZIP（不传 task_ids 则导出全部成功图片）。
+
+        `fmt=jpg` 时打包压缩版（体积约原图的 1/10），省下载流量。
+        """
         job = self.get_job(job_id)
         root = job.root or self.job_dir(job_id)
         wanted = {str(t) for t in (task_ids or [])}
-        files = [
-            root / str(task.out)
-            for task in job.tasks
-            if task.out and (not wanted or task.id in wanted)
-        ]
-        files = [path for path in files if path.is_file()]
+        use_fmt = str(fmt or "").lower() in {"jpg", "jpeg", "webp"}
+        files: list[tuple[Path, str]] = []
+        for task in job.tasks:
+            if not task.out or (wanted and task.id not in wanted):
+                continue
+            source = root / str(task.out)
+            if not source.is_file():
+                continue
+            if use_fmt:
+                derived = self.derived_image(
+                    job_id, task.id, fmt=str(fmt).lower(), quality=85
+                )
+                if derived is not None:
+                    files.append((derived, derived.name))
+                    continue
+            files.append((source, source.name))
         if not files:
             raise WorkbenchError("没有可导出的图片")
         export_dir = root / "exports"
         export_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         suffix = "selected" if wanted else "all"
-        target = export_dir / f"{job.batch_name or job_id}-{suffix}-{stamp}.zip"
+        tag = f"-{str(fmt).lower()}" if use_fmt else ""
+        target = export_dir / f"{job.batch_name or job_id}-{suffix}{tag}-{stamp}.zip"
 
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for path in files:
-                try:
-                    relative = path.relative_to(root / "staging")
-                except ValueError:
-                    relative = Path(path.name)
-                archive.write(path, relative)
-        job.add_log(f"导出 {len(files)} 张：{target.name}")
+            for path, name in files:
+                archive.write(path, Path(name))
+        job.add_log(
+            f"导出 {len(files)} 张{'(压缩 JPG)' if use_fmt else ''}：{target.name}"
+        )
         job.save()
         return target
 

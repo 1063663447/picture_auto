@@ -132,6 +132,24 @@
   function currentPatternMode() {
     return $("patternMode") ? $("patternMode").value : "";
   }
+  function currentDownloadFmt() {
+    return $("downloadFmt") ? $("downloadFmt").value : "jpg";
+  }
+
+  // 下载链接：JPG 压缩版（默认，省流量）或原图 PNG
+  function downloadUrl(jobId, taskId) {
+    const base = `/api/jobs/${jobId}/image/${encodeURIComponent(taskId)}?download=true`;
+    return currentDownloadFmt() === "png" ? base : `${base}&fmt=jpg&q=88`;
+  }
+
+  function renderDownloadHint() {
+    const hint = $("downloadHint");
+    if (!hint) return;
+    hint.value = currentDownloadFmt() === "png"
+      ? "原图最大，按原图大小消耗流量"
+      : "压缩版约 1/10，肉眼看不出差别";
+  }
+
   function renderPatternHint() {
     const el = $("patternHint");
     if (!el) return;
@@ -467,6 +485,7 @@
 
   function renderModelLabels() {
     renderPatternHint();
+    renderDownloadHint();
     const size = currentSize();
     const tier = tierFor(size);
     const auto = currentAspect() === "auto";
@@ -696,6 +715,7 @@
       }
     }
     setSelect("patternMode", restore("patternMode", state.defaults.pattern_mode || ""));
+    setSelect("downloadFmt", restore("downloadFmt", "jpg"));
     setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
     renderModelLabels();
@@ -705,6 +725,7 @@
     store("aspect", currentAspect());
     store("sizeTier", currentTierChoice());
     if ($("patternMode")) store("patternMode", $("patternMode").value);
+    if ($("downloadFmt")) store("downloadFmt", $("downloadFmt").value);
     store("quality", $("quality").value);
     store("outputFormat", $("outputFormat").value);
   }
@@ -1044,7 +1065,7 @@
     }
 
     if (task.thumb) {
-      const href = `/api/jobs/${job.id}/image/${encodeURIComponent(task.id)}?download=true`;
+      const href = downloadUrl(job.id, task.id);
       if (entry.dl.getAttribute("href") !== href) {
         entry.dl.setAttribute("href", href);
         entry.dl.setAttribute("download", "");
@@ -1144,9 +1165,17 @@
   function exportSelection() {
     if (!state.jobId) return;
     const ids = [...state.selected];
-    const query = ids.length ? `?tasks=${encodeURIComponent(ids.join(","))}` : "";
+    const parts = [];
+    if (ids.length) parts.push(`tasks=${encodeURIComponent(ids.join(","))}`);
+    const fmt = currentDownloadFmt();
+    if (fmt !== "png") parts.push(`fmt=${encodeURIComponent(fmt)}`);   // 压缩 JPG，省流量
+    const query = parts.length ? `?${parts.join("&")}` : "";
     window.location.href = `/api/jobs/${state.jobId}/export${query}`;
-    toast("ok", ids.length ? `正在导出 ${ids.length} 张` : "正在导出全部成品");
+    toast(
+      "ok",
+      (ids.length ? `正在导出 ${ids.length} 张` : "正在导出全部成品") +
+        (fmt !== "png" ? `（${fmt.toUpperCase()} 压缩）` : "（原图）")
+    );
   }
   async function showPrompt() {
     try {
@@ -1614,7 +1643,7 @@
     });
     $("pickNone").addEventListener("click", () => { state.colors.clear(); renderColors(); });
 
-    ["aspect", "sizeTier", "patternMode", "quality", "outputFormat"].forEach((id) =>
+    ["aspect", "sizeTier", "patternMode", "quality", "outputFormat", "downloadFmt"].forEach((id) =>
       $(id).addEventListener("change", () => {
         saveSettings();
         renderModelLabels();
