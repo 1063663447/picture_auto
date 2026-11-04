@@ -659,21 +659,25 @@
     if (!el) return;
     const cfg = (info && info.config) || {};
     const cap = state.providerCap ? `本机 ≤${state.providerCap}` : "";
+    const isQueue = (cfg.provider || "http") === "feishu";
     if (!cfg.enabled) {
-      el.textContent = `阀门未启用${cap ? " · " + cap : ""}`;
+      el.textContent = `闸门未启用${cap ? " · " + cap : ""}`;
       el.dataset.state = "off";
-      el.title = "只用本机并发限制；多台电脑同时跑会各自占额度。部署见 deploy/cloudflare-gate/README.md";
+      el.title = "只用本机并发限制。想多台电脑统一排队：配 defaults.gate（飞书表队列或 Cloudflare 阀门）";
       return;
     }
     if (info.ok) {
-      el.textContent = `阀门 ${info.in_use}/${info.limit}${cap ? " · " + cap : ""}`;
+      const label = isQueue ? "队列" : "阀门";
+      el.textContent = `${label} ${info.in_use}/${info.limit}${cap ? " · " + cap : ""}`;
       el.dataset.state = "ok";
-      el.title = `全部电脑合计上限 ${info.limit}，当前占用 ${info.in_use}；点一下刷新`;
+      el.title = isQueue
+        ? `飞书表当队列：占位 ${info.in_use}/${info.limit}，满了就在表里排队等别人删；点一下刷新`
+        : `全部电脑合计上限 ${info.limit}，当前占用 ${info.in_use}；点一下刷新`;
       return;
     }
-    el.textContent = `阀门离线${cap ? " · " + cap : ""}`;
+    el.textContent = `闸门离线${cap ? " · " + cap : ""}`;
     el.dataset.state = "bad";
-    el.title = `${info.error || "连不上阀门"}（fail_open 时不挡出图）`;
+    el.title = `${info.error || "连不上闸门"}（fail_open 时照常出图）`;
   }
 
   async function loadGate() {
@@ -1110,6 +1114,13 @@
     }
     $("cancelBtn").hidden = TERMINAL.includes(job.status);
     $("retryBtn").hidden = !(stats.failed > 0);
+    const limitedBtn = $("retryLimitedBtn");
+    if (limitedBtn) {
+      const limited = Number(stats.rate_limited || 0);
+      limitedBtn.hidden = limited <= 0;
+      limitedBtn.textContent = limited > 0 ? `重试被限流 ${limited} 张` : "重试被限流";
+      limitedBtn.title = "只重试被接口并发/限流打回来的那些图（其他失败不动）";
+    }
     $("downloadBtn").hidden = !job.has_zip;
     if (job.has_zip) $("downloadBtn").href = job.zip;
     // 飞书同步：跑完但没写进去时给个补写按钮
@@ -1411,6 +1422,19 @@
       } catch (err) { toast("bad", err.message); }
     }, "重试中…");
   }
+  async function retryLimited() {
+    if (!state.jobId) return;
+    const form = new FormData();
+    form.append("only", "rate_limit");
+    await withLoading($("retryLimitedBtn"), async () => {
+      try {
+        await api(`/api/jobs/${state.jobId}/retry`, { method: "POST", body: form });
+        watchJob(state.jobId);
+        toast("ok", "已重新排队：被限流的图会按闸门额度慢慢补上");
+      } catch (err) { toast("bad", err.message); }
+    }, "重试中…");
+  }
+
   async function retrySingle(taskId) {
     if (!state.jobId) return;
     const form = new FormData();
@@ -2049,6 +2073,7 @@
     $("previewBtn").addEventListener("click", showPrompt);
     $("cancelBtn").addEventListener("click", cancelJob);
     $("retryBtn").addEventListener("click", retryJob);
+    if ($("retryLimitedBtn")) $("retryLimitedBtn").addEventListener("click", retryLimited);
     $("feishuSyncBtn").addEventListener("click", async () => {
       const jobId = state.jobId || (state.job && state.job.id);
       if (!jobId) return;

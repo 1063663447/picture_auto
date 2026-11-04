@@ -517,8 +517,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"ok": True, "job": wb(request).start(job_id)}
 
     @app.post("/api/jobs/{job_id}/retry")
-    async def retry_job(request: Request, job_id: str, task_ids: list[str] = Form(default=[])):
-        return {"ok": True, "job": wb(request).retry(job_id, task_ids)}
+    async def retry_job(
+        request: Request,
+        job_id: str,
+        task_ids: list[str] = Form(default=[]),
+        only: str = Form(""),
+    ):
+        return {"ok": True, "job": wb(request).retry(job_id, task_ids, only=only)}
 
     @app.post("/api/jobs/{job_id}/cancel")
     async def cancel_job(request: Request, job_id: str):

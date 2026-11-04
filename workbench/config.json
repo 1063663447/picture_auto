@@ -60,10 +60,15 @@
       "enabled": false,
       "url": "",
       "token_env": "GATE_TOKEN",
-      "limit": 20,
-      "poll_ms": 700,
+      "limit": 15,
+      "poll_ms": 2500,
       "wait_timeout_sec": 1800,
-      "fail_open": true
+      "fail_open": true,
+      "provider": "feishu",
+      "table_id": "",
+      "settle_ms": 1200,
+      "stale_sec": 600,
+      "note": "provider=feishu 用飞书表格当并发队列（先跑 python -m skillbridge.feishu_gate --init 建表，把 table_id 填这里）；provider=http 则用 Cloudflare 阀门"
     },
     "notify": {
       "enabled": false,
@@ -221,6 +226,7 @@
     "account_table_id": "tbl9dfa7LVmtKgp4",
     "per": "task",
     "upload_images": true,
-    "upload_source": false
+    "upload_source": false,
+    "gate_table_id": ""
   }
 }

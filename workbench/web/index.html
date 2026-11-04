@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=7.4.0" />
-<link rel="stylesheet" href="/aurora.css?v=7.4.0" />
+<link rel="stylesheet" href="/style.css?v=7.5.1" />
+<link rel="stylesheet" href="/aurora.css?v=7.5.1" />
 </head>
 <body>
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -191,6 +191,7 @@
           <div class="tools">
             <button class="subtle" type="button" id="cancelBtn" hidden>取消</button>
             <button class="subtle" type="button" id="retryBtn" hidden>重试失败</button>
+            <button class="subtle danger-soft" type="button" id="retryLimitedBtn" hidden>重试被限流</button>
             <button class="subtle" type="button" id="feishuSyncBtn" hidden>补写飞书</button>
             <a class="subtle" id="downloadBtn" hidden><svg><use href="#i-download"/></svg>下载 ZIP</a>
           </div>
@@ -373,6 +374,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=7.4.0"></script>
+<script src="/app.js?v=7.5.1"></script>
 </body>
 </html>

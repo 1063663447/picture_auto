@@ -34,6 +34,26 @@ NON_IMAGE_HINT = re.compile(r"(video|veo|seedance|kling|sora|animate|tts|whisper
 MODEL_CACHE_TTL = 600.0
 
 
+def _retry_targets(
+    job: "Job", task_ids: list[str] | None = None, only: str = ""
+) -> tuple[list["Task"], set[str]]:
+    """挑出要重试的任务。
+
+    only="rate_limit" 时只捞「被并发/限流打回来」的那些（一键重试按钮用它），
+    否则按 task_ids（空 = 全部失败项）。
+    """
+    if only == "rate_limit":
+        targets = [
+            t for t in job.tasks if t.status == "failed" and t.error_kind == "rate_limit"
+        ]
+        return targets, {t.id for t in targets}
+    wanted = {str(t) for t in (task_ids or [])}
+    targets = [
+        t for t in job.tasks if t.status == "failed" and (not wanted or t.id in wanted)
+    ]
+    return targets, wanted
+
+
 def _resolve_pattern_mode(explicit: str, requirement: str = "") -> str:
     """图案策略：显式传的优先，其次从需求里推断，最后回到「逐像素保留」。"""
     from .prompts import PATTERN_MODES, detect_pattern_mode
@@ -168,27 +188,59 @@ class Workbench:
         return self.gate_config.public()
 
     # ---------------------------------------------------------------- gate --
-    def gate_for(self, provider: Provider | None = None) -> RemoteGate | None:
-        """给某个接口配阀门客户端（同接口复用；未启用返回 None）。"""
+    def gate_for(self, provider: Provider | None = None):
+        """给某个接口配阀门（同接口复用；未启用返回 None）。
+
+        两种实现，接口一致：
+        * `gate.provider = "feishu"` → 飞书表格当「全局并发 + 队列」（推荐，零额外服务）
+        * `gate.provider = "http"`   → Cloudflare Worker 阀门（只限流）
+        """
         if not self.gate_config.enabled:
             return None
         name = provider.name if provider is not None else "-"
         gate = self._gates.get(name)
-        if gate is None:
-            cfg = self.gate_config
-            if provider is not None:
-                override = provider.setting("gate_limit", None)
-                if override:
-                    cfg = GateConfig(**{**cfg.__dict__, "limit": max(1, int(override))})
+        if gate is not None:
+            return gate
+        cfg = self.gate_config
+        if provider is not None:
+            override = provider.setting("gate_limit", None)
+            if override:
+                cfg = GateConfig(**{**cfg.__dict__, "limit": max(1, int(override))})
+        if cfg.provider == "feishu":
+            table_id = cfg.table_id or str((self.config.get("feishu") or {}).get("gate_table_id") or "")
+            if not table_id:
+                self.gate_config = GateConfig(**{**cfg.__dict__, "enabled": False})
+                return None
+            cfg = GateConfig(**{**cfg.__dict__, "table_id": table_id})
+            client = self._gate_feishu_client()
+            if client is None:
+                return None
+            from .feishu_gate import FeishuGate
+
+            gate = FeishuGate(cfg, client, label=name)
+        else:
             gate = RemoteGate(cfg, label=name)
-            self._gates[name] = gate
+        self._gates[name] = gate
         return gate
+
+    def _gate_feishu_client(self):
+        """闸门表用的飞书客户端（和记录表同一个应用，表可以不同）。"""
+        if self.feishu_config is None or not self.feishu_config.ready()[0]:
+            return None
+        from .feishu import FeishuBitable
+
+        return FeishuBitable(self.feishu_config)
 
     async def gate_status(self) -> dict:
         cfg = self.gate_config
         payload: dict = {"config": cfg.public()}
         if not cfg.enabled:
-            payload.update({"ok": False, "enabled": False, "error": "未启用（只用本机并发限制）"})
+            payload.update({
+                "ok": False,
+                "enabled": False,
+                "error": "未启用（只用本机并发限制）",
+                "provider": cfg.provider,
+            })
             return payload
         gate = self.gate_for(self.get_provider(None))
         status = await gate.status()
@@ -1466,15 +1518,16 @@ class Workbench:
         if self._tasks.get(job_id) is task:
             self._tasks.pop(job_id, None)
 
-    def retry(self, job_id: str, task_ids: list[str] | None = None) -> dict:
+    def retry(
+        self, job_id: str, task_ids: list[str] | None = None, *, only: str = ""
+    ) -> dict:
         job = self.get_job(job_id)
         if job_id in self._tasks and not self._tasks[job_id].done():
             raise WorkbenchError("任务正在运行中")
-        wanted = {str(t) for t in (task_ids or [])}
-        targets = [
-            t for t in job.tasks if t.status == "failed" and (not wanted or t.id in wanted)
-        ]
+        targets, wanted = _retry_targets(job, task_ids, only)
         if not targets:
+            if only == "rate_limit":
+                raise WorkbenchError("没有被限流打回来的图片需要重试")
             raise WorkbenchError("没有失败的任务需要重试")
         job.cancel_requested = False
         job.error = None

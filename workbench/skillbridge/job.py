@@ -48,6 +48,7 @@ class Task:
     status: str = "pending"          # pending|running|done|failed|skipped|canceled
     attempts: int = 0
     error: str | None = None
+    error_kind: str = ""             # "" | "rate_limit"（被并发限制打回来） | "error"
     out: str | None = None           # relative to the job dir
     started_at: float | None = None
     finished_at: float | None = None
@@ -113,6 +114,10 @@ class Job:
         for task in self.tasks:
             stats[task.status] = stats.get(task.status, 0) + 1
         stats["finished"] = stats["done"] + stats["skipped"]
+        stats["rate_limited"] = sum(
+            1 for task in self.tasks
+            if task.status == "failed" and task.error_kind == "rate_limit"
+        )
         return stats
 
     def as_dict(
@@ -146,6 +151,7 @@ class Job:
                     data.pop("prompt", None)
                 data["version"] = self._task_version(task)
                 # thumb 是原图（下载/大图用），thumb_small 是列表用的缩略图（几 MB → 几十 KB）
+                data["error_kind"] = task.error_kind
                 data["garment"] = task.garment
                 data["garment_name"] = task.garment_name
                 data["thumb"] = f"/api/jobs/{self.id}/image/{task.id}" if task.out else None
@@ -225,6 +231,7 @@ class Job:
                     status=raw.get("status") or "pending",
                     attempts=raw.get("attempts") or 0,
                     error=raw.get("error"),
+                    error_kind=raw.get("error_kind") or "",
                     out=raw.get("out"),
                     bytes=raw.get("bytes") or 0,
                 )

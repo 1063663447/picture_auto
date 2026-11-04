@@ -14,11 +14,23 @@ from PIL import Image
 
 from . import prompts
 from .job import Job, Task, normalise_item
+from .gate import GateBusy
 from .packaging import package_outputs
 from .providers.base import EditRequest, Provider, ProviderError, sniff_extension
 from .skill import ColorRef, GarmentType, Skill
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+# 被网关/并发限制打回来的错误特征（用于「一键重试被限流的图」）
+RATE_LIMIT_HINTS = (
+    "429", "rate limit", "rate_limit", "ratelimit", "too many requests", "too many",
+    "concurren", "并发", "限流", "频率", "qps", "tpm", "rpm", "overloaded", "busy",
+    "capacity", "请求过多",
+)
+
+
+def is_rate_limited(message: str) -> bool:
+    text = str(message or "").lower()
+    return any(hint in text for hint in RATE_LIMIT_HINTS)
 # staging/ 下只允许出现 "每个 item 一个目录"。缓存目录曾经被写进 staging（thumbs / derived），
 # 被 skill 的打包脚本当成 item 数图 → 「contains 2 images; expected 3」整批失败。
 # 这里在打包前兜底清掉，防止历史数据/旧版本留下的目录再次踩坑。
@@ -258,6 +270,7 @@ class JobRunner:
         for task in pending:
             task.status = "pending"
             task.error = None
+            task.error_kind = ""
             task.out = None
         return pending
 
@@ -549,11 +562,13 @@ class JobRunner:
             try:
                 data = await self._guarded_call(request, task)
                 rel = self._store(task, data)
-                self._set_status(task, "done", out=rel, error=None, bytes=len(data))
+                self._set_status(task, "done", out=rel, error=None, error_kind="", bytes=len(data))
                 return
             except ProviderError as exc:
                 last_error = exc.message
                 retryable = exc.retryable
+                if is_rate_limited(exc.message):
+                    task.error_kind = "rate_limit"
                 if "超时" in exc.message and not self.retry_on_timeout:
                     retryable = False
                     last_error = (
@@ -565,6 +580,13 @@ class JobRunner:
                     f"{task.id} 第 {attempt}/{self.max_retries} 次失败: {exc.message}",
                     level="warn",
                 )
+            except GateBusy as exc:
+                # 闸门排队超时：不算「接口失败」，但同样要重试，并标记成可一键重试的限流失败
+                last_error = str(exc)
+                retryable = True
+                task.error_kind = "rate_limit"
+                wait = min(5 * attempt, 60)
+                self.job.add_log(f"{task.id} 排队未进：{exc}（稍后重试）", level="warn")
             except Exception as exc:  # noqa: BLE001
                 last_error = f"{type(exc).__name__}: {exc}"
                 retryable = True
@@ -576,7 +598,12 @@ class JobRunner:
             await asyncio.sleep(wait + random.uniform(0, 0.6))
             self._save()
 
-        self._set_status(task, "failed", error=f"{last_error}（已尝试 {attempt} 次）")
+        kind = "rate_limit" if (task.error_kind == "rate_limit" or is_rate_limited(last_error)) else "error"
+        self._set_status(
+            task, "failed",
+            error=f"{last_error}（已尝试 {attempt} 次）",
+            error_kind=kind,
+        )
         self.job.add_log(f"{task.id} 放弃：{last_error}", level="error")
 
     async def _call(self, request: EditRequest) -> bytes:

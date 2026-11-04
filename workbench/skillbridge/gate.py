@@ -37,6 +37,14 @@ from dataclasses import dataclass, field
 import httpx
 
 
+class GateBusy(RuntimeError):
+    """闸门是好的，但额度一直被占满（排队超时）。
+
+    这种情况**不能放行** —— 放行就等于没有闸门，直接去撞上游并发限制。
+    抛出来让 runner 把这张图记成「被限流」，之后可以一键重试。
+    """
+
+
 def _holder_name() -> str:
     try:
         return socket.gethostname() or "workbench"
@@ -55,6 +63,11 @@ class GateConfig:
     request_timeout_sec: float = 8.0
     fail_open: bool = True
     holder: str = ""
+    # 飞书表格闸门（provider="feishu"）
+    provider: str = "http"       # http=Cloudflare 阀门 | feishu=飞书表当队列
+    table_id: str = ""
+    settle_ms: int = 1200        # 写占位后等多久再数一遍（防飞书索引延迟）
+    stale_sec: float = 600.0     # 占位超过这么久视为崩溃遗留
 
     @classmethod
     def from_config(cls, raw: dict | None, env: dict | None = None) -> "GateConfig":
@@ -66,6 +79,25 @@ class GateConfig:
         # 打包给同事时，用 .env 覆盖最省事：GATE_URL / GATE_LIMIT / GATE_TOKEN
         url = str(env.get("GATE_URL") or raw.get("url") or "").strip()
         limit = env.get("GATE_LIMIT") or raw.get("limit") or 20
+        provider = str(raw.get("provider") or "http").strip().lower()
+        table_id = str(raw.get("table_id") or "").strip()
+        if provider == "feishu":
+            # 飞书闸门：只要启用 + 有表，就不需要 url
+            return cls(
+                enabled=bool(raw.get("enabled")) and bool(table_id),
+                url="",
+                token=token,
+                limit=max(1, int(limit)),
+                poll_ms=max(300, int(raw.get("poll_ms") or 2500)),
+                wait_timeout_sec=float(raw.get("wait_timeout_sec") or 1800),
+                request_timeout_sec=float(raw.get("request_timeout_sec") or 8),
+                fail_open=bool(raw.get("fail_open", True)),
+                holder=str(raw.get("holder") or "").strip() or _holder_name(),
+                provider="feishu",
+                table_id=table_id,
+                settle_ms=max(0, int(raw.get("settle_ms") or 1200)),
+                stale_sec=max(60.0, float(raw.get("stale_sec") or 600)),
+            )
         enabled = bool(raw.get("enabled")) or bool(env.get("GATE_URL"))
         return cls(
             enabled=bool(enabled) and bool(url),
@@ -83,7 +115,10 @@ class GateConfig:
         """给界面看的（不含 token）。"""
         return {
             "enabled": self.enabled,
+            "provider": self.provider,
             "url": self.url,
+            "table_id": self.table_id,
+            "settle_ms": self.settle_ms,
             "limit": self.limit,
             "holder": self.holder,
             "wait_timeout_sec": self.wait_timeout_sec,
@@ -98,6 +133,7 @@ class Lease:
     in_use: int = 0
     waited: float = 0.0
     holder: str = ""
+    lease_token: str = ""       # 飞书闸门用来标记自己占的那一行
 
     def as_dict(self) -> dict:
         return {"lease": self.id, "limit": self.limit, "in_use": self.in_use,
@@ -191,7 +227,7 @@ class RemoteGate:
         if self.bypassing:
             return None
         started = time.monotonic()
-        deadline = started + max(30.0, self.cfg.wait_timeout_sec)
+        deadline = started + max(5.0, self.cfg.wait_timeout_sec)
         attempt = 0
         last_note = 0.0
         while True:
@@ -227,9 +263,9 @@ class RemoteGate:
                 now = time.monotonic()
                 if now >= deadline:
                     self._mark_fail("排队超时")
-                    if self.cfg.fail_open:
-                        return None
-                    raise TimeoutError("全局并发阀门排队超时")
+                    raise GateBusy(
+                        f"全局并发阀门排队超过 {int(self.cfg.wait_timeout_sec)}s（额度 {self.cfg.limit} 被占满）"
+                    )
                 wait_s = max(0.15, float(body.get("retry_after_ms") or self.cfg.poll_ms) / 1000.0)
                 in_use = int(body.get("in_use") or 0)
                 limit = int(body.get("limit") or self.cfg.limit)

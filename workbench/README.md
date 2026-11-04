@@ -639,6 +639,53 @@ python cli.py --input D:\in --garment-type 短袖 --provider terra-nano --model 
 共享模式下这个链接自动换成局域网 IP，同事点开就能下载。
 通知失败只写一条 warn，不影响任务状态。
 
+### 推荐：飞书多维表格当「并发闸门 + 队列」（零额外服务）
+
+不用 Cloudflare，就用大家已经在用的飞书表：**表里有几行占位，就有几张图在跑。**
+
+```
+每要发一张图 → 往「并发闸门」表写一条占位（占位/主机/说明/开始/租约）
+占位 < 15  → 直接调接口；出图结束（成功或失败）立刻删掉这条占位
+占位 ≥ 15  → 进队列：每 ~2.5s 轮询一次，别人删了就能进
+```
+
+**两个坑都处理了**
+
+| 坑 | 处理 |
+|---|---|
+| 飞书搜索索引有延迟（刚写的行可能查不到，误判成「还有空位」→ 并发超发） | 写完占位后**等 `settle_ms`（默认 1.2s）再数一遍**：如果总数超过 15，就**把自己这条删掉重新排队**，绝不硬闯（= 二次检测 + 缓冲） |
+| 进程崩溃会留下僵尸占位，把队列永久堵死 | 每条占位带 `开始` 时间；超过 `stale_sec`（默认 10 分钟）的记录被任何客户端发现就顺手删掉 |
+
+**启用（三步）**
+
+```powershell
+# 1) 建表（自动建好「并发闸门」表 + 5 个字段），把打印的 table_id 填进 config.json
+python -m skillbridge.feishu_gate --init
+
+# 2) config.json
+"defaults": { "gate": { "enabled": true, "provider": "feishu", "table_id": "tblXXXX", "limit": 15 } }
+#   （或者只写 "feishu": { "gate_table_id": "tblXXXX" }，defaults.gate 里不重复填）
+
+# 3) 重启工作台；界面「并发数」下面会显示 队列 3/15
+python tools/feishu_gate_status.py      # 或在命令行看当前占位： python -m skillbridge.feishu_gate --check
+```
+
+**实现要点**（`skillbridge/feishu_gate.py`）
+
+- 与 Cloudflare 阀门同一个接口（`acquire / release / status`），runner 不用改；
+- **排队超时不会放行**：等满 `wait_timeout_sec`（默认 30 分钟）就抛 `GateBusy`，
+  这张图标记成「被限流」，稍后自动重试（退避 5s、10s…），也可以点下面的一键重试；
+- 阀门本身挂了（读/写表失败）且 `fail_open: true` 时退回本机并发，不耽误出图；
+- 日志会写 `排队中：全局并发 15/15（其他电脑也在跑），已等 12s`。
+
+### 一键重试「被限流」的图
+
+网关被打回（429 / 并发超限 / 频率过高）或闸门排队超时的图，会被单独标成 `rate_limit`：
+
+- 任务标题旁会多出一个按钮 **「重试被限流 N 张」**（只有真的有这类失败时才出现）；
+- 点它只把这几张重新排队，别的失败（内容审核、图片过大等）**不会**被重跑，不浪费钱；
+- 接口：`POST /api/jobs/{id}/retry`，表单加 `only=rate_limit`。
+
 ### 为什么本机限制不够
 
 三个人各开 20 并发，网关实际就是 60 并发 —— 照样被限、照样一起变慢。
