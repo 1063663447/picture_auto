@@ -81,6 +81,7 @@ class JobRunner:
         selections: list[tuple[GarmentType, list[ColorRef]]] | None = None,
         data_dir: Path,
         provider_sem: asyncio.Semaphore | None = None,
+        gate=None,
     ) -> None:
         self.job = job
         self.skill = skill
@@ -118,7 +119,19 @@ class JobRunner:
         self.pattern_brief = str(params.get("pattern_brief") or "").strip()
         self.negative = prompts.full_negative(self.skill, self.pattern_mode)
         self.limiter = RateLimiter(int(params.get("rpm") or 0))
+        # 本机并发不能超过接口实测能吃的并发（terra 实测 20），超出的排队等
+        self.max_concurrency = max(1, int(provider.setting("max_concurrency", 20) or 20))
+        if self.concurrency > self.max_concurrency:
+            job.add_log(
+                f"并发从 {self.concurrency} 收到接口上限 {self.max_concurrency}（其余排队）",
+                level="warn",
+            )
+            self.concurrency = self.max_concurrency
+            self.job.params["concurrency"] = self.concurrency
         self.sem = asyncio.Semaphore(self.concurrency)
+        # 跨机器的全局并发阀门（Cloudflare Worker）；None = 只用本机限制
+        self.gate = gate
+        self._gate_warned = False
         self.provider_sem = provider_sem
         self.model = str(params.get("model") or "") or None
         self._aspect_cache: dict[Path, float] = {}
@@ -534,7 +547,7 @@ class JobRunner:
             attempt += 1
             task.attempts = attempt
             try:
-                data = await self._guarded_call(request)
+                data = await self._guarded_call(request, task)
                 rel = self._store(task, data)
                 self._set_status(task, "done", out=rel, error=None, bytes=len(data))
                 return
@@ -571,15 +584,43 @@ class JobRunner:
         self._validate_image(data)
         return data
 
-    async def _guarded_call(self, request: EditRequest) -> bytes:
-        """Every API call passes the rpm gate, the shared provider cap, and the job cap."""
+    def _gate_wait_note(self, in_use: int, limit: int, waited: float) -> None:
+        self.job.add_log(
+            f"排队中：全局并发 {in_use}/{limit}（其他电脑也在跑），已等 {waited:.0f}s",
+            level="warn",
+        )
+
+    async def _guarded_call(self, request: EditRequest, task: Task | None = None) -> bytes:
+        """Every API call passes the rpm gate, the shared provider cap, and the job cap.
+
+        配了全局阀门（Cloudflare）时先要一张牌再发请求，回来立刻还牌 —— 同一把 Key
+        在多台电脑上跑，总并发也不会超过接口能吃的额度。
+        """
         await self.limiter.acquire()
-        if self.provider_sem is not None:
-            async with self.provider_sem:
-                async with self.sem:
-                    return await self._call(request)
-        async with self.sem:
-            return await self._call(request)
+        lease = None
+        if self.gate is not None:
+            lease = await self.gate.acquire(
+                job=self.job.id,
+                task=(task.id if task else ""),
+                on_wait=self._gate_wait_note,
+            )
+            if lease is None and not self._gate_warned:
+                self._gate_warned = True
+                reason = str(getattr(self.gate, "last_error", "") or "阀门暂时不可用")[:90]
+                self.job.add_log(
+                    f"全局并发阀门不可用（{reason}），本次只用本机并发 {self.concurrency}",
+                    level="warn",
+                )
+        try:
+            if self.provider_sem is not None:
+                async with self.provider_sem:
+                    async with self.sem:
+                        return await self._call(request)
+            async with self.sem:
+                return await self._call(request)
+        finally:
+            if lease is not None:
+                await self.gate.release(lease)
 
     @staticmethod
     def _validate_image(data: bytes) -> None:

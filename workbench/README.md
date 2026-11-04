@@ -569,6 +569,53 @@ python cli.py --input D:\in --garment-type 短袖 --provider terra-nano --model 
 
 ---
 
+## 5.9 并发与排队（接口实测 20 并发）
+
+**两层限制**，缺一不可：
+
+| 层 | 配置 | 作用 |
+|---|---|---|
+| 本机 | `providers.<name>.max_concurrency`（terra 三个网关都设 20） | 单个工作台最多同时发几个；`并发数=自动` 时取 `min(任务数, 上限)`，多出来的**排队**而不是丢掉 |
+| 跨机器 | `defaults.gate`（或 `.env` 的 `GATE_URL`/`GATE_TOKEN`） | 多台电脑共用一个 Key 时，**合计**不超过额度（Cloudflare Worker 发牌） |
+
+任务日志会写清楚发生了什么：
+
+```
+并发自动设为 20（接口上限 20），其余 10 个排队等下一批
+排队中：全局并发 20/20（其他电脑也在跑），已等 12s
+全局并发阀门不可用（HTTP 502），本次只用本机并发 20
+```
+
+### 为什么本机限制不够
+
+三个人各开 20 并发，网关实际就是 60 并发 —— 照样被限、照样一起变慢。
+所以并发额度必须放在**一处**：Cloudflare Worker + 单个 Durable Object（actor 天然串行）。
+
+```
+本机 A ─┐
+本机 B ─┼─► https://workbench-gate.xxx.workers.dev   ← 唯一那把并发锁
+本机 C ─┘      有牌就发，没牌按 retry_after 排队；租约 180s 自动过期
+```
+
+一次出图 = 2 次请求（acquire + release），免费额度完全够。部署 3 分钟，
+见 [deploy/cloudflare-gate/README.md](deploy/cloudflare-gate/README.md)：
+`wrangler secret put GATE_TOKEN` → `wrangler deploy` → 每台机器 `.env` 里加
+`GATE_URL=...` 和 `GATE_TOKEN=...`。
+
+**阀门挂了不耽误出图**：`fail_open: true`（默认）时记一条 warn、退回本机并发继续跑；
+连续 3 次失败熔断 60 秒，避免每张图都先等一次超时。
+
+界面「生成设定 → 并发数」下面会显示 `● 阀门 3/20 · 本机 ≤20`（可直接点一下刷新）；
+`GET /api/gate` 返回同样信息，方便脚本探活。
+
+不想上云：把 `gate.enabled` 留 `false`（默认），就只用本机 20 并发排队。
+
+**测试**：`python tools/check_gate.py`（离线假阀门，验证「两台机器合计 ≤ 额度」、
+租约全部归还、阀门挂了降级仍出图）；想在本机看效果跑 `python tools/gate_local.py --port 8795 --limit 2`，
+再按它打印的两行 `.env` 配上即可。
+
+---
+
 ## 6. 并发与稳定性
 
 | 机制 | 行为 |

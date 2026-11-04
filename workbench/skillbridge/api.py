@@ -342,7 +342,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
             "providers": bench.provider_payload(),
             "defaults": bench.defaults(),
             "ui": bench.ui_flags(),
+            "gate": bench.gate_public(),
         }
+
+    @app.get("/api/gate")
+    async def gate_status(request: Request):
+        """全局并发阀门状态（Cloudflare Worker）。未启用时 enabled=false。"""
+        bench = wb(request)
+        return {"ok": True, **await bench.gate_status()}
 
     @app.get("/api/models")
     async def list_models(request: Request, provider: str = "", refresh: bool = False):

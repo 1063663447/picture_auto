@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=7.2.0" />
-<link rel="stylesheet" href="/aurora.css?v=7.2.0" />
+<link rel="stylesheet" href="/style.css?v=7.3.0" />
+<link rel="stylesheet" href="/aurora.css?v=7.3.0" />
 </head>
 <body>
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -131,6 +131,7 @@
             <label class="field">
               <span class="lbl">并发数（自动）</span>
               <input type="number" id="concurrency" readonly />
+              <span class="gate-hint" id="gateHint" title="点一下刷新全局并发阀门状态">全局阀门 —</span>
             </label>
             <label class="field">
               <span class="lbl">画面比例</span>
@@ -372,6 +373,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=7.2.0"></script>
+<script src="/app.js?v=7.3.0"></script>
 </body>
 </html>

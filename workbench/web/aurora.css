@@ -882,3 +882,15 @@ html { scroll-behavior: smooth; }
   border: 1px solid #b5a0ff26; border-radius: 5px; padding: 1px 5px;
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* 并发数下面的小字：全局阀门状态（点一下刷新） */
+.gate-hint {
+  display: block; margin-top: 5px; font-size: 9.5px; line-height: 1.5;
+  color: #8f88a8; cursor: pointer; word-break: break-word;
+}
+.gate-hint:hover { color: #c9bdf0; }
+.gate-hint[data-state="ok"] { color: #9aebdb; }
+.gate-hint[data-state="ok"]::before { content: "● "; }
+.gate-hint[data-state="bad"] { color: #ffb3b3; }
+.gate-hint[data-state="bad"]::before { content: "○ "; }
+.gate-hint[data-state="off"]::before { content: "— "; }

@@ -230,6 +230,7 @@ class Provider:
             "max_images": self.max_images,
             "supports_negative": self.supports_negative,
             "default_concurrency": int(self.setting("concurrency", self.default_concurrency)),
+            "max_concurrency": int(self.setting("max_concurrency", 20) or 20),
             "default_rpm": int(self.setting("rpm", 0) or 0),
             "notes": self.notes,
         }

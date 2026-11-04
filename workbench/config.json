@@ -55,7 +55,16 @@
       "max_steps": 6,
       "vision": true
     },
-    "retry_on_timeout": false
+    "retry_on_timeout": false,
+    "gate": {
+      "enabled": false,
+      "url": "",
+      "token_env": "GATE_TOKEN",
+      "limit": 20,
+      "poll_ms": 700,
+      "wait_timeout_sec": 1800,
+      "fail_open": true
+    }
   },
   "providers": {
     "terra": {
@@ -76,7 +85,8 @@
       "concurrency": 4,
       "rpm": 0,
       "input_fidelity": "high",
-      "show_in_ui": true
+      "show_in_ui": true,
+      "max_concurrency": 20
     },
     "terra-nano": {
       "type": "openai_compat",
@@ -96,7 +106,8 @@
       "concurrency": 4,
       "rpm": 0,
       "input_fidelity": "high",
-      "show_in_ui": false
+      "show_in_ui": false,
+      "max_concurrency": 20
     },
     "terra-eco": {
       "type": "openai_compat",
@@ -116,7 +127,8 @@
       "concurrency": 4,
       "rpm": 0,
       "input_fidelity": "high",
-      "show_in_ui": false
+      "show_in_ui": false,
+      "max_concurrency": 20
     },
     "gateway": {
       "type": "openai_compat",
@@ -135,7 +147,8 @@
       ],
       "concurrency": 4,
       "rpm": 0,
-      "show_in_ui": false
+      "show_in_ui": false,
+      "max_concurrency": 8
     },
     "ark": {
       "type": "ark",
@@ -148,7 +161,8 @@
       "max_images": 2,
       "concurrency": 4,
       "rpm": 0,
-      "show_in_ui": false
+      "show_in_ui": false,
+      "max_concurrency": 8
     },
     "gemini": {
       "type": "gemini",
@@ -160,7 +174,8 @@
       "max_images": 6,
       "concurrency": 4,
       "rpm": 0,
-      "show_in_ui": false
+      "show_in_ui": false,
+      "max_concurrency": 8
     },
     "local": {
       "type": "local_recolor",
@@ -170,7 +185,8 @@
       "hue_tolerance": 20,
       "halo_alpha": 190,
       "concurrency": 4,
-      "show_in_ui": false
+      "show_in_ui": false,
+      "max_concurrency": 8
     },
     "mock": {
       "type": "mock",
@@ -178,7 +194,8 @@
       "enabled": true,
       "concurrency": 8,
       "mock_delay_sec": 0.4,
-      "show_in_ui": false
+      "show_in_ui": false,
+      "max_concurrency": 8
     }
   },
   "feishu": {

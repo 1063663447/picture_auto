@@ -13,6 +13,7 @@ from pathlib import Path
 from . import feishu as feishu_mod
 from . import refine
 from .config import WORKBENCH_DIR, load_config, load_env
+from .gate import GateConfig, RemoteGate
 from .pricing import Pricer, UsageLedger
 from .job import Job, Task, new_job_id, normalise_item
 from .providers import build_providers
@@ -84,6 +85,11 @@ class Workbench:
         self.drafts_dir.mkdir(parents=True, exist_ok=True)
         self.reload_skill()
         self.providers: dict[str, Provider] = build_providers(self.config, self.env)
+        # 跨机器的全局并发阀门（Cloudflare Worker）；没配就是 None，只用本机并发
+        self.gate_config = GateConfig.from_config(
+            (self.config.get("defaults") or {}).get("gate"), self.env
+        )
+        self._gates: dict[str, RemoteGate] = {}
         self._load_existing()
 
     # ------------------------------------------------------------------ setup #
@@ -154,6 +160,39 @@ class Workbench:
 
     def defaults(self) -> dict:
         return self.config.get("defaults") or {}
+
+    def gate_public(self) -> dict:
+        """界面用的阀门信息（不含 token）。"""
+        return self.gate_config.public()
+
+    # ---------------------------------------------------------------- gate --
+    def gate_for(self, provider: Provider | None = None) -> RemoteGate | None:
+        """给某个接口配阀门客户端（同接口复用；未启用返回 None）。"""
+        if not self.gate_config.enabled:
+            return None
+        name = provider.name if provider is not None else "-"
+        gate = self._gates.get(name)
+        if gate is None:
+            cfg = self.gate_config
+            if provider is not None:
+                override = provider.setting("gate_limit", None)
+                if override:
+                    cfg = GateConfig(**{**cfg.__dict__, "limit": max(1, int(override))})
+            gate = RemoteGate(cfg, label=name)
+            self._gates[name] = gate
+        return gate
+
+    async def gate_status(self) -> dict:
+        cfg = self.gate_config
+        payload: dict = {"config": cfg.public()}
+        if not cfg.enabled:
+            payload.update({"ok": False, "enabled": False, "error": "未启用（只用本机并发限制）"})
+            return payload
+        gate = self.gate_for(self.get_provider(None))
+        status = await gate.status()
+        payload.update(status.as_dict())
+        payload["config"] = cfg.public()
+        return payload
 
     # ----------------------------------------------------------------- models #
     def _get_provider_any(self, name: str | None) -> Provider:
@@ -473,6 +512,7 @@ class Workbench:
                 provider_obj,
                 selections=plan,
                 data_dir=self.data_dir,
+                gate=self.gate_for(provider_obj),
             ).plan()
         except Exception as exc:  # noqa: BLE001
             shutil.rmtree(root, ignore_errors=True)
@@ -480,8 +520,16 @@ class Workbench:
 
         # 并发默认等于预计调用次数（用户要求：一次把能发的都发出去）
         if str(concurrency).strip().lower() in {"", "auto", "none"} or concurrency is None:
-            job.params["concurrency"] = max(1, min(64, len(job.tasks)))
-            job.add_log(f"并发自动设为 {job.params['concurrency']}（= 预计调用次数）")
+            max_conc = max(1, int(provider_obj.setting("max_concurrency", 20) or 20))
+            wanted = max(1, min(64, len(job.tasks)))
+            job.params["concurrency"] = min(wanted, max_conc)
+            if wanted > max_conc:
+                job.add_log(
+                    f"并发自动设为 {max_conc}（接口上限 20），其余 {wanted - max_conc} 个排队等下一批",
+                    level="warn",
+                )
+            else:
+                job.add_log(f"并发自动设为 {job.params['concurrency']}（= 预计调用次数）")
 
         job.params["estimate"] = self.pricer.estimate(
             chosen_model, len(job.tasks), str(job.params.get("size") or "auto")
@@ -1279,6 +1327,7 @@ class Workbench:
             selections=selections or None,
             data_dir=self.data_dir,
             provider_sem=self._provider_sem(provider),
+            gate=self.gate_for(provider),
         )
 
     def start(self, job_id: str) -> dict:
@@ -1378,6 +1427,11 @@ class Workbench:
         for task in list(self._tasks.values()):
             if not task.done():
                 task.cancel()
+        for gate in self._gates.values():
+            try:
+                await gate.close()
+            except Exception:
+                pass
         for provider in self.providers.values():
             try:
                 await provider.close()

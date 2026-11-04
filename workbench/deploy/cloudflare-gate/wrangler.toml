@@ -1,0 +1,18 @@
+name = "workbench-gate"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# 全局唯一的那把并发锁：所有机器都落到同一个 Durable Object
+[[durable_objects.bindings]]
+name = "GATE"
+class_name = "Gate"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Gate"]
+
+# 默认额度（也可以在 defaults.gate.limit 里由客户端传，取两者较小值的那套逻辑在客户端）
+[vars]
+GATE_LIMIT = "20"
+
+# token 不要写在这里！用 `wrangler secret put GATE_TOKEN`

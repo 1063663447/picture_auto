@@ -462,6 +462,7 @@
       state.defaults = data.defaults || {};
       renderProviders();
       restoreSettings();
+      loadGate();
     } catch (_) { /* ignore */ }
     bind();
     loadHistory();
@@ -652,6 +653,37 @@
     renderStyles();
   }
 
+  /* ------------------------------------------------------------- 全局阀门 */
+  function renderGate(info) {
+    const el = $("gateHint");
+    if (!el) return;
+    const cfg = (info && info.config) || {};
+    const cap = state.providerCap ? `本机 ≤${state.providerCap}` : "";
+    if (!cfg.enabled) {
+      el.textContent = `阀门未启用${cap ? " · " + cap : ""}`;
+      el.dataset.state = "off";
+      el.title = "只用本机并发限制；多台电脑同时跑会各自占额度。部署见 deploy/cloudflare-gate/README.md";
+      return;
+    }
+    if (info.ok) {
+      el.textContent = `阀门 ${info.in_use}/${info.limit}${cap ? " · " + cap : ""}`;
+      el.dataset.state = "ok";
+      el.title = `全部电脑合计上限 ${info.limit}，当前占用 ${info.in_use}；点一下刷新`;
+      return;
+    }
+    el.textContent = `阀门离线${cap ? " · " + cap : ""}`;
+    el.dataset.state = "bad";
+    el.title = `${info.error || "连不上阀门"}（fail_open 时不挡出图）`;
+  }
+
+  async function loadGate() {
+    try {
+      renderGate(await api("/api/gate"));
+    } catch (err) {
+      renderGate({ ok: false, enabled: true, error: err.message, config: { enabled: true } });
+    }
+  }
+
   function expectedCalls() {
     return state.files.length * totalColors();
   }
@@ -750,6 +782,7 @@
   function applyProvider() {
     const provider = state.providers.find((p) => p.name === $("provider").value);
     if (!provider) return;
+    state.providerCap = Number(provider.max_concurrency || 20);
     $("providerState").textContent = provider.ready ? "就绪" : provider.reason;
     $("providerState").style.color = provider.ready ? "var(--primary)" : "var(--danger)";
     // 参考图与负面词策略固定，界面上不再展示说明
@@ -965,6 +998,7 @@
       closeHarness();
       watchJob(data.job.id, data.job);
       loadHistory();
+      loadGate();
       setTimeout(loadPricing, 1500);   // 先让结果区渲染出来，用量芯片稍后再刷
       const est = data.job.params.estimate || {};
       toast("ok", est.priced
@@ -1011,6 +1045,7 @@
         renderJob(data.job);
         if (TERMINAL.includes(data.job.status)) {
           loadHistory();
+          loadGate();
           maybeLoadPricing();
           state.pollTimer = null;
           return;
@@ -1941,6 +1976,7 @@
       closeHarness();
       watchJob(data.job.id, data.job);
       loadHistory();
+      loadGate();
       setTimeout(loadPricing, 1500);
       toast("ok", `已提交 ${state.reworkTargets.length} 张返工`);
     } catch (err) {
@@ -1974,6 +2010,9 @@
     drop.addEventListener("drop", (event) => {
       if (event.dataTransfer && event.dataTransfer.files) addFiles(event.dataTransfer.files);
     });
+
+    const gateHint = $("gateHint");
+    if (gateHint) gateHint.addEventListener("click", () => loadGate());
 
     const addStyleBtn = $("addStyle");
     if (addStyleBtn) addStyleBtn.addEventListener("click", () => addStyle());
