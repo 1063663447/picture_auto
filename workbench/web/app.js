@@ -133,11 +133,11 @@
     const el = $("patternHint");
     if (!el) return;
     const map = {
-      "": "按需求自动判断（说了改图案就放开图案锁）",
-      preserve: "图案逐像素照抄，只换面料底色",
-      per_color_variant: "每个颜色各生成一套图案，不复用同一张图",
-      replace: "整批换成需求里描述的新图案",
-      free: "图案可重绘，其余元素仍锁定",
+      "": "按需求自动判断",
+      preserve: "图案逐像素照抄",
+      per_color_variant: "每色一套图案",
+      replace: "整批换新图案",
+      free: "图案可重绘",
     };
     el.value = map[currentPatternMode()] ?? "";
   }
@@ -368,7 +368,6 @@
     try {
       const skill = await api("/api/skill");
       state.skill = skill;
-      $("skillLine").textContent = `skill · ${skill.root}`;
       if (skill.warnings && skill.warnings.length) {
         $("skillWarn").hidden = false;
         $("skillWarn").textContent = `解析提示 ${skill.warnings.length} 条`;
@@ -381,7 +380,7 @@
       renderTypes();
       renderColors();
     } catch (err) {
-      $("skillLine").textContent = `skill 读取失败：${err.message}`;
+      console.warn("skill 读取失败", err);
     }
 
     // 价格表必须先就位，否则模型下拉渲染时拿不到单价
@@ -409,28 +408,26 @@
 
   /* ----------------------------------------------------------------- types */
   function renderTypes() {
-    const box = $("types");
-    box.innerHTML = "";
+    const select = $("garment");
+    select.innerHTML = "";
     for (const [slug, type] of Object.entries(state.skill.types)) {
-      const label = document.createElement("label");
-      label.className = "type" + (slug === state.garment ? " sel" : "");
-      label.innerHTML = `
-        <input type="radio" name="garment" value="${slug}" ${slug === state.garment ? "checked" : ""}/>
-        <div>
-          <strong>${esc(type.display_name)}</strong>
-          <span class="sub">${esc(type.aliases.filter((a) => a !== type.display_name).join(" / "))}</span>
-        </div>
-        <span class="count">${type.colors.length} 色</span>`;
-      label.addEventListener("click", () => {
-        state.garment = slug;
-        store("garment", slug);
-        state.colors = new Set(state.skill.types[slug].colors.map((c) => c.label));
-        renderTypes();
-        renderColors();
-      });
-      box.appendChild(label);
+      const option = document.createElement("option");
+      option.value = slug;
+      option.textContent = `${type.display_name} · ${type.colors.length} 色`;
+      select.appendChild(option);
     }
-    $("typeHint").textContent = state.skill.types[state.garment].batch_name;
+    if (state.skill.types[state.garment]) select.value = state.garment;
+    const current = state.skill.types[state.garment];
+    $("typeHint").textContent = current ? `${current.colors.length} 个内置颜色` : "";
+  }
+
+  function selectGarment(slug) {
+    if (!state.skill || !state.skill.types[slug]) return;
+    state.garment = slug;
+    store("garment", slug);
+    state.colors = new Set(state.skill.types[slug].colors.map((c) => c.label));
+    renderTypes();
+    renderColors();
   }
 
   /* ---------------------------------------------------------------- colors */
@@ -490,33 +487,9 @@
     }
     if ($("sizePreview")) {
       $("sizePreview").value = auto
-        ? "auto · 跟随原图（按 1K 估算）"
+        ? "auto · 跟随原图"
         : `${size.replace("x", " × ")} · ${megapixelsOf(size).toFixed(2)}MP · ${tier} 档`;
     }
-
-    const info = priceOf(model, size);
-    const mp = megapixelsOf(size);
-    const sizeText = auto
-      ? "自动（跟原图，按 1K 估算）"
-      : `${size}${mp ? ` · ${mp.toFixed(2)}MP` : ""} → ${tier} 档`;
-    if (!state.modelRows.length) return;
-    const priced = state.modelRows.filter((m) => priceOf(m.id, size).unit !== null).length;
-    const source = state.pricing.source === "feishu" ? "飞书「模型定价」表" : "pricing.json";
-    const lines = [
-      `共 ${state.modelRows.length} 个图片模型 · 已定价 ${priced} 个 · 单价来自${source}（可人工改）`,
-      `当前尺寸：${sizeText}${info.unit !== null ? ` · ${priceText(model, size)}` : ""}`,
-    ];
-    const tiers = tiersText(info);
-    if (tiers) {
-      lines.push(
-        `分档价：${tiers}（分辨率档位决定单价；比例只决定横竖，质量只影响细节）`
-      );
-    }
-    if (info.tiered && info.fallback) {
-      lines.push(`注意：${tier} 档没有单独报价，正在用「其他分辨率」价 ${money(info.other, state.pricing.currency)}`);
-    }
-    $("modelTip").innerHTML = lines.map((line) => `<span>${esc(line)}</span>`).join("<br/>");
-    $("modelTip").style.whiteSpace = "pre-line";
   }
 
   function updateSummary() {
@@ -577,16 +550,11 @@
     if (!provider) return;
     $("providerState").textContent = provider.ready ? "就绪" : provider.reason;
     $("providerState").style.color = provider.ready ? "var(--primary)" : "var(--danger)";
-    $("providerTip").textContent =
-      `单次最多 ${provider.max_images} 张输入图 · ` +
-      (provider.supports_negative ? "支持 negative" : "无 negative 字段，负面词合并进提示词");
+    // 参考图与负面词策略固定，界面上不再展示说明
     loadModels(provider.name);
   }
 
   async function loadModels(providerName, refresh) {
-    const tip = $("modelTip");
-    tip.textContent = "正在读取模型…";
-    tip.style.color = "var(--fg-subtle)";
     try {
       const data = await api(
         `/api/models?provider=${encodeURIComponent(providerName)}&refresh=${refresh ? "true" : "false"}`
@@ -610,12 +578,10 @@
       const wanted = rows.find((m) => m.id === previous) ? previous : (rows[0] ? rows[0].id : "__manual__");
       select.value = wanted;
       $("modelManual").hidden = wanted !== "__manual__";
-      tip.style.color = "";
       renderModelLabels();
       store(`model.${providerName}`, wanted);
     } catch (err) {
-      tip.style.color = "var(--danger)";
-      tip.textContent = `模型拉取失败：${err.message}（已回退到接口默认模型，可手填）`;
+      console.warn("模型拉取失败", err.message);
       const select = $("model");
       if (!select.options.length) {
         const provider = state.providers.find((p) => p.name === $("provider").value) || {};
@@ -727,7 +693,6 @@
     setSelect("patternMode", restore("patternMode", state.defaults.pattern_mode || ""));
     setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
-    $("sendReference").checked = restore("sendReference", true);
     renderModelLabels();
     updateSummary();
   }
@@ -737,7 +702,6 @@
     if ($("patternMode")) store("patternMode", $("patternMode").value);
     store("quality", $("quality").value);
     store("outputFormat", $("outputFormat").value);
-    store("sendReference", $("sendReference").checked);
   }
 
   /* ---------------------------------------------------------------- drafts */
@@ -771,7 +735,7 @@
       form.append("quality", $("quality").value);
       form.append("output_format", $("outputFormat").value);
       form.append("pattern_mode", currentPatternMode());
-      form.append("send_reference", $("sendReference").checked ? "true" : "false");
+      form.append("send_reference", "true");   // 默认总是带颜色参考图
       if (extraRequirements) form.append("extra_requirements", extraRequirements);
       form.append("start", "true");
       const data = await api("/api/jobs", { method: "POST", body: form });
@@ -1552,6 +1516,7 @@
   function bind() {
     const drop = $("drop");
     const input = $("fileInput");
+    $("garment").addEventListener("change", (event) => selectGarment(event.target.value));
     drop.addEventListener("click", () => input.click());
     input.addEventListener("change", () => { addFiles(input.files); input.value = ""; });
     ["dragenter", "dragover"].forEach((type) =>
@@ -1568,7 +1533,7 @@
     });
     $("pickNone").addEventListener("click", () => { state.colors.clear(); renderColors(); });
 
-    ["aspect", "sizeTier", "patternMode", "quality", "outputFormat", "sendReference"].forEach((id) =>
+    ["aspect", "sizeTier", "patternMode", "quality", "outputFormat"].forEach((id) =>
       $(id).addEventListener("change", () => {
         saveSettings();
         renderModelLabels();

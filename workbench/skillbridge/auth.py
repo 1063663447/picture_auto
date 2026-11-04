@@ -392,7 +392,7 @@ def read_session(cookie: str | None, secret: str) -> str | None:
 
 LOGIN_PAGE = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>登录 · 服装改款换色工作台</title>
+<title>登录 · 生图工作台</title>
 <style>
   :root{color-scheme:light dark}
   body{margin:0;min-height:100vh;display:grid;place-items:center;
@@ -410,7 +410,7 @@ LOGIN_PAGE = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
   .err{color:#b91c1c;font-size:12px}
 </style>
 <form method="post" action="/login">
-  <h1>服装改款换色工作台</h1>
+  <h1>生图工作台</h1>
   <p class="sub">用飞书「账号」表里的账号登录</p>
   <label>账号<input name="username" autocomplete="username" required autofocus /></label>
   <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
-<title>服装改款换色工作台</title>
+<title>生图工作台</title>
 <link rel="stylesheet" href="/style.css?v=5.1.0" />
 <link rel="stylesheet" href="/glass.css?v=5.2.1" />
 </head>
@@ -28,10 +28,16 @@
 
 <header class="appbar">
   <div class="brand">
-    <span class="brand-mark"><svg width="18" height="18"><use href="#i-shirt"/></svg></span>
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="21" height="21" class="logo-glyph">
+        <path d="M10.4 2.3c.34 4.05 2.33 6.04 6.38 6.38-4.05.34-6.04 2.33-6.38 6.38-.34-4.05-2.33-6.04-6.38-6.38 4.05-.34 6.04-2.33 6.38-6.38Z"
+              fill="#ffffff" fill-opacity="0.97"/>
+        <path d="M18.5 13.4c.21 2.52 1.45 3.76 3.97 3.97-2.52.21-3.76 1.45-3.97 3.97-.21-2.52-1.45-3.76-3.97-3.97 2.52-.21 3.76-1.45 3.97-3.97Z"
+              fill="#ffffff" fill-opacity="0.82"/>
+      </svg>
+    </span>
     <div class="brand-text">
-      <h1>服装改款换色工作台</h1>
-      <p id="skillLine">正在读取 skill…</p>
+      <h1>生图工作台</h1>
     </div>
   </div>
   <div class="appbar-spacer"></div>
@@ -78,7 +84,9 @@
 
     <section class="card">
       <div class="card-head"><h2><span class="step">2</span>目标款式</h2><span class="hint" id="typeHint"></span></div>
-      <div class="card-body"><div class="types" id="types"></div></div>
+      <div class="card-body">
+        <select id="garment" aria-label="目标款式"></select>
+      </div>
     </section>
 
     <section class="card">
@@ -96,20 +104,7 @@
     </section>
 
     <section class="card">
-      <div class="card-head"><h2><span class="step">4</span>生成方式</h2></div>
-      <div class="card-body">
-        <div class="locked-mode">
-          <svg width="16" height="16" style="color:var(--primary)"><use href="#i-check"/></svg>
-          <div>
-            <strong>一次到位</strong>
-            <span>改款 + 换色在同一次调用里完成</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="card-head"><h2><span class="step">5</span>接口与并发</h2><span class="hint" id="providerState"></span></div>
+      <div class="card-head"><h2><span class="step">4</span>接口与并发</h2><span class="hint" id="providerState"></span></div>
       <div class="card-body">
         <div class="field">
           <span class="lbl">生图接口</span>
@@ -120,7 +115,6 @@
           <select id="model"></select>
           <input type="text" id="modelManual" placeholder="手填模型名" hidden />
         </div>
-        <p class="tip" id="modelTip"></p>
         <div class="grid2">
           <div class="field">
             <span class="lbl">并发数（自动）</span>
@@ -185,8 +179,6 @@
             <input type="text" id="patternHint" readonly />
           </div>
         </div>
-        <label class="check"><input type="checkbox" id="sendReference" checked /><span>同时发送颜色参考图</span></label>
-        <p class="tip" id="providerTip" style="margin-top:8px"></p>
       </div>
     </section>
 
@@ -353,6 +345,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=5.4.0"></script>
+<script src="/app.js?v=5.5.3"></script>
 </body>
 </html>
