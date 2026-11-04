@@ -10,6 +10,8 @@ import time
 import zipfile
 from pathlib import Path
 
+import httpx
+
 from . import feishu as feishu_mod
 from . import refine
 from .config import WORKBENCH_DIR, load_config, load_env
@@ -1285,6 +1287,9 @@ class Workbench:
         """
         cap = int(provider.setting("global_concurrency", 0) or 0)
         if cap <= 0:
+            # 没单独配就用接口上限：多人同时提交时，几个任务共享同一池子
+            cap = int(provider.setting("max_concurrency", 20) or 20)
+        if cap <= 0:
             return None
         sem = self._provider_sems.get(provider.name)
         if sem is None:
@@ -1377,6 +1382,85 @@ class Workbench:
                 job.save()
         except Exception:  # noqa: BLE001
             pass
+
+        # 完成通知（飞书群机器人）放在最后，失败了也不影响任务状态
+        try:
+            self.notify_done(job)
+            job.save()
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ---------------------------------------------------------------- notify #
+    def public_url(self) -> str:
+        """同事能打开的地址（共享模式下自动换成局域网 IP）。"""
+        import os
+        import socket
+
+        server = self.config.get("server") or {}
+        host = str(os.environ.get("WORKBENCH_HOST") or server.get("host") or "127.0.0.1")
+        port = int(os.environ.get("WORKBENCH_PORT") or server.get("port") or 8787)
+        if host in {"0.0.0.0", "::", ""}:
+            host = "127.0.0.1"
+            try:
+                probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                try:
+                    probe.connect(("8.8.8.8", 80))
+                    host = probe.getsockname()[0]
+                finally:
+                    probe.close()
+            except OSError:
+                pass
+        return f"http://{host}:{port}/"
+
+    def _notify_config(self) -> dict:
+        return dict(self.defaults().get("notify") or {})
+
+    def notify_done(self, job: Job) -> bool:
+        """任务跑完后推一条到飞书群机器人（webhook），方便人不在电脑前也知道出图好了。"""
+        cfg = self._notify_config()
+        url = str(cfg.get("feishu_webhook") or self.env.get("FEISHU_WEBHOOK") or "").strip()
+        if not cfg.get("enabled") or not url:
+            return False
+        stats = job.counts()
+        est = (job.params.get("estimate") or {})
+        cost = (
+            f"{est.get('total')} {est.get('currency')}"
+            if est.get("priced")
+            else "未定价"
+        )
+        styles = job.params.get("selections") or []
+        title = (
+            f"{len(styles)} 个款式" if len(styles) > 1
+            else (job.params.get("garment_name") or "生图任务")
+        )
+        where = self.public_url()
+        lines = [
+            f"【出图完成】{title} · {stats['total']} 张",
+            f"成功 {stats['done'] + stats['skipped']} · 失败 {stats['failed']} · 花费 {cost}",
+            f"任务号：{job.id}",
+            f"取图：{where}（历史任务 → 下载 ZIP）",
+        ]
+        if job.zip_rel:
+            lines.append("（ZIP 已生成，本机可取）")
+        if job.params.get("feishu_rows"):
+            lines.append(f"飞书已写 {job.params['feishu_rows']} 行")
+        text = "\n".join(lines)
+        try:
+            with httpx.Client(timeout=8.0) as client:
+                payload = {
+                    "msg_type": "text",
+                    "content": {"text": text},
+                }
+                resp = client.post(url, json=payload)
+                ok = resp.status_code < 400
+                job.add_log(
+                    "已推送飞书群通知" if ok else f"飞书群通知失败：HTTP {resp.status_code}",
+                    level="info" if ok else "warn",
+                )
+                return ok
+        except Exception as exc:  # noqa: BLE001
+            job.add_log(f"飞书群通知异常：{exc}", level="warn")
+            return False
 
     def _forget(self, job_id: str, task: asyncio.Task) -> None:
         if self._tasks.get(job_id) is task:

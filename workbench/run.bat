@@ -53,6 +53,9 @@ if errorlevel 1 (
 )
 
 rem ---- 3. 启动工作台 ----
+echo.
+echo   想让同事也能提交？关掉窗口后双击 run_share.bat（同一局域网共享）
+echo.
 %PY% serve.py --open %*
 if errorlevel 1 pause
 endlocal

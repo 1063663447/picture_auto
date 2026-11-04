@@ -1101,8 +1101,9 @@
     bar.querySelector("i").style.width = `${job.progress}%`;
     bar.classList.toggle("done", TERMINAL.includes(job.status));
     $("progressLabel").textContent = `${done} / ${stats.total}`;
+    const queue = stats.pending ? ` · 排队 ${stats.pending}` : "";
     $("progressStats").textContent =
-      `运行 ${stats.running} · 失败 ${stats.failed}${job.error ? ` · ${job.error}` : ""}`;
+      `运行 ${stats.running}${queue} · 失败 ${stats.failed}${job.error ? ` · ${job.error}` : ""}`;
 
     if ($("galleryCount")) {
       $("galleryCount").textContent = String(done).padStart(2, "0");

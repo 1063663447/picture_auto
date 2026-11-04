@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import socket
 import sys
 import threading
@@ -30,6 +31,11 @@ def main() -> int:
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--open", action="store_true", help="启动后自动打开浏览器")
+    parser.add_argument(
+        "--share",
+        action="store_true",
+        help="局域网共享：绑 0.0.0.0，别人用浏览器访问这台机器提交任务（排队/出图都在这一台）",
+    )
     parser.add_argument("--reload", action="store_true", help="开发模式：文件改动自动重载")
     args = parser.parse_args()
 
@@ -53,7 +59,11 @@ def main() -> int:
         or server.get("port")
         or 8787
     )
-    host = args.host or env.get("WORKBENCH_HOST") or server.get("host") or "127.0.0.1"
+    host = (
+        "0.0.0.0"
+        if args.share
+        else (args.host or env.get("WORKBENCH_HOST") or server.get("host") or "127.0.0.1")
+    )
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -65,8 +75,12 @@ def main() -> int:
         )
         return 2
 
+    # 让 service 知道真正监听的地址（通知里的「取图」链接、共享模式的局域网地址都靠它）
+    os.environ["WORKBENCH_HOST"] = str(host)
+    os.environ["WORKBENCH_PORT"] = str(port)
     app = create_app(str(Path(args.config).resolve()) if args.config else None)
     url = f"http://{'127.0.0.1' if host in {'0.0.0.0', '::'} else host}:{port}"
+    sharing = host in {"0.0.0.0", "::"}
     token = str(server.get("auth_token") or "")
     feishu = config.get("feishu") or {}
     print("=" * 64)
@@ -86,7 +100,19 @@ def main() -> int:
             else "未配置（记录只存本地）"
         )
     )
-    print("  说明    : 关掉这个窗口即停止；下次重新双击 run.bat 即可")
+    if sharing:
+        print("  " + "-" * 60)
+        print("  共享模式：同一局域网的同事用下面的地址访问这台机器")
+        for ip in _lan_ips():
+            print(f"    http://{ip}:{port}")
+        print("  · 任务、并发、出图全在这一台机器上排队执行，别人只是用浏览器提交")
+        print(f"  · 第一次可能要在 Windows 防火墙放行：netsh advfirewall firewall add rule "
+              f"name=\"workbench {port}\" dir=in action=allow protocol=TCP localport={port}")
+        print("  · 只建议在局域网/公司网内这样用；需要外网就套 Tailscale（见 README §5.9）")
+        print("  " + "-" * 60)
+    else:
+        print("  说明    : 关掉这个窗口即停止；下次重新双击 run.bat 即可")
+        print("  共享    : 想让同事也能提交？用 python serve.py --share（同一局域网）")
     print("=" * 64, flush=True)
 
     if args.open:
@@ -101,6 +127,28 @@ def main() -> int:
 
     uvicorn.run(app, host=host, port=port, log_level="info" if args.reload else "warning")
     return 0
+
+
+def _lan_ips() -> list[str]:
+    """尽量列出本机的局域网地址（供 --share 打印）。"""
+    ips: list[str] = []
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("8.8.8.8", 80))
+            ips.append(probe.getsockname()[0])
+        finally:
+            probe.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+    except OSError:
+        pass
+    return ips or ["127.0.0.1"]
 
 
 if __name__ == "__main__":
