@@ -159,6 +159,7 @@
         + (data.source === "feishu" ? " · 账号来自飞书表" : " · 本地兜底账号");
       $("accountsBtn").hidden = !data.admin;
       $("accountsBtn").title = data.admin ? "查看每个账号的用量" : "";
+      $("adminLink").hidden = !data.admin;
     } catch (_) { /* 口令访问或接口不可用时静默 */ }
   }
 
@@ -199,11 +200,15 @@
         <li><span>${esc(item.detail || item.job_id || "")}</span>
         <em>${item.images} 张 · ${money(item.cost, currency)}</em></li>`).join("");
       const role = row.role === "admin" ? "管理员" : (row.role === "unknown" ? "历史账号" : "成员");
+      const quota = Number(row.quota || 0) > 0
+        ? `<span class="tag ${Number(row.quota_pct || 0) >= 100 ? "bad" : Number(row.quota_pct || 0) >= 80 ? "warn" : ""}">额度 ${money(row.quota_left, currency)} / ${money(row.quota, currency)}</span>`
+        : "";
       return `<article class="acc-card">
         <header>
           <b>${esc(row.display || row.username)}</b>
           <span class="tag ${row.active ? "" : "warn"}">${row.active ? role : "已停用"}</span>
           <code>${esc(row.username)}</code>
+          ${quota}
         </header>
         <div class="acc-kpi">
           <span><em>${row.images || 0}</em>张</span>
@@ -268,6 +273,9 @@
     bind();
     loadHistory();
     const params = new URLSearchParams(location.search);
+    if (params.get("denied") === "admin") {
+      toast("bad", "管理后台只对管理员开放，请联系管理员开通");
+    }
     const deep = params.get("job");
     if (deep) watchJob(deep);
     updateSummary();

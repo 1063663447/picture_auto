@@ -223,6 +223,12 @@ class FeishuBitable:
             {"fields": fields},
         )
 
+    def delete_record(self, table_id: str, record_id: str) -> dict:
+        return self._api(
+            "DELETE",
+            f"/bitable/v1/apps/{self.cfg.app_token}/tables/{table_id}/records/{record_id}",
+        )
+
     def create_records(self, rows: list[dict], table_id: str = "") -> list[str]:
         table_id = table_id or self.cfg.table_id
         ids: list[str] = []

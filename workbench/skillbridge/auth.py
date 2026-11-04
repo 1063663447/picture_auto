@@ -234,6 +234,125 @@ class AccountStore:
         elif not self.feishu_ready:
             self._save_file(self.accounts)
 
+    # -- 管理（增删改，全部落到飞书表；没配飞书时才写本地文件） --
+    def find(self, username: str, force: bool = False) -> Account | None:
+        return self.load(force=force).get((username or "").strip().lower())
+
+    def _write_fields(self, account: Account, fields: dict) -> None:
+        """把字段写回飞书（或本地兜底文件），并让缓存立即失效。"""
+        if self.feishu_ready and account.record_id:
+            FeishuBitable(self.cfg).update_record(
+                getattr(self.cfg, "account_table_id", ""), account.record_id, fields
+            )
+        else:
+            self._save_file(self.accounts)
+        self.loaded_at = 0.0
+        self.load(force=True)
+
+    def create(
+        self,
+        username: str,
+        password: str,
+        *,
+        display: str = "",
+        role: str = "member",
+        status: str = "启用",
+        quota: float = 0.0,
+        note: str = "",
+    ) -> Account:
+        username = (username or "").strip()
+        if not username:
+            raise ValueError("账号不能为空")
+        if self.find(username, force=True) is not None:
+            raise ValueError(f"账号 {username} 已存在")
+        fields = {
+            "账号": username,
+            "显示名": display or username,
+            "密码哈希": hash_password(password),
+            "明文密码": "",
+            "角色": role or "member",
+            "状态": status or "启用",
+            "额度元": float(quota or 0),
+            "备注": note or "",
+            "创建时间": int(time.time() * 1000),
+        }
+        if self.feishu_ready:
+            FeishuBitable(self.cfg).create_records(
+                [fields], table_id=getattr(self.cfg, "account_table_id", "")
+            )
+            self.loaded_at = 0.0
+            self.load(force=True)
+        else:
+            account = Account(
+                username=username,
+                display=fields["显示名"],
+                role=fields["角色"],
+                status=fields["状态"],
+                quota=fields["额度元"],
+                password_hash=fields["密码哈希"],
+            )
+            self.accounts[username.lower()] = account
+            self._save_file(self.accounts)
+        return self.find(username, force=True) or Account(username=username)
+
+    def update(self, username: str, fields: dict) -> Account:
+        """只更新传进来的字段：显示名/角色/状态/额度元/备注。"""
+        account = self.find(username, force=True)
+        if account is None:
+            raise ValueError(f"账号 {username} 不存在")
+        mapping = {
+            "display": "显示名",
+            "role": "角色",
+            "status": "状态",
+            "quota": "额度元",
+            "note": "备注",
+        }
+        payload: dict = {}
+        for key, label in mapping.items():
+            if key not in fields or fields[key] is None:
+                continue
+            value = fields[key]
+            if key == "quota":
+                payload[label] = float(value)
+                account.quota = float(value)
+            else:
+                payload[label] = str(value)
+                if key == "display":
+                    account.display = str(value)
+                elif key == "role":
+                    account.role = str(value)
+                elif key == "status":
+                    account.status = str(value)
+                elif key == "note":
+                    account.note = str(value)
+        if payload:
+            self._write_fields(account, payload)
+        return self.find(username, force=True) or account
+
+    def set_password(self, username: str, password: str) -> Account:
+        if len(password or "") < 6:
+            raise ValueError("密码至少 6 位")
+        account = self.find(username, force=True)
+        if account is None:
+            raise ValueError(f"账号 {username} 不存在")
+        hashed = hash_password(password)
+        self._write_fields(account, {"密码哈希": hashed, "明文密码": ""})
+        return self.find(username, force=True) or account
+
+    def delete(self, username: str) -> None:
+        account = self.find(username, force=True)
+        if account is None:
+            raise ValueError(f"账号 {username} 不存在")
+        if self.feishu_ready and account.record_id:
+            client = FeishuBitable(self.cfg)
+            client.delete_record(getattr(self.cfg, "account_table_id", ""), account.record_id)
+            self.loaded_at = 0.0
+            self.load(force=True)
+        else:
+            self.accounts.pop(account.username.lower(), None)
+            self._save_file(self.accounts)
+
+
 
 # ------------------------------------------------------------------- 会话 --
 def _b64(data: bytes) -> str:
@@ -295,6 +414,7 @@ LOGIN_PAGE = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
   <p class="sub">用飞书「账号」表里的账号登录</p>
   <label>账号<input name="username" autocomplete="username" required autofocus /></label>
   <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>
+  <input type="hidden" name="next" value="__NEXT__" />
   <button type="submit">登录</button>
   __ERROR__
 </form></html>"""

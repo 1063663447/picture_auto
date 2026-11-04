@@ -397,6 +397,16 @@ class Workbench:
         job.params["estimate"] = self.pricer.estimate(
             chosen_model, len(job.tasks), str(job.params.get("size") or "auto")
         )
+        try:
+            self._quota_guard(
+                str(params.get("account") or ""),
+                chosen_model,
+                len(job.tasks),
+                str(job.params.get("size") or "auto"),
+            )
+        except WorkbenchError:
+            shutil.rmtree(root, ignore_errors=True)
+            raise
         job.save()
         self.jobs[job_id] = job
         return job
@@ -485,8 +495,8 @@ class Workbench:
             detail=detail,
         )
 
-    def _feishu_account_usage(self) -> dict[str, dict] | None:
-        """从飞书记录表聚合每人用量（Render 无持久盘，本地账本会丢，飞书才是准的）。"""
+    def _feishu_rows(self, max_pages: int = 6) -> list[dict] | None:
+        """读飞书记录表并标准化成 [{account, images, cost, model, detail, job_id, at, status}]。"""
         cfg = self.feishu_config
         if cfg is None or not cfg.enabled:
             return None
@@ -494,8 +504,9 @@ class Workbench:
         if not ok:
             return None
         try:
-            client = feishu_mod.FeishuBitable(cfg)
-            items = client.search_table(cfg.table_id, page_size=200, max_pages=5)
+            items = feishu_mod.FeishuBitable(cfg).search_table(
+                cfg.table_id, page_size=200, max_pages=max_pages
+            )
         except Exception:  # noqa: BLE001 - 飞书挂了就用本地账本
             return None
         if not items:
@@ -510,48 +521,64 @@ class Workbench:
                 )
             return str(value)
 
-        buckets: dict[str, dict] = {}
-        jobs: dict[str, set[str]] = {}
+        rows: list[dict] = []
         for item in items:
             fields = item.get("fields") or {}
-            name = text(fields.get("账号")).strip() or "anonymous"
-            bucket = buckets.setdefault(
-                name,
-                {
-                    "account": name,
-                    "images": 0,
-                    "cost": 0.0,
-                    "jobs": 0,
-                    "last_at": 0.0,
-                    "recent": [],
-                },
-            )
-            images = int(fields.get("张数") or 0)
-            bucket["images"] += images
-            try:
-                bucket["cost"] += float(fields.get("金额元") or 0)
-            except (TypeError, ValueError):
-                pass
             at = fields.get("时间") or 0
             at = float(at) / 1000.0 if isinstance(at, (int, float)) and at > 1e11 else float(at or 0)
-            bucket["last_at"] = max(bucket["last_at"], at)
-            job_id = text(fields.get("任务ID")).strip()
-            if job_id:
-                jobs.setdefault(name, set()).add(job_id)
+            try:
+                cost = float(fields.get("金额元") or 0)
+            except (TypeError, ValueError):
+                cost = 0.0
+            rows.append(
+                {
+                    "record_id": item.get("record_id"),
+                    "account": text(fields.get("账号")).strip() or "anonymous",
+                    "images": int(fields.get("张数") or 0),
+                    "cost": cost,
+                    "model": text(fields.get("模型")).strip(),
+                    "detail": text(fields.get("成品")).strip(),
+                    "color": text(fields.get("颜色")).strip(),
+                    "job_id": text(fields.get("任务ID")).strip(),
+                    "status": text(fields.get("状态")).strip(),
+                    "at": at,
+                }
+            )
+        rows.sort(key=lambda row: row["at"], reverse=True)
+        return rows
+
+    def _feishu_account_usage(self) -> dict[str, dict] | None:
+        """按账号聚合飞书记录（每人张数/花费/次数/最近成品）。"""
+        rows = self._feishu_rows()
+        if not rows:
+            return None
+        buckets: dict[str, dict] = {}
+        jobs: dict[str, set[str]] = {}
+        for row in rows:
+            name = row["account"]
+            bucket = buckets.setdefault(
+                name,
+                {"account": name, "images": 0, "cost": 0.0, "jobs": 0, "last_at": 0.0, "recent": []},
+            )
+            bucket["images"] += row["images"]
+            bucket["cost"] += row["cost"]
+            bucket["last_at"] = max(bucket["last_at"], row["at"])
+            if row["job_id"]:
+                jobs.setdefault(name, set()).add(row["job_id"])
             bucket["recent"].append(
                 {
-                    "job_id": job_id,
-                    "model": text(fields.get("模型")).strip(),
-                    "images": images,
-                    "cost": fields.get("金额元"),
-                    "detail": text(fields.get("成品")).strip(),
-                    "at": at,
+                    "job_id": row["job_id"],
+                    "model": row["model"],
+                    "images": row["images"],
+                    "cost": row["cost"],
+                    "detail": row["detail"],
+                    "at": row["at"],
                 }
             )
         for name, bucket in buckets.items():
             bucket["cost"] = round(bucket["cost"], 4)
             bucket["jobs"] = len(jobs.get(name) or ())
-            bucket["recent"] = list(reversed(bucket["recent"][-10:]))
+            bucket["recent"] = bucket["recent"][:10]
             bucket["models"] = []
         return buckets
 
@@ -567,15 +594,19 @@ class Workbench:
             account_usage = usage.pop(account.username, None) or usage.pop(
                 account.username.lower(), None
             ) or {}
+            cost = round(float(account_usage.get("cost") or 0), 4)
+            quota = float(account.quota or 0)
             rows.append(
                 {
                     **account.as_dict(),
                     "images": account_usage.get("images", 0),
-                    "cost": account_usage.get("cost", 0.0),
+                    "cost": cost,
                     "jobs": account_usage.get("jobs", 0),
                     "last_at": account_usage.get("last_at", 0),
                     "recent": account_usage.get("recent", []),
                     "models": account_usage.get("models", []),
+                    "quota_left": (round(quota - cost, 4) if quota > 0 else None),
+                    "quota_pct": (round(min(100.0, cost / quota * 100), 1) if quota > 0 else None),
                 }
             )
         for name, account_usage in usage.items():  # 表里没有的历史账号
@@ -587,11 +618,13 @@ class Workbench:
                     "active": True,
                     "quota": 0,
                     "images": account_usage.get("images", 0),
-                    "cost": account_usage.get("cost", 0.0),
+                    "cost": round(float(account_usage.get("cost") or 0), 4),
                     "jobs": account_usage.get("jobs", 0),
                     "last_at": account_usage.get("last_at", 0),
                     "recent": account_usage.get("recent", []),
                     "models": account_usage.get("models", []),
+                    "quota_left": None,
+                    "quota_pct": None,
                 }
             )
         rows.sort(key=lambda row: (-float(row.get("cost") or 0), -int(row.get("images") or 0)))
@@ -601,6 +634,106 @@ class Workbench:
             "usage_source": "feishu" if feishu_usage else "ledger",
             "accounts": rows,
         }
+
+    def admin_overview(self) -> dict:
+        """管理后台总面板：总量、按账号、按模型、按天、最近记录、额度。"""
+        payload = self.accounts_payload()
+        rows = self._feishu_rows()
+        usage_source = "feishu"
+        if rows is None:
+            usage_source = "ledger"
+            rows = [
+                {
+                    "account": entry.get("account") or "anonymous",
+                    "images": int(entry.get("images") or 0),
+                    "cost": float(entry.get("cost") or 0),
+                    "model": str(entry.get("model") or ""),
+                    "detail": str(entry.get("detail") or ""),
+                    "job_id": str(entry.get("job_id") or ""),
+                    "status": "done",
+                    "at": float(entry.get("at") or 0),
+                }
+                for entry in self.usage.entries
+            ]
+            rows.sort(key=lambda row: row["at"], reverse=True)
+
+        total_images = sum(int(r["images"] or 0) for r in rows)
+        total_cost = round(sum(float(r["cost"] or 0) for r in rows), 4)
+        today = time.strftime("%Y-%m-%d")
+
+        by_model: dict[str, dict] = {}
+        by_day: dict[str, dict] = {}
+        for row in rows:
+            model = row["model"] or "（未知）"
+            bucket = by_model.setdefault(model, {"model": model, "images": 0, "cost": 0.0})
+            bucket["images"] += int(row["images"] or 0)
+            bucket["cost"] += float(row["cost"] or 0)
+            day = time.strftime("%Y-%m-%d", time.localtime(row["at"] or 0))
+            day_bucket = by_day.setdefault(day, {"day": day, "images": 0, "cost": 0.0})
+            day_bucket["images"] += int(row["images"] or 0)
+            day_bucket["cost"] += float(row["cost"] or 0)
+
+        for bucket in by_model.values():
+            bucket["cost"] = round(bucket["cost"], 4)
+        for bucket in by_day.values():
+            bucket["cost"] = round(bucket["cost"], 4)
+        days = sorted(by_day.values(), key=lambda item: item["day"])[-14:]
+
+        accounts = payload["accounts"]
+        quotas = [row for row in accounts if float(row.get("quota") or 0) > 0]
+        return {
+            "currency": self.pricer.currency,
+            "usage_source": usage_source,
+            "account_source": payload["source"],
+            "totals": {
+                "images": total_images,
+                "cost": total_cost,
+                "jobs": len({r["job_id"] for r in rows if r["job_id"]}),
+                "accounts": len(accounts),
+                "models": len(by_model),
+                "today": by_day.get(today, {"images": 0, "cost": 0.0}),
+            },
+            "quota": {
+                "accounts_with_quota": len(quotas),
+                "total_quota": round(sum(float(r.get("quota") or 0) for r in quotas), 4),
+                "used": round(sum(float(r.get("cost") or 0) for r in quotas), 4),
+            },
+            "accounts": accounts,
+            "by_model": sorted(by_model.values(), key=lambda item: -item["images"]),
+            "by_day": days,
+            "recent": rows[:20],
+            "providers": [
+                {"name": str(p.get("name")), "label": str(p.get("label"))}
+                for p in self.provider_payload()
+            ],
+            "pricing_source": self.pricer.source,
+        }
+
+    def _quota_guard(self, account: str, model: str, count: int, size: str) -> None:
+        """额度拦截：非管理员的账号（设了额度元）在用超时不让开工。"""
+        if not account:
+            return
+        acc = self.accounts.find(account)
+        if acc is None or acc.is_admin:
+            return
+        quota = float(acc.quota or 0)
+        if quota <= 0:
+            return
+        used = float(
+            (self._feishu_account_usage() or {}).get(acc.username, {}).get("cost")
+            or next(
+                (row["cost"] for row in self.usage.by_account() if row["account"] == acc.username),
+                0.0,
+            )
+        )
+        est = self.pricer.estimate(model, count, size)
+        estimate_total = float(est.get("total") or 0)
+        if used + estimate_total > quota + 1e-9:
+            raise WorkbenchError(
+                f"额度不足：{acc.display or acc.username} 已用 ¥{used:.2f}，"
+                f"本次预估 ¥{estimate_total:.2f}，额度 ¥{quota:.2f}。"
+                "请让管理员在「账号」表或管理后台调整额度。"
+            )
 
     def _color_ref_path(self, color_name: str, garment_slug: str) -> Path | None:
         """找到该颜色对应的色卡文件（附件字段「参考图」用）。"""
@@ -813,6 +946,16 @@ class Workbench:
         params["estimate"] = self.pricer.estimate(
             chosen_model, len(tasks), str(params.get("size") or "auto")
         )
+        try:
+            self._quota_guard(
+                str(params.get("account") or ""),
+                chosen_model,
+                len(tasks),
+                str(params.get("size") or "auto"),
+            )
+        except WorkbenchError:
+            shutil.rmtree(root, ignore_errors=True)
+            raise
         batch = f"{garment.slug}-rework-batch"
         job = Job(id=job_id, params=params, batch_name=batch)
         job.root = root

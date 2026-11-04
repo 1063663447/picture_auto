@@ -21,6 +21,7 @@
     <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 4 4 3-3 4 4"/></symbol>
     <symbol id="i-coins" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="9" cy="7" rx="6" ry="3"/><path d="M3 7v5c0 1.7 2.7 3 6 3s6-1.3 6-3V7"/><path d="M15 12v5c0 1.7 2.7 3 6 3"/><ellipse cx="18" cy="17" rx="3" ry="1.6"/></symbol>
 <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M16 5.5a3 3 0 010 5.6"/><path d="M18 14.6c2 .6 3.4 2.4 3.4 5.4"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
   </defs>
 </svg>
 
@@ -43,6 +44,9 @@
     <button class="btn btn-ghost" id="accountsBtn" type="button" hidden>
       <svg><use href="#i-users"/></svg>账号用量
     </button>
+    <a class="btn btn-ghost" id="adminLink" href="/admin" hidden>
+      <svg><use href="#i-shield"/></svg>管理后台
+    </a>
     <span class="who-chip" id="whoChip" hidden>
       <b id="whoName">—</b>
       <button class="who-out" id="logoutBtn" type="button" aria-label="退出登录" title="退出登录">
@@ -318,6 +322,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=4.4.0"></script>
+<script src="/app.js?v=4.5.0"></script>
 </body>
 </html>

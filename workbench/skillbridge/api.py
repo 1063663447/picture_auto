@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import urllib.parse
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -156,15 +157,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
         }
 
     # ---------------------------------------------------------------- 登录 --
+    def _safe_next(value: str) -> str:
+        value = (value or "").strip()
+        return value if value.startswith("/") and not value.startswith("//") else "/"
+
     @app.get("/login")
     async def login_page(request: Request):
         bench = wb(request)
         secret = session_secret(bench)
+        nxt = _safe_next(request.query_params.get("next") or "")
         if auth.read_session(request.cookies.get("wb_session"), secret):
-            return RedirectResponse("/", status_code=302)
+            return RedirectResponse(nxt, status_code=302)
         error = request.query_params.get("error")
         notice = '<p class="err">账号或密码不对，或账号已停用</p>' if error else ""
-        return HTMLResponse(auth.LOGIN_PAGE.replace("__ERROR__", notice))
+        return HTMLResponse(
+            auth.LOGIN_PAGE.replace("__ERROR__", notice).replace("__NEXT__", nxt)
+        )
 
     @app.post("/login")
     async def login_submit(request: Request):
@@ -172,13 +180,16 @@ def create_app(config_path: str | None = None) -> FastAPI:
         form = await request.form()
         username = str(form.get("username") or "").strip()
         password = str(form.get("password") or "")
+        nxt = _safe_next(str(form.get("next") or ""))
         account = await asyncio.to_thread(bench.accounts.authenticate, username, password)
         if account is None:
-            return RedirectResponse("/login?error=1", status_code=302)
+            return RedirectResponse(
+                f"/login?error=1&next={urllib.parse.quote(nxt, safe='')}", status_code=302
+            )
         server = bench.config.get("server") or {}
         secret = session_secret(bench)
         ttl = int(server.get("session_ttl") or auth.SESSION_TTL)
-        response = RedirectResponse("/", status_code=302)
+        response = RedirectResponse(nxt, status_code=302)
         response.set_cookie(
             "wb_session",
             auth.make_session(account.username, secret, ttl),
@@ -220,6 +231,92 @@ def create_app(config_path: str | None = None) -> FastAPI:
         if current_role(request) != "admin":
             return JSONResponse({"ok": False, "error": "只有管理员能看账号用量"}, status_code=403)
         return await asyncio.to_thread(bench.accounts_payload)
+
+    # ------------------------------------------------------------- 管理后台 --
+    def _admin_only(request: Request) -> Workbench:
+        if current_role(request) != "admin":
+            raise PermissionError("只有管理员能进管理后台")
+        return wb(request)
+
+    @app.exception_handler(PermissionError)
+    async def _permission_error(_request: Request, exc: PermissionError):
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
+
+    @app.get("/admin")
+    async def admin_page(request: Request):
+        if current_role(request) != "admin":
+            if current_account(request):  # 已登录但不是管理员
+                return RedirectResponse("/?denied=admin", status_code=302)
+            return RedirectResponse("/login?next=%2Fadmin", status_code=302)
+        path = WEB_DIR / "admin.html"
+        if not path.is_file():
+            return HTMLResponse("<h1>admin.html 缺失</h1>", status_code=500)
+        return FileResponse(path)
+
+    @app.get("/api/admin/overview")
+    async def admin_overview(request: Request):
+        bench = _admin_only(request)
+        return {"ok": True, **await asyncio.to_thread(bench.admin_overview)}
+
+    @app.post("/api/accounts")
+    async def account_create(request: Request):
+        bench = _admin_only(request)
+        body = await request.json()
+        try:
+            account = await asyncio.to_thread(
+                bench.accounts.create,
+                str(body.get("username") or ""),
+                str(body.get("password") or ""),
+                display=str(body.get("display") or ""),
+                role=str(body.get("role") or "member"),
+                status=str(body.get("status") or "启用"),
+                quota=float(body.get("quota") or 0),
+                note=str(body.get("note") or ""),
+            )
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return {"ok": True, "account": account.as_dict()}
+
+    @app.patch("/api/accounts/{username}")
+    async def account_update(request: Request, username: str):
+        bench = _admin_only(request)
+        body = await request.json()
+        if str(username).lower() == current_account(request).lower() and (
+            str(body.get("role") or "").lower() not in {"", "admin"}
+            or str(body.get("status") or "") in {"停用", "disabled"}
+        ):
+            return JSONResponse(
+                {"ok": False, "error": "不能把自己降级或停用，请用另一个管理员账号操作"},
+                status_code=400,
+            )
+        try:
+            account = await asyncio.to_thread(bench.accounts.update, username, body)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return {"ok": True, "account": account.as_dict()}
+
+    @app.post("/api/accounts/{username}/password")
+    async def account_password(request: Request, username: str):
+        bench = _admin_only(request)
+        body = await request.json()
+        try:
+            await asyncio.to_thread(
+                bench.accounts.set_password, username, str(body.get("password") or "")
+            )
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return {"ok": True}
+
+    @app.delete("/api/accounts/{username}")
+    async def account_delete(request: Request, username: str):
+        bench = _admin_only(request)
+        if str(username).lower() == current_account(request).lower():
+            return JSONResponse({"ok": False, "error": "不能删除自己"}, status_code=400)
+        try:
+            await asyncio.to_thread(bench.accounts.delete, username)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return {"ok": True}
 
     @app.get("/api/skill")
     async def skill_info(request: Request, reload: bool = False):

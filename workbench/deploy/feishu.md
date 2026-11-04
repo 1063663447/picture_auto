@@ -16,6 +16,7 @@
 | 项 | 值 |
 |---|---|
 | 表格链接 | https://ocnbd3tr10x9.feishu.cn/base/Cg19bjnLJaAU7CsYPB5cO3qynrb |
+| 链接分享 | **组织内获得链接的人可编辑**（`tenant_editable`，用 `tools/feishu_share_editable.py` 设置/复查） |
 | `app_token` | `Cg19bjnLJaAU7CsYPB5cO3qynrb` |
 | 记录表 `table_id` | `tblvrb2DVxO7s28c` |
 | 定价表 `price_table_id` | `tblORNn4X28tuc0k` |
@@ -34,15 +35,34 @@
 | 显示名 | 界面右上角显示的名字 |
 | 密码哈希 | `pbkdf2_sha256$迭代$盐$哈希`（工作台登录成功后自动写入） |
 | 明文密码 | 运营图省事可以直接往这里写密码，**首次登录成功后会被自动升级成哈希并清空** |
-| 角色 | `admin` = 管理员（能看账号用量）；其他值 = 普通成员 |
+| 角色 | `admin` = 管理员（能进管理后台 / 看全站用量）；其他值 = 普通成员（只能做图） |
 | 状态 | `启用` / `停用`（停用后立即无法登录） |
-| 额度元 | 记账用，界面展示 |
+| 额度元 | **billing 上限**：成员发起任务时，已用 + 本次预估 超过额度就直接拦下；填 0 = 不限（管理员不受限） |
 | 创建时间 / 备注 | 备注 |
 
-- 初始账号 **admin / Apparel@2026**（已建好，进去后请在飞书表里把「明文密码」改成新密码，或直接改「密码哈希」列旁的路数：把新密码写进「明文密码」，登录一次即自动哈希）。
+- 当前管理员：**admin / Asd123456.**（密码可用 `tools/feishu_account_admin.py passwd admin 新密码` 或管理后台「改密码」重置）。
 - 登录入口：打开站点 → 自动跳 `/login`；会话 Cookie `wb_session` 有效期 12 小时（`config.json → server.session_ttl`）。
-- `?token=<auth_token>` 仍然有效（机器/应急访问），不受账号表影响。
+- `?token=<auth_token>` 仍然有效（机器/应急访问，等同管理员），不受账号表影响。
 - 飞书表读不到时会退回 `data/accounts.json` 本地兜底账号，避免把自己锁在门外。
+
+## 管理后台（/admin）
+
+只对 `角色 = admin` 开放（非管理员访问会被弹回工作台并提示）：
+
+| 区域 | 内容 |
+|---|---|
+| 顶部 KPI | 总图片 / 总花费 / 账号数 / 账号池额度（总额度 + 已用）/ 今日 |
+| 新建子账号 | 账号 + 初始密码 + 显示名 + 角色 + 额度元 + 备注（建好即可登录） |
+| 账号管理 | 每个账号的角色、启用/停用、额度元（就地改）、已用、剩余额度进度条、张数、次数；操作：设为/降为管理员、停用、改密码、删除 |
+| 用量排行 | 按账号的张数条形图 |
+| 模型用量 | 按模型的张数条形图 |
+| 近 14 天 | 每天张数柱状图 |
+| 最近记录 | 最新 20 条：时间 / 账号 / 成品 / 模型 / 张数 / 金额 / 任务ID |
+
+- 数据来源：账号与价格来自飞书表，**用量优先从飞书记录聚合**（`usage_source: feishu`），飞书读不到才用本地 `data/usage.json`。
+- 接口（都要管理员）：`GET /api/admin/overview`、`POST /api/accounts`、`PATCH /api/accounts/{账号}`、`POST /api/accounts/{账号}/password`、`DELETE /api/accounts/{账号}`（不能删除/降级自己）。
+- 额度拦截在**建任务时**执行（`POST /api/jobs`、`/api/jobs/{id}/rework`、harness 里的 `submit_generation` 同样生效），超限返回 400 并说明差多少。
+- 工作台右上角有 **管理后台** 入口（仅管理员可见），也可直接访问 `/admin`。
 
 ## 定价在飞书里改
 
@@ -116,6 +136,10 @@ python tools/feishu_account_admin.py passwd zhang "新密码"
 python tools/feishu_account_admin.py del zhang
 python tools/cleanup_feishu_jobs.py <任务ID>          # 删掉某个任务在飞书里的记录（清理测试）
 python tools/fix_record_table_fields.py              # 万一主字段被改名，改回「成品」
+python tools/feishu_share_editable.py --check        # 看表格链接分享权限（可编辑 / 可阅读）
+python tools/feishu_share_editable.py                # 改成「组织内获得链接的人可编辑」
+python tools/check_admin_http.py                     # 登录 + 管理后台 + 账号 CRUD + 额度拦截
+python tools/check_web_static.py                     # 页面/脚本的 id 与图标一致性
 ```
 
 任务跑完会**自动写**，日志里出现：`已写入飞书多维表格 N 行（含图片附件）`，
