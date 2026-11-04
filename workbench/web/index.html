@@ -1,12 +1,12 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
-<title>鐢熷浘宸ヤ綔鍙?/title>
-<link rel="stylesheet" href="/style.css?v=7.0.4" />
-<link rel="stylesheet" href="/aurora.css?v=7.0.4" />
+<title>生图工作台</title>
+<link rel="stylesheet" href="/style.css?v=7.0.5" />
+<link rel="stylesheet" href="/aurora.css?v=7.0.5" />
 </head>
 <body>
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -35,102 +35,102 @@
 </svg>
 
 <div class="app">
-  <!-- ------------------------------------------------------------ 宸︿晶鍥炬爣鏍?-->
+  <!-- ------------------------------------------------------------ 左侧图标栏 -->
   <aside class="rail">
-    <a class="logo" href="/" aria-label="鐢熷浘宸ヤ綔鍙?>
+    <a class="logo" href="/" aria-label="生图工作台">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M10.4 2.3c.34 4.05 2.33 6.04 6.38 6.38-4.05.34-6.04 2.33-6.38 6.38-.34-4.05-2.33-6.04-6.38-6.38 4.05-.34 6.04-2.33 6.38-6.38Z" fill="currentColor" fill-opacity="0.95" stroke="none"/>
         <path d="M18.3 13.6c.2 2.4 1.38 3.58 3.78 3.78-2.4.2-3.58 1.38-3.78 3.78-.2-2.4-1.38-3.58-3.78-3.78 2.4-.2 3.58-1.38 3.78-3.78Z" fill="currentColor" fill-opacity="0.8" stroke="none"/>
       </svg>
     </a>
     <div class="rail-sep"></div>
-    <button class="nav-icon on" type="button" data-view="gallery" aria-label="鎴愬搧鐢诲粖" title="鎴愬搧鐢诲粖"><svg><use href="#i-image"/></svg></button>
-    <button class="nav-icon" type="button" id="railUpload" aria-label="涓婁紶鍘熷浘" title="涓婁紶鍘熷浘"><svg><use href="#i-upload"/></svg></button>
-    <button class="nav-icon" type="button" data-view="logs" aria-label="杩愯鏃ュ織涓庡巻鍙? title="杩愯鏃ュ織涓庡巻鍙?><svg><use href="#i-clock"/></svg></button>
-    <button class="nav-icon" type="button" id="railChat" aria-label="闇€姹傛矡閫? title="闇€姹傛矡閫?><svg><use href="#i-chat"/></svg></button>
+    <button class="nav-icon on" type="button" data-view="gallery" aria-label="成品画廊" title="成品画廊"><svg><use href="#i-image"/></svg></button>
+    <button class="nav-icon" type="button" id="railUpload" aria-label="上传原图" title="上传原图"><svg><use href="#i-upload"/></svg></button>
+    <button class="nav-icon" type="button" data-view="logs" aria-label="运行日志与历史" title="运行日志与历史"><svg><use href="#i-clock"/></svg></button>
+    <button class="nav-icon" type="button" id="railChat" aria-label="需求沟通" title="需求沟通"><svg><use href="#i-chat"/></svg></button>
     <div class="rail-bottom">
-      <button class="nav-icon" type="button" id="railUsage" aria-label="璐﹀彿鐢ㄩ噺" title="璐﹀彿鐢ㄩ噺" hidden><svg><use href="#i-users"/></svg></button>
-      <a class="nav-icon" id="railAdmin" href="/admin" aria-label="绠＄悊鍚庡彴" title="绠＄悊鍚庡彴" hidden><svg><use href="#i-shield"/></svg></a>
-      <button class="avatar" type="button" id="railAvatar" aria-label="璐﹀彿涓庨€€鍑? title="璐﹀彿">A</button>
+      <button class="nav-icon" type="button" id="railUsage" aria-label="账号用量" title="账号用量" hidden><svg><use href="#i-users"/></svg></button>
+      <a class="nav-icon" id="railAdmin" href="/admin" aria-label="管理后台" title="管理后台" hidden><svg><use href="#i-shield"/></svg></a>
+      <button class="avatar" type="button" id="railAvatar" aria-label="账号与退出" title="账号">A</button>
     </div>
   </aside>
 
   <main class="main">
-    <!-- ------------------------------------------------------------- 椤舵爮 -->
+    <!-- ------------------------------------------------------------- 顶栏 -->
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><svg><use href="#i-spark"/></svg></span>
-        <span>鐢熷浘宸ヤ綔鍙?/span>
+        <span>生图工作台</span>
         <small>IMAGE WORKBENCH</small>
       </div>
       <nav class="toplinks">
-        <button type="button" class="current" data-view="gallery">鍒涗綔绌洪棿</button>
-        <button type="button" data-view="logs">浠诲姟璁板綍</button>
-        <button type="button" id="feishuBtn">椋炰功鍘嗗彶</button>
-        <button type="button" id="openHarnessBtn">闇€姹傛矡閫?/button>
+        <button type="button" class="current" data-view="gallery">创作空间</button>
+        <button type="button" data-view="logs">任务记录</button>
+        <button type="button" id="feishuBtn">飞书历史</button>
+        <button type="button" id="openHarnessBtn">需求沟通</button>
       </nav>
       <div class="top-right">
-        <span class="status"><i class="dot"></i><span id="healthLine">鈥?/span></span>
+        <span class="status"><i class="dot"></i><span id="healthLine">—</span></span>
         <span class="tag warn" id="skillWarn" hidden></span>
-        <button class="subtle" type="button" id="usageChip" title="绱鐢ㄩ噺涓庤姳璐?>
-          <svg><use href="#i-coins"/></svg><span id="usageText">浠婃棩 0 寮?/span>
+        <button class="subtle" type="button" id="usageChip" title="累计用量与花费">
+          <svg><use href="#i-coins"/></svg><span id="usageText">今日 0 张</span>
         </button>
-        <button class="subtle" type="button" id="accountsBtn" hidden>璐﹀彿鐢ㄩ噺</button>
-        <a class="subtle" id="adminLink" href="/admin" hidden>绠＄悊鍚庡彴</a>
+        <button class="subtle" type="button" id="accountsBtn" hidden>账号用量</button>
+        <a class="subtle" id="adminLink" href="/admin" hidden>管理后台</a>
         <span class="who-chip" id="whoChip" hidden>
-          <b id="whoName">鈥?/b>
-          <button class="who-out" type="button" id="logoutBtn" aria-label="閫€鍑虹櫥褰? title="閫€鍑虹櫥褰?><svg width="12" height="12"><use href="#i-x"/></svg></button>
+          <b id="whoName">—</b>
+          <button class="who-out" type="button" id="logoutBtn" aria-label="退出登录" title="退出登录"><svg width="12" height="12"><use href="#i-x"/></svg></button>
         </span>
       </div>
     </header>
 
-    <!-- ------------------------------------------------------------- 寮€鍦?-->
+    <!-- ------------------------------------------------------------- 开场 -->
     <div class="intro">
       <div>
         <div class="eyebrow">IMAGINATION, IN EVERY SHADE.</div>
-        <h1>璁╃伒鎰燂紝<span>鎷ユ湁鏇村鍙兘銆?/span></h1>
-        <p>涓€寮犲師鍥?路 涓€涓寮?路 涓€鏁寸粍閰嶈壊锛屽墿涓嬬殑浜ょ粰宸ヤ綔鍙版壒閲忓嚭鍥俱€?/p>
+        <h1>让灵感，<span>拥有更多可能。</span></h1>
+        <p>一张原图 · 一个款式 · 一整组配色，剩下的交给工作台批量出图。</p>
       </div>
       <div class="session">
         <div class="session-icon"><svg><use href="#i-image"/></svg></div>
         <div>
-          <b id="jobTitle">灏氭湭寮€濮?/b>
-          <small id="jobStage">閫夋嫨鍘熷浘涓庨鑹插悗寮€濮嬬敓鎴?/small>
+          <b id="jobTitle">尚未开始</b>
+          <small id="jobStage">选择原图与颜色后开始生成</small>
         </div>
       </div>
     </div>
 
     <div class="workspace">
-      <!-- --------------------------------------------------------- 鎺у埗鍙?-->
+      <!-- --------------------------------------------------------- 控制台 -->
       <aside class="controls glass">
         <section>
-          <h2 class="section-label">鍘熷绱犳潗<small>01 / SOURCE</small></h2>
-          <div class="upload" id="drop" role="button" tabindex="0" aria-label="涓婁紶鍘熷浘">
+          <h2 class="section-label">原始素材<small>01 / SOURCE</small></h2>
+          <div class="upload" id="drop" role="button" tabindex="0" aria-label="上传原图">
             <input type="file" id="fileInput" multiple accept="image/png,image/jpeg,image/webp" hidden />
             <span style="display:grid;gap:1px;min-width:0">
-              <strong>鎷栨嫿鎴栫偣鍑讳笂浼?/strong>
-              <span>涓€寮犲浘 = 涓€涓?item</span>
-              <em>澶氳搴︼細<code>item-01_view-01.png</code> / <code>item-01_view-02.png</code></em>
+              <strong>拖拽或点击上传</strong>
+              <span>一张图 = 一个 item</span>
+              <em>多角度：<code>item-01_view-01.png</code> / <code>item-01_view-02.png</code></em>
             </span>
             <span class="plus" aria-hidden="true">+</span>
           </div>
           <div class="thumbs" id="thumbs"></div>
-          <p class="hint" id="fileCount">鏈€夋嫨</p>
+          <p class="hint" id="fileCount">未选择</p>
         </section>
 
         <div class="divider"></div>
 
         <section>
-          <h2 class="section-label">娆惧紡涓庤壊褰?small>02 / STYLE</small></h2>
+          <h2 class="section-label">款式与色彩<small>02 / STYLE</small></h2>
           <label class="field">
-            <span class="lbl">鐩爣娆惧紡 <span id="typeHint"></span></span>
+            <span class="lbl">目标款式 <span id="typeHint"></span></span>
             <select id="garment"></select>
           </label>
           <div class="section-label" style="margin:14px 0 10px">
-            <span style="font-size:10px;color:var(--muted)">鍙傝€冭壊褰?/span>
+            <span style="font-size:10px;color:var(--muted)">参考色彩</span>
             <span style="display:flex;gap:10px">
-              <button class="tiny-button" type="button" id="pickAll">鍏ㄩ€?/button>
-              <button class="tiny-button" type="button" id="pickNone">娓呯┖</button>
+              <button class="tiny-button" type="button" id="pickAll">全选</button>
+              <button class="tiny-button" type="button" id="pickNone">清空</button>
             </span>
           </div>
           <div class="colors" id="colors"></div>
@@ -140,125 +140,125 @@
         <div class="divider"></div>
 
         <section>
-          <h2 class="section-label">鐢熸垚璁惧畾<small>03 / GENERATE</small></h2>
+          <h2 class="section-label">生成设定<small>03 / GENERATE</small></h2>
           <label class="field">
-            <span class="lbl">鐢熷浘鎺ュ彛 <span id="providerState"></span></span>
+            <span class="lbl">生图接口 <span id="providerState"></span></span>
             <select id="provider"></select>
           </label>
           <label class="field">
-            <span class="lbl">妯″瀷锛堝惈鍗曚环锛?/span>
+            <span class="lbl">模型（含单价）</span>
             <select id="model"></select>
-            <input type="text" id="modelManual" placeholder="鎵嬪～妯″瀷鍚? hidden />
+            <input type="text" id="modelManual" placeholder="手填模型名" hidden />
           </label>
           <div class="row2">
             <label class="field">
-              <span class="lbl">骞跺彂鏁帮紙鑷姩锛?/span>
+              <span class="lbl">并发数（自动）</span>
               <input type="number" id="concurrency" readonly />
             </label>
             <label class="field">
-              <span class="lbl">鐢婚潰姣斾緥</span>
+              <span class="lbl">画面比例</span>
               <select id="aspect">
-                <option value="auto">鑷姩 路 璺熼殢鍘熷浘</option>
-                <option value="1:1">1:1 鏂瑰舰</option>
-                <option value="3:4">3:4 绔栫増</option>
-                <option value="4:3">4:3 妯増</option>
+                <option value="auto">自动 · 跟随原图</option>
+                <option value="1:1">1:1 方形</option>
+                <option value="3:4">3:4 竖版</option>
+                <option value="4:3">4:3 横版</option>
               </select>
             </label>
           </div>
           <div class="row2">
             <label class="field">
-              <span class="lbl">鍒嗚鲸鐜囨。浣嶏紙瀹氬崟浠凤級</span>
+              <span class="lbl">分辨率档位（定单价）</span>
               <select id="sizeTier">
-                <option value="1K">1K 路 1024 绾?/option>
-                <option value="2K">2K 路 2048 绾?/option>
-                <option value="4K">4K 路 3072 绾?/option>
+                <option value="1K">1K · 1024 级</option>
+                <option value="2K">2K · 2048 级</option>
+                <option value="4K">4K · 3072 级</option>
               </select>
             </label>
             <label class="field">
-              <span class="lbl">璐ㄩ噺锛堜笉鏀逛环鏍硷級</span>
+              <span class="lbl">质量（不改价格）</span>
               <select id="quality">
-                <option value="high">high 路 缁嗚妭鏈€濂?/option>
+                <option value="high">high · 细节最好</option>
                 <option value="medium">medium</option>
-                <option value="low">low 路 鏈€蹇?/option>
+                <option value="low">low · 最快</option>
                 <option value="auto">auto</option>
               </select>
             </label>
           </div>
-          <p class="summary" id="estimateLine">棰勮鑺辫垂 鈥?/p>
+          <p class="summary" id="estimateLine">预计花费 —</p>
           <div class="note">
             <svg><use href="#i-shield"/></svg>
-            <span>鎺ュ彛璋冪敤浼氱湡瀹炶璐癸紝寤鸿鍏堝皬鎵归噺楠岃瘉鏁堟灉</span>
+            <span>接口调用会真实计费，建议先小批量验证效果</span>
           </div>
         </section>
 
         <div class="divider"></div>
         <div class="copy-row">
-          <button class="btn btn-ghost" type="button" id="previewBtn"><svg><use href="#i-doc"/></svg>鏌ョ湅鏈疆鎻愮ず璇?/button>
+          <button class="btn btn-ghost" type="button" id="previewBtn"><svg><use href="#i-doc"/></svg>查看本轮提示词</button>
         </div>
       </aside>
 
-      <!-- ----------------------------------------------------------- 鐢诲竷 -->
-      <section class="canvas" aria-label="鍒涗綔鐢诲竷">
+      <!-- ----------------------------------------------------------- 画布 -->
+      <section class="canvas" aria-label="创作画布">
         <div class="canvas-head">
           <div class="view-tabs">
-            <button class="view-tab active" type="button" data-view="gallery">鎴愬搧鐢诲粖<span class="count" id="galleryCount">0</span></button>
-            <button class="view-tab" type="button" data-view="logs">杩愯鏃ュ織</button>
+            <button class="view-tab active" type="button" data-view="gallery">成品画廊<span class="count" id="galleryCount">0</span></button>
+            <button class="view-tab" type="button" data-view="logs">运行日志</button>
           </div>
           <div class="tools">
-            <button class="subtle" type="button" id="cancelBtn" hidden>鍙栨秷</button>
-            <button class="subtle" type="button" id="retryBtn" hidden>閲嶈瘯澶辫触</button>
-            <button class="subtle" type="button" id="feishuSyncBtn" hidden>琛ュ啓椋炰功</button>
-            <a class="subtle" id="downloadBtn" hidden><svg><use href="#i-download"/></svg>涓嬭浇 ZIP</a>
+            <button class="subtle" type="button" id="cancelBtn" hidden>取消</button>
+            <button class="subtle" type="button" id="retryBtn" hidden>重试失败</button>
+            <button class="subtle" type="button" id="feishuSyncBtn" hidden>补写飞书</button>
+            <a class="subtle" id="downloadBtn" hidden><svg><use href="#i-download"/></svg>下载 ZIP</a>
           </div>
         </div>
 
         <div id="galleryPane">
           <div class="kpis">
-            <div class="kpi"><div class="k">鎬讳换鍔?/div><div class="v" id="kpiTotal">0</div></div>
-            <div class="kpi ok"><div class="k">宸插畬鎴?/div><div class="v" id="kpiDone">0</div></div>
-            <div class="kpi bad"><div class="k">澶辫触</div><div class="v" id="kpiFailed">0</div></div>
-            <div class="kpi"><div class="k">鏈鑺辫垂</div><div class="v" id="kpiCost">鈥?/div></div>
+            <div class="kpi"><div class="k">总任务</div><div class="v" id="kpiTotal">0</div></div>
+            <div class="kpi ok"><div class="k">已完成</div><div class="v" id="kpiDone">0</div></div>
+            <div class="kpi bad"><div class="k">失败</div><div class="v" id="kpiFailed">0</div></div>
+            <div class="kpi"><div class="k">本次花费</div><div class="v" id="kpiCost">—</div></div>
           </div>
 
           <div style="margin:0 0 14px">
             <div class="progress" role="progressbar" aria-labelledby="progressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><i></i></div>
             <div class="progress-meta">
               <span id="progressLabel">0 / 0</span>
-              <span id="progressStats">绛夊緟寮€濮?/span>
+              <span id="progressStats">等待开始</span>
             </div>
           </div>
 
           <div class="toolbar" id="resultToolbar" hidden>
-            <label class="check"><input type="checkbox" id="selAll" /><span>鍏ㄩ€夋垚鍝?/span></label>
-            <span class="count" id="selCount">宸查€?0 寮?/span>
+            <label class="check"><input type="checkbox" id="selAll" /><span>全选成品</span></label>
+            <span class="count" id="selCount">已选 0 张</span>
             <div class="grow"></div>
-            <button class="btn btn-accent btn-sm" type="button" id="batchReworkBtn" disabled><svg><use href="#i-chat"/></svg>鎵归噺鏀瑰浘</button>
-            <button class="btn btn-ghost btn-sm" type="button" id="batchExportBtn" disabled><svg><use href="#i-download"/></svg>鎵归噺瀵煎嚭</button>
+            <button class="btn btn-accent btn-sm" type="button" id="batchReworkBtn" disabled><svg><use href="#i-chat"/></svg>批量改图</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="batchExportBtn" disabled><svg><use href="#i-download"/></svg>批量导出</button>
           </div>
 
           <div class="gallery grid-imgs" id="gridImgs"></div>
 
           <div class="empty" id="emptyState">
             <svg><use href="#i-image"/></svg>
-            <strong style="font-size:12.5px;color:#bdb6d4">鎴愬搧浼氬嚭鐜板湪杩欓噷</strong>
-            <span style="font-size:10.5px">宸︿晶閫夊ソ鍘熷浘涓庨鑹诧紝鐐广€屽紑濮嬬敓鎴愩€?/span>
+            <strong style="font-size:12.5px;color:#bdb6d4">成品会出现在这里</strong>
+            <span style="font-size:10.5px">左侧选好原图与颜色，点「开始生成」</span>
           </div>
 
           <div class="canvas-foot">
-            <span><i class="dot"></i><span>鎴愬搧鍥句繚瀛樺湪鏈満 workbench/data/jobs</span></span>
-            <span>椋炰功澶氱淮琛ㄦ牸鍚屾鐣欑棔</span>
+            <span><i class="dot"></i><span>成品图保存在本机 workbench/data/jobs</span></span>
+            <span>飞书多维表格同步留痕</span>
           </div>
         </div>
 
         <div class="logs-pane" id="logPane" hidden>
           <div class="glass" style="padding:14px">
-            <div class="section-label">杩愯鏃ュ織<small>LOG</small></div>
+            <div class="section-label">运行日志<small>LOG</small></div>
             <div class="log" id="log" aria-live="polite"></div>
           </div>
           <div class="glass" style="padding:14px">
             <div class="section-label">
-              <span>鍘嗗彶浠诲姟</span>
-              <button class="tiny-button" type="button" id="feishuHistoryBtn">椋炰功鍘嗗彶 路 鎵撳寘涓嬭浇 鈫?/button>
+              <span>历史任务</span>
+              <button class="tiny-button" type="button" id="feishuHistoryBtn">飞书历史 · 打包下载 ↗</button>
             </div>
             <div class="history" id="history"></div>
           </div>
@@ -267,17 +267,17 @@
         <div class="composer glass">
           <div class="composer-head">
             <svg><use href="#i-spark"/></svg>
-            鍛婅瘔鎴戯紝杩欐鐨勭伒鎰熸槸浠€涔堬紵
+            告诉我，这次的灵感是什么？
             <span class="brief-tag">CREATIVE BRIEF</span>
           </div>
-          <textarea id="briefInput" rows="2" aria-label="鏈鐢熸垚闇€姹?
-            placeholder="渚嬪锛氬浘妗堝繀椤诲師鏍蜂笉鍔紝鍙崲闈㈡枡搴曡壊锛屽厜绾挎煍鍜岃嚜鐒讹紝鑳屾櫙鍒姩鈥?></textarea>
+          <textarea id="briefInput" rows="2" aria-label="本次生成需求"
+            placeholder="例如：图案必须原样不动，只换面料底色，光线柔和自然，背景别动…"></textarea>
           <div class="composer-bottom">
             <div class="quick-prompts" id="briefChips"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-ghost" type="button" id="directStartBtn">鐩存帴寮€宸?/button>
+              <button class="btn btn-ghost" type="button" id="directStartBtn">直接开工</button>
               <button class="btn btn-primary" type="button" id="startBtn" disabled>
-                <svg><use href="#i-spark"/></svg><span>寮€濮嬬敓鎴?/span>
+                <svg><use href="#i-spark"/></svg><span>开始生成</span>
               </button>
             </div>
           </div>
@@ -285,112 +285,112 @@
 
         <div class="tip-strip">
           <svg><use href="#i-spark"/></svg>
-          <span><strong>鐏垫劅涓嶆涓€绉嶅舰鎬併€?/strong> 鐢ㄤ竴缁勯鑹诧紝鎺㈢储浣滃搧鐨勪笉鍚岃〃杈俱€?/span>
-          <button type="button" id="randomBrief">鎹釜鐏垫劅 鈫?/button>
+          <span><strong>灵感不止一种形态。</strong> 用一组颜色，探索作品的不同表达。</span>
+          <button type="button" id="randomBrief">换个灵感 ↗</button>
         </div>
       </section>
     </div>
 
     <footer class="footer">
-      <span>鐢熷浘宸ヤ綔鍙?/ AURORA</span>
-      <span>LOCAL WORKBENCH 路 鏁版嵁鐣欏湪鏈満</span>
+      <span>生图工作台 / AURORA</span>
+      <span>LOCAL WORKBENCH · 数据留在本机</span>
     </footer>
   </main>
 </div>
 
-<!-- ---------------------------------------------------------- 澶у浘鐏 -->
+<!-- ---------------------------------------------------------- 大图灯箱 -->
 <dialog class="lightbox" id="lightbox">
   <div class="lightbox-head">
-    <span id="lightboxTitle">鎴愬搧澶у浘</span>
-    <button class="iconbtn" type="button" id="closeModal" aria-label="鍏抽棴澶у浘"><svg><use href="#i-x"/></svg></button>
+    <span id="lightboxTitle">成品大图</span>
+    <button class="iconbtn" type="button" id="closeModal" aria-label="关闭大图"><svg><use href="#i-x"/></svg></button>
   </div>
-  <img id="largeImage" alt="鎴愬搧澶у浘" />
+  <img id="largeImage" alt="成品大图" />
   <div class="lightbox-foot">
-    <span id="lightboxSub">鍘熷浘灏哄 路 鍙笅杞戒繚瀛?/span>
-    <a id="sampleDownload" download>涓嬭浇杩欏紶 鈫?/a>
+    <span id="lightboxSub">原图尺寸 · 可下载保存</span>
+    <a id="sampleDownload" download>下载这张 ↓</a>
   </div>
 </dialog>
 
-<!-- --------------------------------------------------------- 鎻愮ず璇嶉瑙?-->
+<!-- --------------------------------------------------------- 提示词预览 -->
 <div class="scrim" id="promptScrim" hidden></div>
-<section class="drawer drawer-wide" id="promptDrawer" hidden aria-modal="true" role="dialog" aria-label="鎻愮ず璇嶉瑙?>
+<section class="drawer drawer-wide" id="promptDrawer" hidden aria-modal="true" role="dialog" aria-label="提示词预览">
   <div class="drawer-head">
     <span class="avatar"><svg><use href="#i-doc"/></svg></span>
-    <div class="who"><b>瀹為檯鍙戦€佺殑鎻愮ず璇?/b><span>鍥炬閿?+ 鏉愯川閿?+ 璐熼潰绾︽潫 路 鍙粴鍔ㄧ湅鍏ㄦ枃</span></div>
-    <button class="btn btn-quiet btn-icon" type="button" id="promptClose" aria-label="鍏抽棴"><svg><use href="#i-x"/></svg></button>
+    <div class="who"><b>实际发送的提示词</b><span>图案锁 + 材质锁 + 负面约束 · 可滚动看全文</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="promptClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
   </div>
   <div class="prompt-body"><pre class="prompt-preview" id="promptBody"></pre></div>
-  <div class="drawer-foot"><span class="tip">鏀瑰浘杩斿伐鏃朵細浠ユ垚鍝佷负鍙傝€冨浘锛屽苟淇濈暀杩欎簺绾︽潫銆?/span></div>
+  <div class="drawer-foot"><span class="tip">改图返工时会以成品为参考图，并保留这些约束。</span></div>
 </section>
 
-<!-- ---------------------------------------------------------- 闇€姹傛矡閫?-->
+<!-- ---------------------------------------------------------- 需求沟通 -->
 <div class="scrim" id="harnessScrim" hidden></div>
-<aside class="drawer" id="harnessDrawer" hidden aria-modal="true" role="dialog" aria-label="闇€姹傛矡閫?>
+<aside class="drawer" id="harnessDrawer" hidden aria-modal="true" role="dialog" aria-label="需求沟通">
   <div class="drawer-head">
     <span class="avatar"><svg><use href="#i-spark"/></svg></span>
-    <div class="who"><b id="harnessTitle">闇€姹傛矡閫?/b><span id="harnessSub">DeepSeek 鍙湅鍥俱€佸彲鏌ヤ环銆佸彲鐩存帴寮€宸?/span></div>
-    <button class="btn btn-quiet btn-icon" type="button" id="harnessClose" aria-label="鍏抽棴"><svg><use href="#i-x"/></svg></button>
+    <div class="who"><b id="harnessTitle">需求沟通</b><span id="harnessSub">DeepSeek 可看图、可查价、可直接开工</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="harnessClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
   </div>
   <div class="chat" id="chatLog" aria-live="polite"></div>
   <div class="drawer-foot">
     <div class="quick" id="quickChips"></div>
     <pre class="prompt-preview" id="harnessPrompt" hidden></pre>
     <div class="input-row">
-      <textarea id="harnessInput" rows="2" placeholder="鐩存帴闂畠锛氳繖鍥捐兘鏀瑰悧锛熷灏戦挶锛熷浘妗堜細婕傚悧锛?></textarea>
-      <button class="btn btn-primary btn-icon" type="button" id="harnessSend" aria-label="鍙戦€? style="height:44px;width:44px"><svg><use href="#i-send"/></svg></button>
+      <textarea id="harnessInput" rows="2" placeholder="直接问它：这图能改吗？多少钱？图案会漂吗？"></textarea>
+      <button class="btn btn-primary btn-icon" type="button" id="harnessSend" aria-label="发送" style="height:44px;width:44px"><svg><use href="#i-send"/></svg></button>
     </div>
     <div class="drawer-actions" id="harnessActions">
-      <button class="btn btn-ghost" type="button" id="harnessDefault">鎸夐粯璁ょ敓鎴?/button>
-      <button class="btn btn-primary" type="button" id="harnessApply" disabled>鎸夊垎鏋愮粨鏋滅敓鎴?/button>
+      <button class="btn btn-ghost" type="button" id="harnessDefault">按默认生成</button>
+      <button class="btn btn-primary" type="button" id="harnessApply" disabled>按分析结果生成</button>
     </div>
   </div>
 </aside>
 
-<!-- ---------------------------------------------------------- 椋炰功鍘嗗彶 -->
+<!-- ---------------------------------------------------------- 飞书历史 -->
 <div class="scrim" id="feishuScrim" hidden></div>
-<aside class="drawer" id="feishuDrawer" hidden aria-modal="true" role="dialog" aria-label="椋炰功鍘嗗彶">
+<aside class="drawer" id="feishuDrawer" hidden aria-modal="true" role="dialog" aria-label="飞书历史">
   <div class="drawer-head">
     <span class="avatar"><svg><use href="#i-download"/></svg></span>
-    <div class="who"><b>椋炰功鍘嗗彶鎴愬搧</b><span id="feishuSub">璁板綍鍜屾垚鍝佸浘閮藉湪澶氱淮琛ㄦ牸閲?/span></div>
-    <button class="btn btn-quiet btn-icon" type="button" id="feishuClose" aria-label="鍏抽棴"><svg><use href="#i-x"/></svg></button>
+    <div class="who"><b>飞书历史成品</b><span id="feishuSub">记录和成品图都在多维表格里</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="feishuClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
   </div>
   <div class="chat" id="feishuList"></div>
   <div class="drawer-foot">
     <div class="row" style="display:flex;align-items:center;gap:10px">
       <label class="check" style="display:flex;align-items:center;gap:6px;font-size:11px">
-        <input type="checkbox" id="feishuAll" /><span>鍏ㄩ€?/span>
+        <input type="checkbox" id="feishuAll" /><span>全选</span>
       </label>
-      <span class="hint" id="feishuCount" style="margin:0">0 鏉?/span>
+      <span class="hint" id="feishuCount" style="margin:0">0 条</span>
     </div>
     <div class="drawer-actions">
-      <button class="btn btn-ghost" type="button" id="feishuReload">鍒锋柊</button>
-      <button class="btn btn-primary" type="button" id="feishuExport" disabled title="鍦ㄦ湰鏈烘妸閫変腑鐨勬垚鍝佸帇鎴愪竴涓?ZIP">鎵撳寘涓嬭浇 ZIP</button>
+      <button class="btn btn-ghost" type="button" id="feishuReload">刷新</button>
+      <button class="btn btn-primary" type="button" id="feishuExport" disabled title="在本机把选中的成品压成一个 ZIP">打包下载 ZIP</button>
     </div>
-    <p class="tip">姣忚鍙充晶銆岀洿閾俱€? 娴忚鍣ㄧ洿鎺ヤ粠椋炰功涓嬭浇锛涙墦鍖?ZIP 浼氬湪鏈満鍚堝苟鎴愬帇缂╁寘銆?/p>
+    <p class="tip">每行右侧「直链」= 浏览器直接从飞书下载；打包 ZIP 会在本机合并成压缩包。</p>
   </div>
 </aside>
 
-<!-- ---------------------------------------------------------- 璐﹀彿鐢ㄩ噺 -->
+<!-- ---------------------------------------------------------- 账号用量 -->
 <div class="scrim" id="accountsScrim" hidden></div>
-<aside class="drawer" id="accountsDrawer" hidden aria-modal="true" role="dialog" aria-label="璐﹀彿鐢ㄩ噺">
+<aside class="drawer" id="accountsDrawer" hidden aria-modal="true" role="dialog" aria-label="账号用量">
   <div class="drawer-head">
     <span class="avatar"><svg><use href="#i-users"/></svg></span>
-    <div class="who"><b>璐﹀彿鐢ㄩ噺</b><span id="accountsSub">姣忎釜璐﹀彿鍋氫簡澶氬皯寮犮€佽姳浜嗗灏戦挶</span></div>
-    <button class="btn btn-quiet btn-icon" type="button" id="accountsClose" aria-label="鍏抽棴"><svg><use href="#i-x"/></svg></button>
+    <div class="who"><b>账号用量</b><span id="accountsSub">每个账号做了多少张、花了多少钱</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="accountsClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
   </div>
   <div class="chat" id="accountsList"></div>
   <div class="drawer-foot">
     <div class="row" style="display:flex;align-items:center;gap:10px">
-      <span class="hint" id="accountsTotal" style="margin:0">鈥?/span>
+      <span class="hint" id="accountsTotal" style="margin:0">—</span>
     </div>
     <div class="drawer-actions">
-      <button class="btn btn-ghost" type="button" id="accountsReload">鍒锋柊</button>
+      <button class="btn btn-ghost" type="button" id="accountsReload">刷新</button>
     </div>
   </div>
 </aside>
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=7.0.4"></script>
+<script src="/app.js?v=7.0.5"></script>
 </body>
 </html>

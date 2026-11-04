@@ -25,6 +25,9 @@ main{min-width:0;padding:0 30px 25px}.topbar{min-height:75px;display:flex;align-
 @media(max-width:390px){.canvas{height:334px;min-height:334px}.canvas-caption h2{font-size:21px}.canvas-caption p{font-size:7px}.photo-frame{height:74%;width:53%}.photo-frame.result{left:41%}.film img{height:46px}.settings{gap:0 8px}.upload strong{max-width:68px}.tool{padding:5px}.modal-tool{padding:5px 7px;font-size:7px}.demo{font-size:7px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.canvas:before{display:none}.photo-frame:hover img{transform:none}}
 .film{position:relative}.film-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}.film-actions>span{white-space:nowrap}.film-fav{pointer-events:none}
+.modal-photos.single{grid-template-columns:minmax(0,1fr)}.modal-photos.single .modal-photo{width:100%;height:min(65vh,620px)}.modal-head{flex-wrap:wrap}.modal-head>div:first-child{min-width:0}.modal-photo{min-width:0}.modal-tools{flex-wrap:wrap}.film-caption{padding:5px 2px 1px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#c9c4d6}.film-caption i{font:9px monospace;color:var(--quiet);font-style:normal}.film-fav{position:absolute;top:7px;right:7px;width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:#221f32e6;color:#e5ceff;font-size:12px}.tool.active use[href="#i-heart"]{fill:currentColor}.upload[aria-disabled=true]{opacity:.55;cursor:wait}.swatch .tick{color:white}.canvas.is-busy .photo-frame{opacity:.65}.canvas.is-busy:after{content:'';position:absolute;inset:0;z-index:4;pointer-events:none;background:linear-gradient(110deg,transparent 35%,#c9b2ff12,transparent 65%);background-size:220% 100%;animation:canvasSweep 3s ease-in-out infinite}@keyframes canvasSweep{from{background-position:100% 0}to{background-position:-100% 0}}
+@media(max-width:650px){.settings>section{min-width:0}.settings>section:last-of-type{grid-column:1/-1;padding-top:16px;margin-top:12px;border-top:1px solid var(--line)}.intro{flex-wrap:wrap}.project-badge{display:none}.canvas.compare .canvas-caption{display:none}.film-actions>span{display:none}.film-caption{font-size:9px}.film-caption i{display:none}.modal-photos.single .modal-photo{height:52vh}.modal-photo img{max-height:none}.modal-photos:not(.single) .modal-photo{height:42vh;min-height:180px}.modal-title{font-size:14px}.modal-foot{justify-content:center}.filmstrip{gap:7px}.brief,.composer textarea{font-size:12px}.tool,.tab{font-size:11px;min-height:36px}.quick button,.chip{font-size:10px;padding:6px}.select{font-size:11px}.composer{grid-template-columns:1fr}.compose-actions{margin-top:5px}.primary{font-size:12px;min-height:44px}.canvas-topline>span:first-child{letter-spacing:.3px;max-width:52%}.film-head{font-size:11px}.view-toggle button{min-height:30px;font-size:10px}.modal-tool{font-size:10px;min-height:36px}.footer{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.canvas.is-busy:after{animation:none}}
 </style>
 </head>
 <body>
@@ -61,105 +64,178 @@ main{min-width:0;padding:0 30px 25px}.topbar{min-height:75px;display:flex;align-
 <dialog id="lightbox"><div class="modal-head"><div><div class="modal-title" id="modalTitle">色彩影像</div><small>REFERENCE IMAGE / 本地原始参考 · 非生成结果</small></div><div class="modal-tools"><button class="modal-tool active" data-modal-mode="both" aria-pressed="true">并排</button><button class="modal-tool" data-modal-mode="one" aria-pressed="false">单张</button><button class="close-modal" id="closeModal" aria-label="关闭大图"><svg><use href="#i-close"/></svg></button></div></div><div class="modal-photos" id="modalPhotos"><div class="modal-photo"><img id="modalSource" src="../../library/refs/23-sorona-tee/white.jpg" alt="原始白色参考图"><span class="modal-caption">SOURCE / 原始参考</span></div><div class="modal-photo" id="modalResultWrap"><img id="modalResult" src="../../library/refs/23-sorona-tee/apricot.jpg" alt="当前燕麦色参考"><span class="modal-caption" id="modalResultCaption">OAT / 燕麦色参考</span></div></div><div class="modal-foot"><span id="modalIndex" class="modal-index">01 / 05</span><div class="modal-tools"><button class="modal-tool" id="previous">← 上一色</button><button class="modal-tool" id="next">下一色 →</button><a class="download-link" id="download" download>下载本地样图 ↓</a></div></div></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
-(()=>{'use strict';const $=id=>document.getElementById(id);const icons={};const sets={tee:[{id:'white',name:'云朵白',en:'IVORY',hex:'#edeae1',dark:true},{id:'black',name:'曜石黑',en:'INK',hex:'#282930'},{id:'pink',name:'雾玫粉',en:'ROSE',hex:'#d9b0b9',dark:true},{id:'apricot',name:'浅杏米',en:'OAT',hex:'#d2c1a0',dark:true},{id:'forest-green',name:'森林绿',en:'FOREST',hex:'#29483b'}],hoodie:[{id:'white',name:'云朵白',en:'IVORY',hex:'#edeae1',dark:true},{id:'black',name:'曜石黑',en:'INK',hex:'#282930'},{id:'heather-grey',name:'雾灰',en:'MIST',hex:'#99999a',dark:true}]};let type='tee',selected=new Set(['white','black','apricot']),current='apricot',onlyFav=false,favs=new Set(),mode='editorial',modalMode='both',tab='samples',timer=null,progress=0,localUrl='',toastTimer=null;const base=t=>t==='tee'?'23-sorona-tee':'06-hoodie';const src=(id,t=type)=>`../../library/refs/${base(t)}/${id}.jpg`;const color=id=>(sets[type].find(c=>c.id===id)||sets[type][0]);function notify(text){$('toast').textContent=text;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),3000)}function log(text){const row=document.createElement('div'),tm=document.createElement('time'),message=document.createElement('span');row.className='log-row';tm.textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false});message.textContent=text;row.append(tm,message);$('logs').prepend(row);$('logCount').textContent=String($('logs').children.length).padStart(2,'0')}function paintControls(){const list=sets[type];$('swatches').innerHTML=list.map(c=>`<button class="swatch" style="--color:${c.hex};--check:${c.dark?'#554d43':'#fff'}" data-color="${c.id}" aria-label="${c.name}" title="${c.name}" aria-pressed="${selected.has(c.id)}"><span class="tick"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 10 4 4 8-9"/></svg></span></button>`).join('');$('colorSummary').innerHTML=`已选 <b>${selected.size}</b> 色 · 点击样图切换主画布`;$('summary').textContent=`1 原图 × ${selected.size} 色`;$('sampleCount').textContent=String(list.length).padStart(2,'0');$('filmCount').textContent='/ '+String(list.length).padStart(2,'0');$('start').querySelector('span').textContent=timer?'取消本次模拟':`模拟生成 · ${selected.size} 张`;$('generate').innerHTML=`<svg><use href="#i-spark"/></svg><span>${selected.size} 色已选择</span>`;$('generate').disabled=!selected.size&&!timer;$('start').classList.toggle('cancel',!!timer);}
-function paintStage(){const c=color(current);$('resultLarge').src=src(c.id);$('resultLarge').alt=`${c.name}${type==='tee'?'索罗娜短袖':'连帽卫衣'}色彩参考图`;$('sourceLarge').src=localUrl||src('white',type);$('sourceThumb').src=localUrl||src('white',type);$('resultLabel').textContent=`${c.name} / ${c.en}`;$('photoIndex').textContent=`STUDY ${String(sets[type].findIndex(x=>x.id===current)+1).padStart(2,'0')} / ${String(sets[type].length).padStart(2,'0')}`;$('canvasKicker').textContent=type==='tee'?'STUDIES IN COLOR':'STUDIES IN SOFTNESS';$('captionTitle').innerHTML=type==='tee'?'Soft<br><em>essentials.</em>':'Quiet<br><em>comfort.</em>';$('captionText').textContent=`${c.name} · ${c.en} / 点击作品，展开原始影像。`;$('frameMark').textContent=String(sets[type].findIndex(x=>x.id===current)+1).padStart(2,'0');const rows=sets[type].filter(x=>!onlyFav||favs.has(type+x.id));if(!rows.length){$('filmstrip').innerHTML='<div class="empty"><svg><use href="#i-heart"/></svg>还没有收藏的色彩影像。</div>'}else{$('filmstrip').innerHTML=rows.map((x,i)=>`<button class="film ${x.id===current?'active':''}" data-film="${x.id}" aria-label="浏览${x.name}色彩样图" aria-pressed="${x.id===current}"><img src="${src(x.id)}" alt="${x.name}本地参考图"><figcaption><span>${x.name}</span><i>0${i+1}</i></figcaption></button>`).join('')} $('resultPhoto').setAttribute('aria-label',`查看${c.name}色彩样图大图`);$('filmstrip').setAttribute('aria-label',`${rows.length} 张本地参考样图`)}
-function update(){paintControls();paintStage()}function setMode(next){mode=next;$('canvas').classList.toggle('compare',next==='compare');document.querySelectorAll('[data-mode]').forEach(b=>{const on=b.dataset.mode===next;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on))});$('compare').classList.toggle('active',next==='compare');$('compare').setAttribute('aria-pressed',String(next==='compare'));}function switchTab(next){tab=next;$('samplePane').hidden=next!=='samples';$('logPane').hidden=next!=='logs';document.querySelectorAll('[data-gallery]').forEach(b=>{const on=b.dataset.gallery===next;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on))});document.querySelectorAll('.rail-button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===(next==='samples'?'gallery':'log')))}document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{switchTab(b.dataset.view==='log'?'logs':'samples');if(b.id==='library')$('filmHead')?.scrollIntoView({behavior:'smooth',block:'center'})});document.querySelectorAll('[data-gallery]').forEach(b=>b.onclick=()=>switchTab(b.dataset.gallery));$('library').onclick=()=>{switchTab('samples');$('filmstrip').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'center'})};$('about').onclick=()=>notify('星雾布局 × 香槟影像交互 · 所有数据留在本地，不调用接口。');$('selectAll').onclick=()=>{if(!timer){selected=new Set(sets[type].map(c=>c.id));update()}};$('swatches').onclick=e=>{const b=e.target.closest('[data-color]');if(!b||timer)return;selected.has(b.dataset.color)?selected.delete(b.dataset.color):selected.add(b.dataset.color);update()};$('filmstrip').onclick=e=>{const b=e.target.closest('[data-film]');if(b){current=b.dataset.film;paintStage();notify(`已切换到 ${color(current).name} · 本地色彩样图`)}};document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));$('compare').onclick=()=>setMode(mode==='compare'?'editorial':'compare');$('garment').onchange=()=>{type=$('garment').value;selected=new Set(sets[type].map(c=>c.id));current=type==='tee'?'apricot':'black';localUrl='';$('fileName').textContent='original_reference.jpg';$('fileState').textContent='点选或拖入 · 仅本地预览';update();notify('款式与色彩影集已切换')};$('ratio').onclick=e=>{const b=e.target.closest('[data-ratio]');if(!b)return;document.querySelectorAll('[data-ratio]').forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-pressed',String(x===b))});notify(`已选择 ${b.dataset.ratio} · 当前影集以原比例展示`)};$('preserve').onclick=()=>{$('preserve').setAttribute('aria-checked',String($('preserve').getAttribute('aria-checked')!=='true'));notify($('preserve').getAttribute('aria-checked')==='true'?'保留织物细节已开启':'保留织物细节已关闭')};document.querySelectorAll('.chip,.quick button').forEach(b=>b.onclick=()=>{const area=b.closest('.settings')?$('prompt'):$('dockPrompt');area.value=[area.value,b.textContent].filter(Boolean).join('，');area.focus()});$('model').onchange=()=>notify('已更换本地演示选项，不连接任何模型');$('upload').onchange=e=>upload(e.target.files[0]);$('railUpload').onclick=()=>$('upload').click();$('drop').onclick=()=>{if(!localUrl)$('upload').click()};for(const ev of ['dragenter','dragover'])$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('drag')});for(const ev of ['dragleave','drop'])$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('drag');if(ev==='drop')upload(e.dataTransfer.files[0])});function upload(file){if(!file)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type)){notify('请选择 PNG / JPG / WEBP 图片');return}if(file.size>20*1024*1024){notify('原型只接受 20 MB 内图片进行本地预览');return}if(localUrl)URL.revokeObjectURL(localUrl);localUrl=URL.createObjectURL(file);$('sourceThumb').src=localUrl;$('sourceLarge').src=localUrl;$('fileName').textContent=file.name;$('fileState').textContent='已载入浏览器 · 未上传';log('载入本地原图预览，图片未离开浏览器。');notify('已替换源图预览；色彩图仍为本地样图')}
-function itemSource(){return localUrl||src('white',type)}function openLightbox(){const c=color(current);$('modalTitle').textContent=`${c.name} · 原图与色彩参考`;$('modalSource').src=itemSource();$('modalSource').alt='当前原始参考图';$('modalResult').src=src(c.id);$('modalResult').alt=c.name+'本地色彩参考';$('modalResultCaption').textContent=`${c.en} / ${c.name}样图`;$('modalIndex').textContent=`${String(sets[type].findIndex(x=>x.id===current)+1).padStart(2,'0')} / ${String(sets[type].length).padStart(2,'0')}`;$('download').href=src(c.id);$('download').download=`${c.id}-reference.jpg`;$('lightbox').showModal()}$('sourcePhoto').onclick=openLightbox;$('resultPhoto').onclick=openLightbox;document.querySelectorAll('[data-modal-mode]').forEach(b=>b.onclick=()=>{modalMode=b.dataset.modalMode;$('modalResultWrap').hidden=modalMode==='one';document.querySelectorAll('[data-modal-mode]').forEach(x=>{const on=x===b;x.classList.toggle('active',on);x.setAttribute('aria-pressed',String(on))})});function stepColor(dir){const arr=sets[type];const at=arr.findIndex(x=>x.id===current);current=arr[(at+dir+arr.length)%arr.length].id;paintStage();if($('lightbox').open)openLightbox()}$('previous').onclick=()=>stepColor(-1);$('next').onclick=()=>stepColor(1);$('closeModal').onclick=()=>$('lightbox').close();$('lightbox').addEventListener('click',e=>{if(e.target===$('lightbox')){const r=$('lightbox').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('lightbox').close()}});document.addEventListener('keydown',e=>{if(!$('lightbox').open)return;if(e.key==='ArrowRight'){e.preventDefault();stepColor(1)}if(e.key==='ArrowLeft'){e.preventDefault();stepColor(-1)}});$('favorite').onclick=()=>{onlyFav=!onlyFav;$('favorite').classList.toggle('active',onlyFav);$('favorite').setAttribute('aria-pressed',String(onlyFav));paintStage();notify(onlyFav?'查看已收藏色卡':'查看全部色卡')};$('filmstrip').addEventListener('dblclick',e=>{if(e.target.closest('[data-film]'))openLightbox()});function finish(cancelled){clearInterval(timer);timer=null;$('canvasBusy').hidden=true;$('generate').querySelector('span').textContent=`模拟生成 · ${selected.size} 张`;$('start').classList.remove('cancel');$('garment').disabled=false;$('selectAll').disabled=false;$('progressText').textContent=cancelled?'模拟已取消 · 未产生费用':'预览序列完成 · 仅展示本地样图';$('progressValue').textContent=progress+'%';log(cancelled?'模拟生成已取消，未产生费用。':`模拟完成：浏览本地影集中的 ${selected.size} 张服装色卡。`);notify(cancelled?'已取消模拟，不会产生费用':'模拟流程结束 · 影集展示的仍为本地参考图');update()}$('start').onclick=()=>{if(timer){finish(true);return}if(!selected.size){notify('请先选择一种色彩');return}progress=0;$('canvasBusy').hidden=false;$('progressWrap').hidden=false;$('progressFill').style.width='0%';$('progressBar').setAttribute('aria-valuenow','0');$('progressValue').textContent='0%';$('progressText').textContent='正在模拟整理影像…';$('generate').disabled=true;$('garment').disabled=true;$('selectAll').disabled=true;$('start').classList.add('cancel');$('start').querySelector('span').textContent='取消本次模拟';$('canvas').classList.add('is-busy');log('启动本地动画演示，没有调用生图服务。');timer=setInterval(()=>{progress=Math.min(100,progress+4);$('progressFill').style.width=progress+'%';$('progressBar').setAttribute('aria-valuenow',String(progress));$('progressValue').textContent=progress+'%';$('busyLabel').textContent=progress<30?'正在模拟整理原始参考…':progress<75?'正在模拟浏览色彩影集…':'正在模拟打包成品预览…';$('progressText').textContent=progress<30?'整理原始影像与拍摄光线…':progress<75?'为色彩样图编排胶片影集…':'整理下载预览序列…';if(progress===100){$('canvas').classList.remove('is-busy');finish(false)}},240)};document.addEventListener('pointermove',e=>{if(!matchMedia('(pointer:fine)').matches||matchMedia('(prefers-reduced-motion:reduce)').matches)return;const r=$('canvas').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)return;$('canvas').style.setProperty('--mx',`${e.clientX-r.left}px`);$('canvas').style.setProperty('--my',`${e.clientY-r.top}px`)});window.addEventListener('pagehide',()=>{clearInterval(timer);if(localUrl)URL.revokeObjectURL(localUrl)});update()})();
-(()=>{
+(() => {
   'use strict';
-  const $=id=>document.getElementById(id);
-  const notify=message=>{const el=$('toast');el.textContent=message;el.classList.add('show');clearTimeout(notify.timer);notify.timer=setTimeout(()=>el.classList.remove('show'),3000)};
-  function showSamples(){$('samplePane').hidden=false;$('logPane').hidden=true;document.querySelectorAll('[data-gallery]').forEach(b=>{const on=b.dataset.gallery==='samples';b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on))});document.querySelectorAll('.rail-button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='gallery'))}
-  const favorites=new Set();
-  let favoriteFilter=false;
-  const cards=()=>[...document.querySelectorAll('#filmstrip [data-film]')];
-  function syncFavorites(){
-    let visible=0;
-    for(const card of cards()){
-      const key=$('garment').value+card.dataset.film;
-      const saved=favorites.has(key);
-      card.hidden=favoriteFilter&&!saved;
-      if(!card.hidden)visible++;
-      card.setAttribute('aria-pressed',String(card.dataset.film===$('resultLarge').src.split('/').pop().replace('.jpg','')));
-      let mark=card.querySelector('.film-fav');
-      if(saved&&!mark){
-        mark=document.createElement('span');
-        mark.className='film-fav';
-        mark.textContent='♥';
-        mark.setAttribute('aria-hidden','true');
-        Object.assign(mark.style,{position:'absolute',top:'7px',right:'7px',width:'18px',height:'18px',display:'grid',placeItems:'center',borderRadius:'50%',background:'#221f32d9',color:'#dbc7ff',fontSize:'10px',lineHeight:'1',boxShadow:'0 2px 8px #0005'});
-        card.append(mark);
-      }else if(!saved&&mark){mark.remove()}
-    }
-    $('filmstrip').hidden=favoriteFilter&&visible===0;
-    $('favEmpty').hidden=!(favoriteFilter&&visible===0);
-    $('favFilter').setAttribute('aria-pressed',String(favoriteFilter));
-    $('favFilter').classList.toggle('active',favoriteFilter);
-    const active=cards().find(c=>c.dataset.film===$('resultLarge').src.split('/').pop().replace('.jpg',''));
-    const key=active?$('garment').value+active.dataset.film:'';
-    $('favorite').setAttribute('aria-pressed',String(!!key&&favorites.has(key)));
-    $('favorite').classList.toggle('active',!!key&&favorites.has(key));
-    $('favorite').title=key&&favorites.has(key)?'取消收藏当前色卡':'收藏当前色卡';
+  const $ = id => document.getElementById(id);
+  const all = selector => [...document.querySelectorAll(selector)];
+  const colors = {
+    tee: [{id:'white',name:'云朵白',en:'IVORY',hex:'#edeae1'},{id:'black',name:'曜石黑',en:'INK',hex:'#282930'},{id:'pink',name:'雾玫粉',en:'ROSE',hex:'#d9b0b9'},{id:'apricot',name:'浅杏米',en:'OAT',hex:'#d2c1a0'},{id:'forest-green',name:'森林绿',en:'FOREST',hex:'#29483b'}],
+    hoodie: [{id:'white',name:'云朵白',en:'IVORY',hex:'#edeae1'},{id:'black',name:'曜石黑',en:'INK',hex:'#282930'},{id:'heather-grey',name:'雾灰',en:'MIST',hex:'#99999a'}]
+  };
+  const state = {type:'tee', selected:new Set(['white','black','apricot']), current:'apricot', favorites:new Set(), onlyFavorites:false, mode:'editorial', modalMode:'both', modalSubject:'result', timer:null, progress:0, sourceUrl:'', sourceName:'', uploading:false, invoker:null, toastTimer:null};
+  const reduced = matchMedia('(prefers-reduced-motion:reduce)');
+  const src = id => `../../library/refs/${state.type === 'tee' ? '23-sorona-tee' : '06-hoodie'}/${id}.jpg`;
+  const current = () => colors[state.type].find(c => c.id === state.current);
+  const source = () => state.sourceUrl || src('white');
+  const saved = id => state.favorites.has(`${state.type}/${id}`);
+  const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
+  function notify(message) {
+    $('toast').textContent = message; $('toast').classList.add('show');
+    clearTimeout(state.toastTimer); state.toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3200);
   }
-  new MutationObserver(()=>requestAnimationFrame(syncFavorites)).observe($('filmstrip'),{childList:true});
-  $('favorite').onclick=()=>{
-    const id=$('resultLarge').src.split('/').pop().replace('.jpg','');
-    const key=$('garment').value+id;
-    if(favorites.has(key)){favorites.delete(key);notify('已取消收藏当前色卡')}
-    else{favorites.add(key);notify(`已收藏 ${$('resultLabel').textContent.split(' / ')[0]}`)}
-    syncFavorites();
-  };
-  $('favFilter').onclick=()=>{favoriteFilter=!favoriteFilter;syncFavorites();notify(favoriteFilter?'已筛选收藏色卡':'已显示全部色卡')};
-  $('generate').onclick=()=>{
-    if(!$('canvasBusy').hidden)return;
-    const choices=[...$('swatches').querySelectorAll('[data-color][aria-pressed="true"]')];
-    if(!choices.length){notify('请先选择目标色彩');return}
-    const id=choices[0].dataset.color;
-    if(favoriteFilter){favoriteFilter=false;syncFavorites()}
-    const card=cards().find(item=>item.dataset.film===id);
-    if(card)card.click();
-    showSamples();
-    $('filmstrip').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'center'});
-    notify(`已在影集中定位 ${choices.length} 种已选色彩 · 可点击样图继续浏览`);
-  };
-  syncFavorites();
-  function activeColor(){return document.querySelector('#filmstrip .film.active')?.dataset.film||$('resultLarge').src.split('/').pop().replace('.jpg','')}
-  function modalStep(delta){
-    const items=cards();if(!items.length)return;
-    const i=items.findIndex(card=>card.dataset.film===activeColor());
-    const next=items[(i+delta+items.length)%items.length];
-    if(favoriteFilter&&next.hidden)$('favFilter').click();
-    $('lightbox').close();
-    next.click();
-    $('resultPhoto').click();
+  function log(message) {
+    const row = document.createElement('div'), time = document.createElement('time'), text = document.createElement('span');
+    row.className = 'log-row'; time.textContent = new Date().toLocaleTimeString('zh-CN', {hour12:false}); text.textContent = message;
+    row.append(time,text); $('logs').prepend(row); $('logCount').textContent = String($('logs').children.length - 1).padStart(2,'0');
   }
-  $('previous').onclick=()=>modalStep(-1);
-  $('next').onclick=()=>modalStep(1);
-  document.addEventListener('keydown',e=>{
-    if(!$('lightbox').open||!['ArrowLeft','ArrowRight'].includes(e.key))return;
-    e.preventDefault();e.stopImmediatePropagation();modalStep(e.key==='ArrowRight'?1:-1);
-  },true);
-  $('generate').onclick=()=>{
-    if(!$('canvasBusy').hidden)return;
-    const first=$('swatches').querySelector('[data-color][aria-pressed="true"]');
-    if(!first){notify('请先选择目标色彩');return}
-    if(favoriteFilter)$('favFilter').click();
-    cards().find(card=>card.dataset.film===first.dataset.color)?.click();
-    showSamples();
-    $('filmstrip').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth',block:'center'});
-    notify('已在影集中定位已选色彩，可继续点选预览。');
+  function selectTab(tab) {
+    const samples = tab === 'samples'; $('samplePane').hidden = !samples; $('logPane').hidden = samples;
+    all('[data-gallery]').forEach(b => {const on = b.dataset.gallery === tab; b.classList.toggle('active',on); b.setAttribute('aria-pressed',String(on));});
+    all('[data-view]').forEach(b => {const on = b.dataset.view === (samples ? 'gallery' : 'log'); b.classList.toggle('active',on); b.setAttribute('aria-pressed',String(on));});
+  }
+  function paintControls(rebuild = false) {
+    if (rebuild) $('swatches').innerHTML = colors[state.type].map(c => `<button class="swatch" style="--color:${c.hex}" data-color="${c.id}" aria-label="${c.name}" title="${c.name}"><span class="tick">${icon('check')}</span></button>`).join('');
+    all('#swatches [data-color]').forEach(b => {b.setAttribute('aria-pressed',String(state.selected.has(b.dataset.color))); b.disabled = !!state.timer || state.uploading;});
+    $('colorSummary').innerHTML = `已选 <b>${state.selected.size}</b> 色 · 点按影集切换预览`;
+    $('summary').textContent = `1 原图 × ${state.selected.size} 色`;
+    $('generate').querySelector('span').textContent = `预览已选 · ${state.selected.size} 色`;
+    $('generate').disabled = !state.selected.size || !!state.timer || state.uploading;
+    $('start').querySelector('span').textContent = state.timer ? '取消本次模拟' : state.uploading ? '读取本地图片…' : `模拟生成 · ${state.selected.size} 张`;
+    $('start').classList.toggle('cancel',!!state.timer); $('start').disabled = !state.timer && (!state.selected.size || state.uploading);
+    ['garment','selectAll','upload','railUpload','model','preserve','prompt','dockPrompt'].forEach(id => {$(id).disabled = !!state.timer || state.uploading;});
+    all('[data-ratio],.chip,.quick button').forEach(b => {b.disabled = !!state.timer || state.uploading;});
+    $('drop').setAttribute('aria-disabled',String(!!state.timer || state.uploading));
+  }
+  function paintFilms() {
+    $('filmstrip').innerHTML = colors[state.type].map((c,i) => `<button class="film" data-film="${c.id}" aria-label="浏览${c.name}色彩样图"><img src="${src(c.id)}" alt="${c.name}本地参考图"><span class="film-caption"><span>${c.name}</span><i>${String(i+1).padStart(2,'0')}</i></span><span class="film-fav" aria-hidden="true" hidden>♥</span></button>`).join('');
+    $('sampleCount').textContent = String(colors[state.type].length).padStart(2,'0');
+    syncFilms();
+  }
+  function syncFilms() {
+    let count = 0;
+    all('[data-film]').forEach(b => {
+      const id = b.dataset.film, active = id === state.current;
+      b.classList.toggle('active',active); b.setAttribute('aria-pressed',String(active));
+      b.hidden = state.onlyFavorites && !saved(id); b.querySelector('.film-fav').hidden = !saved(id);
+      if (!b.hidden) count++;
+    });
+    $('filmCount').textContent = '/ ' + String(count).padStart(2,'0'); $('filmstrip').hidden = count === 0; $('favEmpty').hidden = count > 0;
+    $('favFilter').setAttribute('aria-pressed',String(state.onlyFavorites)); $('favFilter').classList.toggle('active',state.onlyFavorites);
+    $('favorite').setAttribute('aria-pressed',String(saved(state.current))); $('favorite').classList.toggle('active',saved(state.current));
+    $('favorite').title = saved(state.current) ? '取消收藏当前色卡' : '收藏当前色卡';
+  }
+  function paintStage() {
+    const c = current(), n = colors[state.type].findIndex(x => x.id === state.current) + 1;
+    if ($('resultLarge').getAttribute('src') !== src(c.id)) $('resultLarge').src = src(c.id);
+    $('resultLarge').alt = `${c.name} · 本地服装色彩参考`;
+    $('sourceLarge').src = source(); $('sourceThumb').src = source(); $('sourceLarge').alt = state.sourceName || '白色服装原始参考图';
+    $('resultLabel').textContent = `${c.name} / ${c.en}`;
+    $('photoIndex').textContent = `STUDY ${String(n).padStart(2,'0')} / ${String(colors[state.type].length).padStart(2,'0')}`;
+    $('frameMark').textContent = String(n).padStart(2,'0');
+    $('captionTitle').innerHTML = state.type === 'tee' ? 'Soft<br><em>essentials.</em>' : 'Quiet<br><em>comfort.</em>';
+    $('captionText').textContent = `${c.name} · ${c.en} / 点击作品，展开原始影像。`;
+    $('resultPhoto').setAttribute('aria-label',`查看${c.name}色彩样图大图`); syncFilms();
+  }
+  function chooseColor(id) {state.current = id; paintStage(); if ($('lightbox').open) paintModal();}
+  function setMode(mode) {
+    state.mode = mode; $('canvas').classList.toggle('compare',mode === 'compare');
+    all('[data-mode]').forEach(b => {const active = b.dataset.mode === mode; b.classList.toggle('active',active); b.setAttribute('aria-pressed',String(active));});
+    $('compare').classList.toggle('active',mode === 'compare'); $('compare').setAttribute('aria-pressed',String(mode === 'compare'));
+  }
+  function paintModal() {
+    const c = current(), single = state.modalMode === 'one', isSource = state.modalSubject === 'source';
+    $('modalSource').src = source(); $('modalSource').alt = state.sourceName || '原始参考图';
+    $('modalResult').src = src(c.id); $('modalResult').alt = `${c.name}色彩参考`;
+    $('modalSource').parentElement.hidden = single && !isSource;
+    $('modalResultWrap').hidden = single && isSource;
+    $('modalPhotos').classList.toggle('single',single);
+    $('modalTitle').textContent = single && isSource ? '原始参考 · SOURCE' : `${c.name} · ${single ? '色彩细节' : '原图与色彩参考'}`;
+    $('modalResultCaption').textContent = `${c.en} / ${c.name}样图`;
+    $('modalIndex').textContent = `${String(colors[state.type].findIndex(x => x.id === c.id)+1).padStart(2,'0')} / ${String(colors[state.type].length).padStart(2,'0')}`;
+    $('download').href = single && isSource ? source() : src(c.id);
+    $('download').download = single && isSource ? (state.sourceName || 'source-reference.jpg') : `${c.id}-reference.jpg`;
+    all('[data-modal-mode]').forEach(b => {const active = b.dataset.modalMode === state.modalMode; b.classList.toggle('active',active); b.setAttribute('aria-pressed',String(active));});
+  }
+  function openModal(subject, invoker) {state.modalSubject = subject; state.invoker = invoker; paintModal(); if (!$('lightbox').open) $('lightbox').showModal();}
+  function stepColor(delta) {const list = colors[state.type], i = list.findIndex(c => c.id === state.current); state.modalSubject = 'result'; chooseColor(list[(i+delta+list.length)%list.length].id);}
+  $('sourcePhoto').onclick = e => openModal('source',e.currentTarget);
+  $('resultPhoto').onclick = e => openModal('result',e.currentTarget);
+  $('filmstrip').onclick = e => {const b = e.target.closest('[data-film]'); if (b) chooseColor(b.dataset.film);};
+  $('filmstrip').ondblclick = e => {const b = e.target.closest('[data-film]'); if (b) {chooseColor(b.dataset.film); openModal('result',b);}};
+  all('[data-modal-mode]').forEach(b => b.onclick = () => {state.modalMode = b.dataset.modalMode; paintModal();});
+  $('previous').onclick = () => stepColor(-1); $('next').onclick = () => stepColor(1);
+  $('closeModal').onclick = () => $('lightbox').close();
+  $('lightbox').onkeydown = e => {if (['ArrowLeft','ArrowRight'].includes(e.key)) {e.preventDefault(); stepColor(e.key === 'ArrowRight' ? 1 : -1);}};
+  $('lightbox').onclick = e => {if (e.target !== $('lightbox')) return; const r = $('lightbox').getBoundingClientRect(); if (e.clientX<r.left || e.clientX>r.right || e.clientY<r.top || e.clientY>r.bottom) $('lightbox').close();};
+  $('lightbox').onclose = () => {if (state.invoker?.isConnected && !state.invoker.hidden) state.invoker.focus({preventScroll:true});};
+  $('favorite').onclick = () => {const key = `${state.type}/${state.current}`; state.favorites.has(key) ? state.favorites.delete(key) : state.favorites.add(key); syncFilms(); notify(saved(state.current) ? `已收藏 ${current().name}` : '已取消收藏当前色卡');};
+  $('favFilter').onclick = () => {state.onlyFavorites = !state.onlyFavorites; syncFilms();};
+  $('swatches').onclick = e => {const b = e.target.closest('[data-color]'); if (!b || b.disabled) return; state.selected.has(b.dataset.color) ? state.selected.delete(b.dataset.color) : state.selected.add(b.dataset.color); paintControls();};
+  $('selectAll').onclick = () => {state.selected = new Set(colors[state.type].map(c => c.id)); paintControls();};
+  $('garment').onchange = () => {state.type = $('garment').value; state.selected = new Set(colors[state.type].map(c => c.id)); state.current = state.type === 'tee' ? 'apricot' : 'black'; paintControls(true); paintFilms(); paintStage(); notify('款式与色彩影集已切换');};
+  all('[data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  $('compare').onclick = () => {selectTab('samples'); setMode(state.mode === 'compare' ? 'editorial' : 'compare');};
+  all('[data-gallery]').forEach(b => b.onclick = () => selectTab(b.dataset.gallery));
+  all('[data-view]').forEach(b => b.onclick = () => selectTab(b.dataset.view === 'log' ? 'logs' : 'samples'));
+  function scrollFilms() {selectTab('samples'); $('filmstrip').scrollIntoView({behavior:reduced.matches ? 'auto' : 'smooth',block:'center'});}
+  $('library').onclick = scrollFilms;
+  $('generate').onclick = () => {const first = colors[state.type].find(c => state.selected.has(c.id)); if (!first) return; state.onlyFavorites = false; chooseColor(first.id); scrollFilms(); notify(`已定位首个已选色彩，共选择 ${state.selected.size} 色`);};
+  $('about').onclick = $('info').onclick = () => notify('星雾紫布局 × 香槟影像交互 · 独立原型，不调用生图接口。');
+  $('ratio').onclick = e => {const b = e.target.closest('[data-ratio]'); if (!b || b.disabled) return; all('[data-ratio]').forEach(x => {x.classList.toggle('active',x===b); x.setAttribute('aria-pressed',String(x===b));}); notify(`已选 ${b.dataset.ratio} · 参考图保持原比例`);};
+  $('preserve').onclick = () => {const checked = $('preserve').getAttribute('aria-checked') !== 'true'; $('preserve').setAttribute('aria-checked',String(checked)); notify(checked ? '保留服装质感已开启' : '保留服装质感已关闭');};
+  $('model').onchange = () => notify('已切换演示模型，不发送真实请求');
+  function syncPrompt(value) {$('prompt').value = value; $('dockPrompt').value = value;}
+  ['prompt','dockPrompt'].forEach(id => $(id).oninput = e => syncPrompt(e.target.value));
+  all('.chip,.quick button').forEach(b => b.onclick = () => {syncPrompt([$('prompt').value,b.textContent].filter(Boolean).join('，')); (b.closest('.settings') ? $('prompt') : $('dockPrompt')).focus();});
+  async function upload(file) {
+    if (!file || state.timer || state.uploading) return;
+    if (!['image/png','image/jpeg','image/webp'].includes(file.type) || !file.size || file.size > 20*1024*1024) {notify('请选择 20 MB 内的 PNG、JPG 或 WebP 图片'); return;}
+    const url = URL.createObjectURL(file), probe = new Image(); state.uploading = true; paintControls();
+    try {
+      probe.src = url; await probe.decode();
+      if (state.sourceUrl) URL.revokeObjectURL(state.sourceUrl);
+      state.sourceUrl = url; state.sourceName = file.name;
+      $('fileName').textContent = file.name; $('fileState').textContent = '已载入浏览器 · 未上传'; paintStage();
+      log('已载入本地原图；色彩参考仍为款式库样图。'); notify('原图预览已更新，图片未上传');
+    } catch (_) {URL.revokeObjectURL(url); notify('无法读取图片，请选择完整的图片文件');}
+    finally {state.uploading = false; paintControls();}
+  }
+  $('upload').onchange = e => {upload(e.target.files[0]); e.target.value = '';};
+  $('railUpload').onclick = () => $('upload').click();
+  // The label itself opens its nested file input; keyboard activation uses one explicit click.
+  $('drop').tabIndex = 0; $('drop').setAttribute('role','button'); $('drop').setAttribute('aria-label','上传本地原图');
+  $('drop').onkeydown = e => {if (['Enter',' '].includes(e.key)) {e.preventDefault(); if (!state.timer && !state.uploading) $('upload').click();}};
+  for (const ev of ['dragenter','dragover']) $('drop').addEventListener(ev,e => {e.preventDefault(); if (!state.timer && !state.uploading) $('drop').classList.add('drag');});
+  $('drop').ondragleave = () => $('drop').classList.remove('drag');
+  $('drop').ondrop = e => {e.preventDefault(); $('drop').classList.remove('drag'); upload(e.dataTransfer.files[0]);};
+  function progressTick() {
+    $('progressFill').style.width = `${state.progress}%`; $('progressValue').textContent = `${state.progress}%`;
+    $('progressBar').setAttribute('aria-valuenow',String(state.progress));
+    const message = state.progress < 30 ? '正在模拟整理原始参考…' : state.progress < 75 ? '正在模拟编排色彩影集…' : '正在模拟准备预览…';
+    $('busyLabel').textContent = message; $('progressText').textContent = message;
+  }
+  function finish(cancelled) {
+    clearInterval(state.timer); state.timer = null; $('canvasBusy').hidden = true; $('canvas').classList.remove('is-busy'); $('canvas').setAttribute('aria-busy','false');
+    $('progressText').textContent = cancelled ? '模拟已取消 · 未产生费用' : '演示完成 · 仅展示本地参考图';
+    if (!cancelled) chooseColor(colors[state.type].find(c => state.selected.has(c.id)).id);
+    paintControls(); log(cancelled ? '模拟已取消，无真实接口调用。' : `演示完成，共选择 ${state.selected.size} 张本地色彩参考。`);
+    notify(cancelled ? '已取消模拟' : '演示完成，点击色彩影集查看细节');
+  }
+  $('start').onclick = () => {
+    if (state.timer) {finish(true); return;} if (!state.selected.size || state.uploading) return;
+    selectTab('samples'); state.progress = 0; $('progressWrap').hidden = false; $('canvasBusy').hidden = false;
+    $('canvas').classList.add('is-busy'); $('canvas').setAttribute('aria-busy','true'); progressTick();
+    log(`开始 ${state.selected.size} 色本地动画演示，不调用生图接口。`);
+    const began = performance.now();
+    state.timer = setInterval(() => {state.progress = Math.min(100,Math.floor((performance.now()-began)/60)); progressTick(); if (state.progress === 100) finish(false);},160);
+    paintControls();
   };
-  $('favorite').onclick=()=>{
-    const id=activeColor();const key=$('garment').value+id;
-    if(favorites.has(key)){favorites.delete(key);notify('已取消收藏当前色卡')}
-    else{favorites.add(key);notify(`已收藏 ${$('resultLabel').textContent.split(' / ')[0]}`)}
-    syncFavorites();
-  };
-  $('start').addEventListener('click',()=>{
-    const wasBusy=!$('canvasBusy').hidden;
-    if(wasBusy)queueMicrotask(()=>{if($('canvasBusy').hidden)$('canvas').classList.remove('is-busy')});
-  },true);
-  syncFavorites();
+  if (matchMedia('(pointer:fine)').matches) {
+    let frame = 0;
+    $('canvas').onpointermove = e => {if (reduced.matches || frame) return; const x = e.clientX, y = e.clientY; frame = requestAnimationFrame(() => {const r = $('canvas').getBoundingClientRect(); $('canvas').style.setProperty('--mx',`${x-r.left}px`); $('canvas').style.setProperty('--my',`${y-r.top}px`); frame=0;});};
+  }
+  window.addEventListener('pagehide',e => {if (!e.persisted) {clearInterval(state.timer); clearTimeout(state.toastTimer); if (state.sourceUrl) URL.revokeObjectURL(state.sourceUrl);}});
+  paintControls(true); paintFilms(); paintStage();
 })();
 </script>
 </body>

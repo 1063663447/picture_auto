@@ -1,12 +1,12 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>绠＄悊鍚庡彴 路 鐢熷浘宸ヤ綔鍙?/title>
-<link rel="stylesheet" href="/style.css?v=7.0.3" />
-<link rel="stylesheet" href="/glass.css?v=6.0.2" />
-<link rel="stylesheet" href="/aurora.css?v=7.0.4" />
+<title>管理后台 · 生图工作台</title>
+<link rel="stylesheet" href="/style.css?v=7.0.5" />
+<link rel="stylesheet" href="/glass.css?v=7.0.5" />
+<link rel="stylesheet" href="/aurora.css?v=7.0.5" />
 <style>
   .admin-shell { max-width: 1180px; margin: 0 auto; padding: var(--sp-4) var(--sp-4) 64px; display: grid; gap: var(--sp-4); }
   .admin-shell h2 { font-size: 14px; margin: 0; }
@@ -80,16 +80,16 @@
   <div class="brand">
     <span class="brand-mark"><svg width="18" height="18"><use href="#i-shield"/></svg></span>
     <div class="brand-text">
-      <h1>绠＄悊鍚庡彴</h1>
-      <p id="subLine">璐﹀彿 / 棰濆害 / 鐢ㄩ噺鎬昏锛堟暟鎹潵鑷涔﹀缁磋〃鏍硷級</p>
+      <h1>管理后台</h1>
+      <p id="subLine">账号 / 额度 / 用量总览（数据来自飞书多维表格）</p>
     </div>
   </div>
   <div class="appbar-spacer"></div>
   <div class="appbar-meta">
-    <a class="btn btn-ghost" href="/">杩斿洖宸ヤ綔鍙?/a>
+    <a class="btn btn-ghost" href="/">返回工作台</a>
     <span class="who-chip" id="whoChip">
-      <b id="whoName">鈥?/b>
-      <button class="who-out" id="logoutBtn" type="button" title="閫€鍑虹櫥褰? aria-label="閫€鍑虹櫥褰?>脳</button>
+      <b id="whoName">—</b>
+      <button class="who-out" id="logoutBtn" type="button" title="退出登录" aria-label="退出登录">×</button>
     </span>
   </div>
 </header>
@@ -99,40 +99,40 @@
 
   <section class="panel">
     <div class="panel-head">
-      <h2>鏂板缓瀛愯处鍙?/h2>
-      <span class="hint">寤哄ソ鍗冲彲鐧诲綍锛涢搴﹀厓濉?0 = 涓嶉檺</span>
+      <h2>新建子账号</h2>
+      <span class="hint">建好即可登录；额度元填 0 = 不限</span>
     </div>
     <div class="panel-body">
       <form class="form-grid" id="createForm">
-        <label>璐﹀彿<input name="username" required placeholder="濡?zhangsan" autocomplete="off" /></label>
-        <label>鍒濆瀵嗙爜<input name="password" required minlength="6" placeholder="鑷冲皯 6 浣? autocomplete="new-password" /></label>
-        <label>鏄剧ず鍚?input name="display" placeholder="寮犱笁" /></label>
-        <label>瑙掕壊
+        <label>账号<input name="username" required placeholder="如 zhangsan" autocomplete="off" /></label>
+        <label>初始密码<input name="password" required minlength="6" placeholder="至少 6 位" autocomplete="new-password" /></label>
+        <label>显示名<input name="display" placeholder="张三" /></label>
+        <label>角色
           <select name="role">
-            <option value="member">鎴愬憳锛堝彧鑳藉仛鍥撅級</option>
-            <option value="admin">绠＄悊鍛橈紙鍙繘鏈〉锛?/option>
+            <option value="member">成员（只能做图）</option>
+            <option value="admin">管理员（可进本页）</option>
           </select>
         </label>
-        <label>棰濆害鍏?input name="quota" type="number" step="0.01" min="0" value="0" /></label>
-        <label>澶囨敞<input name="note" placeholder="閮ㄩ棬 / 鐢ㄩ€? /></label>
-        <div><button class="btn btn-primary" type="submit">鍒涘缓璐﹀彿</button></div>
+        <label>额度元<input name="quota" type="number" step="0.01" min="0" value="0" /></label>
+        <label>备注<input name="note" placeholder="部门 / 用途" /></label>
+        <div><button class="btn btn-primary" type="submit">创建账号</button></div>
       </form>
     </div>
   </section>
 
   <section class="panel">
     <div class="panel-head">
-      <h2>璐﹀彿绠＄悊</h2>
-      <span class="hint" id="accountsHint">鈥?/span>
-      <button class="btn btn-quiet btn-sm" type="button" id="reloadBtn" style="margin-left:auto">鍒锋柊</button>
+      <h2>账号管理</h2>
+      <span class="hint" id="accountsHint">—</span>
+      <button class="btn btn-quiet btn-sm" type="button" id="reloadBtn" style="margin-left:auto">刷新</button>
     </div>
     <div class="panel-body scroll-x">
       <table class="adm-table">
         <thead>
           <tr>
-            <th>璐﹀彿</th><th>鏄剧ず鍚?/th><th>瑙掕壊</th><th>鐘舵€?/th>
-            <th class="num">棰濆害鍏?/th><th class="num">宸茬敤</th><th>棰濆害</th>
-            <th class="num">寮犳暟</th><th class="num">娆℃暟</th><th>鎿嶄綔</th>
+            <th>账号</th><th>显示名</th><th>角色</th><th>状态</th>
+            <th class="num">额度元</th><th class="num">已用</th><th>额度</th>
+            <th class="num">张数</th><th class="num">次数</th><th>操作</th>
           </tr>
         </thead>
         <tbody id="accountRows"></tbody>
@@ -141,25 +141,25 @@
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2>鐢ㄩ噺鎺掕锛堟寜璐﹀彿锛?/h2><span class="hint" id="usageHint">鈥?/span></div>
+    <div class="panel-head"><h2>用量排行（按账号）</h2><span class="hint" id="usageHint">—</span></div>
     <div class="panel-body"><div class="bars" id="byAccount"></div></div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2>妯″瀷鐢ㄩ噺</h2><span class="hint">鎸夐涔﹁褰曡仛鍚?/span></div>
+    <div class="panel-head"><h2>模型用量</h2><span class="hint">按飞书记录聚合</span></div>
     <div class="panel-body"><div class="bars" id="byModel"></div></div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2>杩?14 澶?/h2><span class="hint">鏌遍珮 = 褰撳ぉ寮犳暟</span></div>
+    <div class="panel-head"><h2>近 14 天</h2><span class="hint">柱高 = 当天张数</span></div>
     <div class="panel-body"><div class="days" id="byDay"></div></div>
   </section>
 
   <section class="panel">
-    <div class="panel-head"><h2>鏈€杩戣褰?/h2><span class="hint">鏈€鏂?20 鏉★紝鍚涔﹂檮浠堕噷鍚屾杩囨潵鐨勬垚鍝?/span></div>
+    <div class="panel-head"><h2>最近记录</h2><span class="hint">最新 20 条，含飞书附件里同步过来的成品</span></div>
     <div class="panel-body scroll-x">
       <table class="adm-table">
-        <thead><tr><th>鏃堕棿</th><th>璐﹀彿</th><th>鎴愬搧</th><th>妯″瀷</th><th class="num">寮犳暟</th><th class="num">閲戦</th><th>浠诲姟</th></tr></thead>
+        <thead><tr><th>时间</th><th>账号</th><th>成品</th><th>模型</th><th class="num">张数</th><th class="num">金额</th><th>任务</th></tr></thead>
         <tbody id="recentRows"></tbody>
       </table>
     </div>
@@ -167,6 +167,6 @@
 </main>
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
-<script src="/admin.js?v=5.2.1"></script>
+<script src="/admin.js?v=7.0.5"></script>
 </body>
 </html>
