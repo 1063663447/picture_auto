@@ -1,5 +1,9 @@
 # 用免费 PaaS 部署（Render / Koyeb / Railway / Cloud Run）
 
+> **⚠️ 已弃用（2026-11）——本文仅供留档。** 工作台现在**只跑本地**：双击 `workbench\run.bat`
+> 就是完整功能（账号登录、并发生图、飞书留痕、打包下载全在）。Render 上的实例已 `suspended`、
+> `autoDeploy` 已关，`git push` 不会触发重建。要看当初为什么不推荐上云、以及各家限制对照，往下读。
+
 > **重要更正**：Hugging Face Spaces 的 Docker / Gradio Space 现在**需要 PRO**（实测创建返回
 > `402 Payment Required`："hosting Gradio and Docker Spaces on free cpu-basic requires a PRO
 > subscription"，只有 **Static Space 仍免费**，但静态托管跑不了 Python 后端）。所以上一版给的
