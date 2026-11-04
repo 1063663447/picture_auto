@@ -180,6 +180,20 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 - **额度是真的会拦**：成员（`额度元 > 0`）建任务时，`已用 + 本次预估 > 额度` 直接 400 拒绝，并告诉差多少；管理员不限。额度按飞书记录里该账号的「金额元」累计。
 - 账号增删改全部落到飞书「账号」表，所以人工在表里改也一样生效；`tools/feishu_account_admin.py` 可在命令行做同样的事。
 
+### 图案策略（`pattern_mode`，用户说了算）
+
+| 值 | 含义 | 提示词里怎么写 |
+|---|---|---|
+| `preserve`（默认） | 图案逐像素照抄，只换面料底色 | `PRINT LOCK` + 图案锁否定词 |
+| `per_color_variant` | **每个颜色一套不同图案** | 撤销 `PRINT LOCK`，写 `PATTERN VARIETY`（点名当前颜色，要求原创、风格同族、不得复用同一张） |
+| `replace` | 整批换成需求里描述的新图案 | `PATTERN REPLACEMENT — replace the existing artwork with: <需求>` |
+| `free` | 图案可自由重绘 | `PATTERN FLEXIBILITY`，其余锁定不变 |
+
+- 选法有三条：界面「图案处理」下拉；harness 里直接说（会 `set_requirements(pattern_mode=...)` 或从原话自动识别）；`POST /api/jobs` 的 `pattern_mode` 字段。留空 = 后端按需求关键词自动判断。
+- 否定词也跟着换：允许重画时不再说"不要重绘图案"，改成"不要只是给原图案换色 / 两个颜色不能复用同一张图"。
+- 实测：同一批 3 个颜色 → 3 条互不相同的提示词，每条都点名自己的颜色、都无 `PRINT LOCK`（`tools/check_pattern_mode.py`）。
+- 预览接口也会跟着变：`POST /api/preview {garment_type,color,requirement,pattern_mode}` 返回合并后的 `single_pass` 与 `negative`，界面「提示词」抽屉会显示当前图案策略与本次需求。
+
 ### 历史与成品：以飞书为准
 
 - 每个成品一条记录，**成品图 / 参考图**存在记录的附件字段里（见 `deploy/feishu.md`）。
@@ -188,6 +202,15 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 - 接口：`GET /api/feishu/records?limit=200&job_id=&color=`、`POST /api/feishu/export {record_ids:[...]}`。
 
 ### 开工前先问需求（DeepSeek agent · 对话框 + 流式输出）
+
+> **用户要求优先于 skill 的默认规则。** 默认规范是「图案逐像素保留、只换面料底色」，
+> 但只要用户说「每个颜色不同图案 / 换成 XX 图案 / 重画印花」，就按用户说的做：
+> 默认的图案锁会被显式撤销（提示词里根本没有 `PRINT LOCK`，改成 `PATTERN VARIETY` 正向策略），
+> 其余未提及的约束继续锁死。harness 只做一句风险提示，不会用「跟硬规则冲突」来回绝。
+>
+> **提示词是真的重写，不是把原话贴末尾。** 需求会被归类（图案/背景/光线/删除/尺寸/字距/
+> 颜色/文字/清晰度…），写进 `OPERATOR REQUEST (authoritative)` 段落，同时把冲突的那条
+> 锁定从句子里删掉、换成对应的正向指令；`KEEP UNCHANGED` 只列没被要求改的部分。
 
 > harness 不是"脚本填模板"：它是**带工具调用的 DeepSeek agent**（默认 `deepseek-flash`，支持图片输入），
 > 会真的读你上传的图、查模型价、算总价，并在你同意后**直接提交生图任务**。

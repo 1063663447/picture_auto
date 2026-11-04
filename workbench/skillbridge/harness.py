@@ -28,12 +28,17 @@ from typing import AsyncIterator
 
 import httpx
 
-from . import refine
+from . import prompts, refine
 
-#: keywords → (中文标签, 需要提醒的风险)
+#: 用户明确要改图案时，这个话题的结论要换一套说法（不再说"照抄原图"）
+ARTWORK_TOPIC = "图案/文字保真"
+ARTWORK_NOTE_LOCKED = "图案锁已生效：字形、字距、大小、位置、材质浮雕都按原图照抄"
+ARTWORK_NOTE_UNLOCKED = (
+    "图案按你的要求重新设计：不用照抄原图，但风格要保持同一家族，且必须是印在面料上的照片质感"
+)
 TOPIC_RULES: list[tuple[tuple[str, ...], str, str]] = [
     (("图案", "印花", "logo", "标志", "字", "刺绣", "贴布", "print", "letter"),
-     "图案/文字保真", "图案锁已生效：字形、字距、大小、位置、材质浮雕都按原图照抄"),
+     ARTWORK_TOPIC, ARTWORK_NOTE_LOCKED),
     (("颜色", "色号", "偏蓝", "偏黄", "色差", "colour", "color"),
      "颜色准确度", "以参考图色值为准（色值已写入提示词），只改面料底色"),
     (("亮", "暗", "曝光", "光", "bright", "light"),
@@ -68,11 +73,14 @@ def looks_like_question(text: str) -> bool:
 
 LOCKS = [
     "服装款式与剪裁",
-    "印花/文字/logo 的字形、字距、大小、位置与浮雕材质",
     "人物身份、表情、姿势、手部",
     "背景、道具、机位、构图、裁切",
     "光线方向、噪点与分辨率",
 ]
+ARTWORK_LOCK = "印花/文字/logo 的字形、字距、大小、位置与浮雕材质"
+
+#: 用户明确要改印花时才这样说
+ARTWORK_UNLOCKED = "印花/图案（按你的要求重新设计，默认的「逐像素保留」不再适用）"
 
 
 @dataclass
@@ -82,6 +90,7 @@ class HarnessResult:
     prompt: str
     refiner: str = "local"
     topics: list[str] = field(default_factory=list)
+    pattern_mode: str = "preserve"
 
 
 def analyze_local(
@@ -102,6 +111,17 @@ def analyze_local(
         if any(word.lower() in lowered for word in words):
             hits.append((label, note))
 
+    # 用户要求改印花时，默认的「印花锁死」必须明确撤销，否则分析结论会自相矛盾
+    pattern_mode = prompts.detect_pattern_mode(instruction) or "preserve"
+    artwork_unlocked = pattern_mode != "preserve"
+    if artwork_unlocked and instruction:
+        hits = [
+            (label, ARTWORK_NOTE_UNLOCKED if label == ARTWORK_TOPIC else note)
+            for label, note in hits
+        ]
+        if not any(label == ARTWORK_TOPIC for label, _ in hits):
+            hits.insert(0, (ARTWORK_TOPIC, ARTWORK_NOTE_UNLOCKED))
+
     lines: list[str] = []
     if mode == "intake":
         if not instruction:
@@ -117,7 +137,11 @@ def analyze_local(
     else:
         lines.append(
             f"这次要返工 {count} 张，需求是「{instruction or '未填写'}」。"
-            "我按“只动你提到的那一处、其余全部锁死”来拆。"
+            + (
+                "我按“只动你提到的那一处、其余全部锁死”来拆。"
+                if not artwork_unlocked
+                else "我按“只动你提到的那一处（图案会重新设计）、其余锁死”来拆。"
+            )
         )
 
     if hits:
@@ -128,7 +152,20 @@ def analyze_local(
         lines.append("")
         lines.append(f"· 目标：{garment} / {color}，套用该款式的内置规范与色值。")
     lines.append("")
-    lines.append("锁定不动的部分：" + "、".join(LOCKS) + "。")
+    if artwork_unlocked:
+        lines.append(
+            "锁定不动的部分：" + "、".join(LOCKS) + "。"
+        )
+        lines.append(
+            f"按你的要求放开：{ARTWORK_UNLOCKED}——"
+            + (
+                "每个颜色各生成一套图案，不会复用同一张图。"
+                if pattern_mode == "per_color_variant"
+                else "按你给的新图案重新出图。"
+            )
+        )
+    else:
+        lines.append("锁定不动的部分：" + "、".join(LOCKS + [ARTWORK_LOCK]) + "。")
 
     if mode == "intake" and not instruction:
         requirements = ""
@@ -145,12 +182,25 @@ def analyze_local(
         )
     elif mode == "intake":
         requirements = instruction
-        prompt = base_prompt + _operator_clause(instruction)
+        prompt = prompts.apply_requirement(
+            base_prompt, instruction, pattern_mode=pattern_mode
+        )
         lines.append("")
-        lines.append("→ 结论：在你的要求之外不追加任何改动，合并后的请求已附在默认提示词末尾。")
+        if artwork_unlocked:
+            lines.append(
+                "→ 结论：这条要求与默认的「图案逐像素保留」冲突，按你的要求执行——"
+                "图案锁已撤销，其余约束合并进提示词主体（不是贴一句在末尾）。"
+            )
+        else:
+            lines.append(
+                "→ 结论：要求已拆成具体约束写进提示词的对应位置（人物/背景/光线等仍锁死），"
+                "不是把原话贴在末尾。"
+            )
     else:
         requirements = instruction
-        prompt = refine.compose_template(instruction, base_prompt)
+        prompt = refine.compose_template(
+            instruction, base_prompt, pattern_mode=pattern_mode
+        )
         lines.append("")
         lines.append("→ 结论：以这张成品为参考图重跑，只应用上面这条需求。")
 
@@ -160,13 +210,8 @@ def analyze_local(
         prompt=prompt,
         refiner="local",
         topics=[label for label, _ in hits],
+        pattern_mode=pattern_mode,
     )
-
-
-def _operator_clause(extra: str) -> str:
-    from .prompts import operator_clause
-
-    return operator_clause(extra)
 
 
 async def stream(

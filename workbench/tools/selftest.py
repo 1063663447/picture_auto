@@ -286,12 +286,25 @@ def main() -> int:
     with_req = asyncio.run(collect("intake", "图案必须原样，背景别动"))
     check("流式输出有多个帧", with_req["events"] >= 4, str(with_req["events"]))
     check("分析文本非空", len(with_req["text"]) > 20)
-    check("需求写入提示词", "OPERATOR REQUIREMENTS" in with_req["prompt"], with_req["prompt"][-80:])
+    check(
+        "需求写成权威指令（不是贴末尾）",
+        "OPERATOR REQUEST" in with_req["prompt"] and "authoritative" in with_req["prompt"],
+        with_req["prompt"][-80:],
+    )
+    check("需求被归类执行", "KEEP UNCHANGED" in with_req["prompt"])
     check("需求回传到前端", with_req["requirements"].startswith("图案必须原样"))
+
+    # 用户要求「每色一套图案」时必须撤销图案锁（用户 > 默认硬规则）
+    variant = asyncio.run(collect("intake", "让生成出来每个颜色对应不同的图案"))
+    check("每色一图案：撤销图案锁", "PRINT LOCK" not in variant["prompt"])
+    check("每色一图案：写入图案策略", "PATTERN VARIETY" in variant["prompt"])
+    check("每色一图案：提示锁已放开", "LIFTED" in variant["prompt"])
+    check("每色一图案：提示词真的变了", variant["prompt"] != with_req["prompt"])
 
     no_req = asyncio.run(collect("intake", ""))
     check("无需求时保持默认提示词", no_req["prompt"] == base)
     check("无需求时 requirements 为空", no_req["requirements"] == "")
+    check("无需求时仍保留图案锁", "PRINT LOCK" in no_req["prompt"])
 
     rework = asyncio.run(collect("rework", "把图案改小 10%"))
     check("返工提示词是 REVISION REQUEST", rework["prompt"].startswith("REVISION REQUEST"))

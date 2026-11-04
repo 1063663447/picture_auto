@@ -31,6 +31,16 @@ NON_IMAGE_HINT = re.compile(r"(video|veo|seedance|kling|sora|animate|tts|whisper
 MODEL_CACHE_TTL = 600.0
 
 
+def _resolve_pattern_mode(explicit: str, requirement: str = "") -> str:
+    """图案策略：显式传的优先，其次从需求里推断，最后回到「逐像素保留」。"""
+    from .prompts import PATTERN_MODES, detect_pattern_mode
+
+    mode = (explicit or "").strip().lower()
+    if mode in PATTERN_MODES:
+        return mode
+    return detect_pattern_mode(requirement) or "preserve"
+
+
 class WorkbenchError(Exception):
     pass
 
@@ -296,6 +306,8 @@ class Workbench:
         send_reference: bool = True,
         input_fidelity: str | None = None,
         extra_requirements: str = "",
+        pattern_mode: str = "",
+        pattern_brief: str = "",
         account: str = "",
     ) -> Job:
         if not uploads:
@@ -372,6 +384,8 @@ class Workbench:
             ),
             "max_bytes": self.skill.max_bytes,
             "extra_requirements": " ".join((extra_requirements or "").split()),
+            "pattern_mode": _resolve_pattern_mode(pattern_mode, extra_requirements),
+            "pattern_brief": " ".join((pattern_brief or "").split()),
             "account": str(account or ""),
             "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto")),
         }
@@ -838,6 +852,7 @@ class Workbench:
         refiner: str | None = None,
         prompt_override: str = "",
         account: str = "",
+        pattern_mode: str = "",
     ) -> Job:
         """以选中的成品为参考图返工（改图）。"""
         source_job = self.get_job(source_job_id)
@@ -856,6 +871,7 @@ class Workbench:
         rework_cfg = defaults.get("rework") or {}
         chosen_model = str(model or source_job.params.get("model") or
                            provider_obj.cfg.get("model") or "")
+        rework_mode = _resolve_pattern_mode(pattern_mode, instruction)
 
         job_id = new_job_id()
         root = self.job_dir(job_id)
@@ -887,6 +903,7 @@ class Workbench:
                     refiner=refiner or str(rework_cfg.get("refiner") or "template"),
                     cfg=rework_cfg.get("llm") or {},
                     env=self.env,
+                    pattern_mode=rework_mode,
                 )
             refiners.add(used)
             new_task = Task(
@@ -908,6 +925,7 @@ class Workbench:
                     task_id=task.id,
                     garment=garment.display_name,
                     color=task.color_name,
+                    pattern_mode=rework_mode,
                 )
             )
 
@@ -948,6 +966,7 @@ class Workbench:
             "source_tasks": [t.id for t in selected],
             "brief": briefs[0] if briefs else "",
             "account": str(account or source_job.params.get("account") or ""),
+            "pattern_mode": rework_mode,
         }
 
         params["estimate"] = self.pricer.estimate(

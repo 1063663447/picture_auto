@@ -157,9 +157,21 @@
         </div>
         <div class="grid2">
           <div class="field">
+            <span class="lbl">图案处理（默认照抄原图）</span>
+            <select id="patternMode">
+              <option value="">自动 · 按需求判断</option>
+              <option value="preserve">图案逐像素保留（最安全）</option>
+              <option value="per_color_variant">每个颜色一套不同图案</option>
+              <option value="replace">换成新图案（在需求里写清）</option>
+              <option value="free">图案可自由重绘</option>
+            </select>
+          </div>
+          <div class="field">
             <span class="lbl">实际出图尺寸</span>
             <input type="text" id="sizePreview" readonly />
           </div>
+        </div>
+        <div class="grid2">
           <div class="field">
             <span class="lbl">输出格式</span>
             <select id="outputFormat">
@@ -167,6 +179,10 @@
               <option value="jpg">JPG</option>
               <option value="webp">WEBP</option>
             </select>
+          </div>
+          <div class="field">
+            <span class="lbl">图案策略提示</span>
+            <input type="text" id="patternHint" readonly />
           </div>
         </div>
         <label class="check"><input type="checkbox" id="sendReference" checked /><span>同时发送颜色参考图</span></label>
@@ -337,6 +353,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=5.2.1"></script>
+<script src="/app.js?v=5.3.0"></script>
 </body>
 </html>

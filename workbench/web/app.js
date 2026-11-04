@@ -125,6 +125,22 @@
   function currentAspect() {
     return $("aspect") ? $("aspect").value : "auto";
   }
+  // 图案策略：空字符串 = 让后端按需求自动判断
+  function currentPatternMode() {
+    return $("patternMode") ? $("patternMode").value : "";
+  }
+  function renderPatternHint() {
+    const el = $("patternHint");
+    if (!el) return;
+    const map = {
+      "": "按需求自动判断（说了改图案就放开图案锁）",
+      preserve: "图案逐像素照抄，只换面料底色",
+      per_color_variant: "每个颜色各生成一套图案，不复用同一张图",
+      replace: "整批换成需求里描述的新图案",
+      free: "图案可重绘，其余元素仍锁定",
+    };
+    el.value = map[currentPatternMode()] ?? "";
+  }
   function currentTierChoice() {
     return $("sizeTier") ? $("sizeTier").value : "1K";
   }
@@ -449,6 +465,7 @@
   }
 
   function renderModelLabels() {
+    renderPatternHint();
     const size = currentSize();
     const tier = tierFor(size);
     const auto = currentAspect() === "auto";
@@ -707,6 +724,7 @@
         setSelect("sizeTier", "1K");
       }
     }
+    setSelect("patternMode", restore("patternMode", state.defaults.pattern_mode || ""));
     setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
     $("sendReference").checked = restore("sendReference", true);
@@ -716,6 +734,7 @@
   function saveSettings() {
     store("aspect", currentAspect());
     store("sizeTier", currentTierChoice());
+    if ($("patternMode")) store("patternMode", $("patternMode").value);
     store("quality", $("quality").value);
     store("outputFormat", $("outputFormat").value);
     store("sendReference", $("sendReference").checked);
@@ -751,6 +770,7 @@
       form.append("size", currentSize());
       form.append("quality", $("quality").value);
       form.append("output_format", $("outputFormat").value);
+      form.append("pattern_mode", currentPatternMode());
       form.append("send_reference", $("sendReference").checked ? "true" : "false");
       if (extraRequirements) form.append("extra_requirements", extraRequirements);
       form.append("start", "true");
@@ -1095,9 +1115,20 @@
       const data = await api("/api/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ garment_type: state.garment, color }),
+        body: JSON.stringify({
+          garment_type: state.garment,
+          color,
+          requirement: state.requirements || "",
+          pattern_mode: currentPatternMode(),
+        }),
       });
-      $("promptBody").textContent = `【一次到位】\n\n${data.single_pass}\n\n【负面提示词】\n\n${data.negative}`;
+      const modeLabel = (data.pattern_modes || {})[data.pattern_mode] || data.pattern_mode || "";
+      const head = [
+        `【一次到位】图案策略：${modeLabel}`,
+        state.requirements ? `【本次需求】${state.requirements}` : "【本次需求】无（按默认规范）",
+      ].join("\n");
+      $("promptBody").textContent =
+        `${head}\n\n${data.single_pass}\n\n【负面提示词】\n\n${data.negative}`;
       openDrawer("prompt");
     } catch (err) { toast("bad", err.message); }
   }
@@ -1442,6 +1473,7 @@
       payload.quality = $("quality").value;
       payload.output_format = $("outputFormat").value;
     }
+    payload.pattern_mode = currentPatternMode();
     return payload;
   }
 
@@ -1486,6 +1518,7 @@
     form.append("size", currentSize());
     form.append("quality", $("quality").value);
     form.append("output_format", $("outputFormat").value);
+    form.append("pattern_mode", currentPatternMode());
     if (state.composedPrompt) form.append("prompt_override", state.composedPrompt);
     form.append("start", "true");
     $("harnessApply").disabled = true;
@@ -1535,7 +1568,7 @@
     });
     $("pickNone").addEventListener("click", () => { state.colors.clear(); renderColors(); });
 
-    ["aspect", "sizeTier", "quality", "outputFormat", "sendReference"].forEach((id) =>
+    ["aspect", "sizeTier", "patternMode", "quality", "outputFormat", "sendReference"].forEach((id) =>
       $(id).addEventListener("change", () => {
         saveSettings();
         renderModelLabels();

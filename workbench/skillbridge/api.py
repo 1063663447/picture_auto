@@ -358,7 +358,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
         color = None
         if body.get("color"):
             color = garment.color(str(body["color"]))
-        payload = prompts.preview(bench.skill, garment, color)
+        payload = prompts.preview(
+            bench.skill,
+            garment,
+            color,
+            requirement=str(body.get("requirement") or body.get("extra_requirements") or ""),
+            pattern_mode=str(body.get("pattern_mode") or ""),
+        )
         payload["ok"] = True
         return payload
 
@@ -383,6 +389,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         send_reference: bool = Form(True),
         input_fidelity: str = Form(""),
         extra_requirements: str = Form(""),
+        pattern_mode: str = Form(""),
+        pattern_brief: str = Form(""),
         start: bool = Form(True),
     ):
         bench = wb(request)
@@ -419,6 +427,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
             send_reference=send_reference,
             input_fidelity=input_fidelity,
             extra_requirements=extra_requirements,
+            pattern_mode=pattern_mode,
+            pattern_brief=pattern_brief,
             account=current_account(request),
         )
         if start:
@@ -562,6 +572,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 draft_id=draft_id,
                 job_id=job_id,
                 task_ids=task_ids,
+                pattern_mode=str(body.get("pattern_mode") or ""),
+                pattern_modes=list(prompts.PATTERN_MODES),
             )
 
             async def tool_list_models() -> str:
@@ -630,6 +642,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     quality=str(body.get("quality") or "high"),
                     output_format=str(body.get("output_format") or "png"),
                     extra_requirements=extra,
+                    pattern_mode=str(ctx.pattern_mode or body.get("pattern_mode") or ""),
+                    pattern_brief=str(body.get("pattern_brief") or ""),
                     account=current_account(request),
                 )
                 bench.start(job.id)
@@ -837,6 +851,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         timeout_sec: float | None = Form(None),
         refiner: str = Form(""),
         prompt_override: str = Form(""),
+        pattern_mode: str = Form(""),
         start: bool = Form(True),
     ):
         bench = wb(request)
@@ -853,6 +868,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             refiner=refiner or None,
             prompt_override=prompt_override,
             account=current_account(request),
+            pattern_mode=pattern_mode,
         )
         if start:
             bench.start(job.id)

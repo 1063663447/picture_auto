@@ -36,10 +36,18 @@ MAX_IMAGES = 3
 
 SYSTEM_PROMPT = """你是服装电商改图工作台的 AI 助手，直接和运营对话，并可以调用工具完成操作。
 
+**最高原则：用户的要求优先于 skill 的默认规则。**
+默认规范是「图案逐像素保留、只换面料底色」——那只是默认值，不是铁律。
+用户如果说"每个颜色换不同的图案""把图案换成 XX""重画印花"，就按用户说的做：
+不要用"跟硬规则冲突"来拒绝、不要劝他改需求，最多用一句话说明代价
+（例如图案会被模型重新生成、原图分辨率低时字容易走样），然后照常开工。
+需要时调用 set_requirements 时把 pattern_mode 一起设上
+（preserve=照抄图案 / per_color_variant=每色一套新图案 / replace=换成新图案 / free=随便重画）。
+
 你的职责：
 1. 开工前问清楚这一批有没有特殊要求；没有就明确说"按默认规范"，不要自己加戏。
-2. 有要求时：先调用 inspect_images 看清这批图片，再判断要求是否与 skill 的硬约束冲突
-   （图案必须逐像素保留、人物/背景/机位/光线不动、2MB 以内、保持原比例）。
+2. 有要求时：先调用 inspect_images 看清这批图片，再把要求翻译成生图模型能执行的约束。
+   默认锁定的部分：人物/背景/机位/光线/比例不变。图案是否锁死由 pattern_mode 决定。
 3. 需要报价就调用 list_image_models / estimate_cost，不要自己编价格。
 4. **用户说「开工 / 跑 / 确认 / 开始 / 提交 / 就这样 / 直接做」等明确同意时，立刻调用
    submit_generation（返工则 submit_rework），不要再多问一遍。**只有确实缺少关键信息
@@ -47,6 +55,8 @@ SYSTEM_PROMPT = """你是服装电商改图工作台的 AI 助手，直接和运
    **提问不是要求**：像"这图能改吗""大概多少钱""会不会糊"只是询问，不要写进提示词。
    需要用户点头时，先用 set_requirements 记下提炼后的要求（没有就留空），再等确认。
 5. 只在用户还没表态时给建议，不要替用户做决定；用户已表态就执行。
+6. 说"不能做"之前先想一遍：能不能用参数做到？能不能换个说法做到？
+   只有技术上真的做不到（比如要求模型输出 4K 但接口上限 1024）才拒绝，并给出替代方案。
 
 风格：中文、口语、短句；不要 markdown 标题，不要复述整段提示词；
 每次回复控制在 6 行以内，把"会动什么 / 锁死什么"讲清楚即可。
@@ -135,11 +145,21 @@ TOOL_DEFS = [
                 "记下这次要写入提示词的特殊要求：必须是提炼后的一句话执行要求，"
                 "绝不能原样抄用户的提问/寒暄。当你已理解要求、等用户点头开工时调用。"
                 "用户没有任何特殊要求时不要调用（留空即默认规范）。"
+                "如果用户要改图案（每色一套 / 换成新图案），把 pattern_mode 一起设好。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string", "description": "提炼后的要求，中文一句话"}
+                    "text": {"type": "string", "description": "提炼后的要求，中文一句话"},
+                    "pattern_mode": {
+                        "type": "string",
+                        "enum": ["preserve", "per_color_variant", "replace", "free"],
+                        "description": (
+                            "图案策略：preserve=图案逐像素照抄（默认）；"
+                            "per_color_variant=每个颜色一套不同图案；"
+                            "replace=整批换成新图案；free=图案可自由重绘"
+                        ),
+                    },
                 },
                 "required": ["text"],
             },
@@ -167,6 +187,8 @@ class AgentContext:
     model: str = ""
     base_prompt: str = ""
     requirements: str = ""
+    pattern_mode: str = ""
+    pattern_modes: list[str] = field(default_factory=list)
     draft_id: str = ""
     job_id: str = ""
     task_ids: list[str] = field(default_factory=list)
@@ -226,7 +248,26 @@ async def _call_tool(ctx: AgentContext, name: str, args: dict) -> str:
             return await ctx.estimate(model, count)
         if name == "set_requirements":
             ctx.requirements = " ".join(str(args.get("text") or "").split())
-            return f"已记录要求：{ctx.requirements or '（无，按默认规范）'}"
+            mode = str(args.get("pattern_mode") or "").strip().lower()
+            allowed = ctx.pattern_modes or ["preserve", "per_color_variant", "replace", "free"]
+            if mode in allowed:
+                ctx.pattern_mode = mode
+            elif not mode:
+                from .prompts import detect_pattern_mode
+
+                detected = detect_pattern_mode(ctx.requirements)
+                if detected:
+                    ctx.pattern_mode = detected
+            note = {
+                "preserve": "图案逐像素照抄",
+                "per_color_variant": "每个颜色一套不同图案",
+                "replace": "换成新图案",
+                "free": "图案可自由重绘",
+            }.get(ctx.pattern_mode, "默认（图案照抄）")
+            return (
+                f"已记录要求：{ctx.requirements or '（无，按默认规范）'}；"
+                f"图案策略：{note}"
+            )
         if name == "submit_generation" and ctx.submit_generation:
             return await ctx.submit_generation(str(args.get("extra_requirements") or ""))
         if name == "submit_rework" and ctx.submit_rework:

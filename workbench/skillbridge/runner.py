@@ -76,8 +76,15 @@ class JobRunner:
         self.send_reference = bool(params.get("send_reference", True)) and provider.max_images > 1
         self.output_format = str(params.get("output_format") or "auto").lower()
         self.input_fidelity = str(params.get("input_fidelity") or "").strip() or None
-        self.negative = prompts.full_negative(self.skill)
         self.extra_requirements = str(params.get("extra_requirements") or "").strip()
+        # 图案策略：用户说了算（preserve / per_color_variant / replace / free）
+        self.pattern_mode = str(params.get("pattern_mode") or "").strip().lower()
+        if self.pattern_mode not in prompts.PATTERN_MODES:
+            self.pattern_mode = (
+                prompts.detect_pattern_mode(self.extra_requirements) or "preserve"
+            )
+        self.pattern_brief = str(params.get("pattern_brief") or "").strip()
+        self.negative = prompts.full_negative(self.skill, self.pattern_mode)
         self.limiter = RateLimiter(int(params.get("rpm") or 0))
         self.sem = asyncio.Semaphore(self.concurrency)
         self.provider_sem = provider_sem
@@ -161,10 +168,15 @@ class JobRunner:
             for color in self.colors:
                 task_id = f"{base}__{color.label}"
                 if self.mode in {"two_phase", "recolor_only"}:
-                    prompt = prompts.build_recolor_only(color)
+                    prompt = prompts.build_recolor_only(color, pattern_mode=self.pattern_mode)
                 else:
                     prompt = prompts.build_single_pass(
-                        self.skill, self.garment, color, self.extra_requirements
+                        self.skill,
+                        self.garment,
+                        color,
+                        self.extra_requirements,
+                        pattern_mode=self.pattern_mode,
+                        pattern_brief=self.pattern_brief,
                     )
                 tasks.append(
                     Task(
