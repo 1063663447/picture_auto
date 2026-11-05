@@ -230,6 +230,28 @@ def main() -> int:
               any("接口上限" in entry.get("msg", "") for entry in job_d.log),
               str([e.get("msg") for e in job_d.log][:3]))
 
+        print("[2.5] unlimited 接口：不排队、不按上限收并发（只有 65535 网关才限流排队）")
+        bench_u = build_bench("pc-u", "", limit=20)
+        bench_u.providers["mock"].cfg["unlimited"] = True
+        bench_u.providers["mock"].cfg["max_concurrency"] = 2
+        job_u = create(bench_u, upload, colors)
+        runner_u = runner_for(bench_u, job_u)
+        check("unlimited 接口不走闸门（gate=None）", runner_u.gate is None,
+              type(runner_u.gate).__name__ if runner_u.gate else "None")
+        check("并发等于任务数（不被 max_concurrency=2 收口）",
+              job_u.params["concurrency"] == len(job_u.tasks),
+              f"{job_u.params['concurrency']} / tasks={len(job_u.tasks)}")
+        check("runner 也拿到同样并发", runner_u.concurrency == len(job_u.tasks),
+              f"{runner_u.concurrency}")
+        check("日志说明不限并发不排队",
+              any("不限并发" in entry.get("msg", "") for entry in job_u.log),
+              str([e.get("msg") for e in job_u.log][:3]))
+        bench_u.providers["mock"].cfg.pop("unlimited", None)
+        job_l = create(bench_u, upload, colors)
+        runner_l = runner_for(bench_u, job_l)
+        check("去掉 unlimited 后又按 max_concurrency 收口", job_l.params["concurrency"] == 2,
+              str(job_l.params["concurrency"]))
+
         print("[3] 阀门挂了 + fail_open → 退回本机并发，照样出图")
         gate_down = build_bench("pc-d", "http://127.0.0.1:9/", limit=20)
         job_e = create(gate_down, upload, colors)

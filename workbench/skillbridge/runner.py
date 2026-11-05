@@ -111,10 +111,13 @@ class JobRunner:
         self.mode = str(params.get("mode") or "single_pass")
         # 「并发数」已从界面去掉：默认**全推**，超过飞书闸门额度 / 接口上限的自动排队，
         # 排队位置来自飞书表轮询（见 _queue_payload）。
+        # unlimited 的接口（实测能扛）不设本机并发上限；其它接口仍有安全上限
+        self.unlimited = bool(provider.setting("unlimited", False))
+        limit = 1000 if self.unlimited else 128
         try:
-            self.concurrency = max(1, min(128, int(params.get("concurrency") or 4)))
+            self.concurrency = max(1, min(limit, int(params.get("concurrency") or 4)))
         except (TypeError, ValueError):
-            self.concurrency = max(1, min(128, len(job.tasks) or 4))
+            self.concurrency = max(1, min(limit, len(job.tasks) or 4))
         self.max_retries = max(1, int(params.get("max_retries") or 3))
         # 图片接口常见 60~120s；超时往往代表上游仍在跑（可能已出图），自动重试会重复计费
         self.retry_on_timeout = bool(params.get("retry_on_timeout", False))
@@ -141,7 +144,11 @@ class JobRunner:
         self.limiter = RateLimiter(int(params.get("rpm") or 0))
         # 本机并发不能超过接口实测能吃的并发（terra 实测 20）；闸门额度不在这里收，
         # 因为「超过额度就排队」本来就该在飞书表里排，界面才看得见前方还有几张
-        self.max_concurrency = max(1, int(provider.setting("max_concurrency", 20) or 20))
+        # unlimited（实测能扛的接口，如 a6api）→ 不按接口上限收并发，也不排队
+        if self.unlimited:
+            self.max_concurrency = self.concurrency
+        else:
+            self.max_concurrency = max(1, int(provider.setting("max_concurrency", 20) or 20))
         if self.concurrency > self.max_concurrency:
             job.add_log(
                 f"并发从 {self.concurrency} 收到接口上限 {self.max_concurrency}（其余排队）",

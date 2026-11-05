@@ -218,6 +218,11 @@ class Workbench:
         """
         if not self.gate_config.enabled:
             return None
+        # 这个接口标了 unlimited（实测不排队也没事）→ 完全不走闸门
+        if provider is not None and (
+            provider.setting("unlimited", False) or provider.setting("skip_gate", False)
+        ):
+            return None
         name = provider.name if provider is not None else "-"
         gate = self._gates.get(name)
         if gate is not None:
@@ -597,22 +602,31 @@ class Workbench:
             shutil.rmtree(root, ignore_errors=True)
             raise WorkbenchError(f"任务规划失败：{exc}") from exc
 
-        # 并发不再让用户选：默认一次全推，超过接口上限/闸门额度的自动排队
+        # 并发不再让用户选：默认一次全推，超过接口上限/闸门额度的自动排队；
+        # 标了 unlimited 的接口（a6api 这种实测能扛的）既不限并发也不排队
+        unlimited = bool(provider_obj.setting("unlimited", False))
         if str(concurrency).strip().lower() in {"", "auto", "none"} or concurrency is None:
             max_conc = max(1, int(provider_obj.setting("max_concurrency", 20) or 20))
             wanted = max(1, min(200, len(job.tasks)))
-            job.params["concurrency"] = min(wanted, max_conc)
+            if unlimited:
+                job.params["concurrency"] = wanted
+                job.add_log(
+                    f"全部提交：{wanted} 张一次发完（{provider_obj.name} 不限并发、不排队）"
+                )
+                max_conc = wanted
+            else:
+                job.params["concurrency"] = min(wanted, max_conc)
             gate_limit = int(
                 ((self.config.get("defaults") or {}).get("gate") or {}).get("limit") or 0
             )
             queue_hint = f"，闸门额度 {gate_limit}" if gate_limit else ""
-            if wanted > max_conc:
+            if not unlimited and wanted > max_conc:
                 job.add_log(
                     f"全部提交：{wanted} 张，同时最多 {max_conc} 张在跑{queue_hint}，"
                     f"其余 {wanted - max_conc} 张排队（界面会显示「前方还有 xx 个任务」）",
                     level="warn",
                 )
-            else:
+            elif not unlimited:
                 job.add_log(
                     f"全部提交：{wanted} 张一起发（接口上限 {max_conc}{queue_hint}，超了自动排队）"
                 )
@@ -1463,6 +1477,8 @@ class Workbench:
         Set `global_concurrency` on a provider in config.json when several jobs may
         run at once and the upstream account has a hard concurrency limit.
         """
+        if provider.setting("unlimited", False):
+            return None          # 实测不排队的接口：不再加共享上限
         cap = int(provider.setting("global_concurrency", 0) or 0)
         if cap <= 0:
             # 没单独配就用接口上限：多人同时提交时，几个任务共享同一池子

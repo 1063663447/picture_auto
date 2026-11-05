@@ -242,11 +242,13 @@
       "rpm": 0,
       "input_fidelity": "high",
       "show_in_ui": true,
-      "max_concurrency": 100,
-      "global_concurrency": 100,
-      "gate_limit": 100,
-      "note": "网关定价接口可读：GET /api/pricing（按次 model_price）、GET /v1/dashboard/billing/usage（累计 USD）；真实单价请在 pricing.json 或本接口的 model_prices 里自己填，例如 {\"gpt-image-2.5-sunburst\": 0.65}",
-      "model_prices": {}
+      "max_concurrency": 0,
+      "global_concurrency": 0,
+      "gate_limit": 0,
+      "note": "备用接口：实测 100 并发 100/100 成功、0 限流 → 标 unlimited（不排队、不限并发）。价格请自行在 model_prices / pricing.json 填",
+      "model_prices": {},
+      "unlimited": true,
+      "skip_gate": true
     }
   },
   "feishu": {

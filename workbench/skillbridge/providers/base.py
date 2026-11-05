@@ -220,6 +220,7 @@ class Provider:
 
     def info(self) -> dict:
         ok, reason = self.ready()
+        unlimited = bool(self.setting("unlimited", False)) or bool(self.setting("skip_gate", False))
         return {
             "name": self.name,
             "kind": self.kind,
@@ -230,7 +231,10 @@ class Provider:
             "max_images": self.max_images,
             "supports_negative": self.supports_negative,
             "default_concurrency": int(self.setting("concurrency", self.default_concurrency)),
-            "max_concurrency": int(self.setting("max_concurrency", 20) or 20),
+            # unlimited = 该接口不排队、并发不限（实测能扛的接口才开）：上限报 0
+            "max_concurrency": 0 if unlimited else int(self.setting("max_concurrency", 20) or 20),
+            "unlimited": unlimited,
+            "skip_gate": unlimited,
             "default_rpm": int(self.setting("rpm", 0) or 0),
             "notes": self.notes,
         }

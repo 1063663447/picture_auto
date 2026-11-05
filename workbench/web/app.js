@@ -677,6 +677,12 @@
     const el = $("gateHint");
     if (!el) return;
     const cfg = (info && info.config) || {};
+    if (state.providerUnlimited) {
+      el.textContent = "该接口不排队 · 并发不限（一次全推）";
+      el.dataset.state = "ok";
+      el.title = "这个接口实测能扛高并发，所以不占飞书闸门的槽位，提交多少张就同时发多少张";
+      return;
+    }
     const cap = state.providerCap ? `接口上限 ${state.providerCap}` : "";
     const isQueue = (cfg.provider || "http") === "feishu";
     if (!cfg.enabled) {
@@ -801,6 +807,7 @@
       store("provider", select.value);
       applyProvider();
       loadModels(select.value);
+      loadGate();
     });
     applyProvider();
   }
@@ -808,7 +815,8 @@
   function applyProvider() {
     const provider = state.providers.find((p) => p.name === $("provider").value);
     if (!provider) return;
-    state.providerCap = Number(provider.max_concurrency || 20);
+    state.providerUnlimited = Boolean(provider.unlimited);
+    state.providerCap = state.providerUnlimited ? 0 : Number(provider.max_concurrency || 20);
     $("providerState").textContent = provider.ready ? "就绪" : provider.reason;
     $("providerState").style.color = provider.ready ? "var(--primary)" : "var(--danger)";
     // 参考图与负面词策略固定，界面上不再展示说明
