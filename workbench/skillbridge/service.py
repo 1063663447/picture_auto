@@ -609,10 +609,19 @@ class Workbench:
             max_conc = max(1, int(provider_obj.setting("max_concurrency", 20) or 20))
             wanted = max(1, min(200, len(job.tasks)))
             if unlimited:
-                job.params["concurrency"] = wanted
-                job.add_log(
-                    f"全部提交：{wanted} 张一次发完（{provider_obj.name} 不限并发、不排队）"
-                )
+                # 可选软上限：不排队，但单批别一次压太多（100 并发时网关排队会让单张等 80~130s）
+                soft = int(provider_obj.setting("batch_concurrency", 0) or 0)
+                conc = wanted if soft <= 0 else max(1, min(wanted, soft))
+                job.params["concurrency"] = conc
+                if conc < wanted:
+                    job.add_log(
+                        f"全部提交：{wanted} 张（{provider_obj.name} 不排队，"
+                        f"本批同时发 {conc} 张，其余等前一批）"
+                    )
+                else:
+                    job.add_log(
+                        f"全部提交：{wanted} 张一次发完（{provider_obj.name} 不限并发、不排队）"
+                    )
                 max_conc = wanted
             else:
                 job.params["concurrency"] = min(wanted, max_conc)
