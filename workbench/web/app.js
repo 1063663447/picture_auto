@@ -566,13 +566,10 @@
       }).join("");
       const chips = colors.map((color) => {
         const on = item.colors.has(color.label);
-        // 有款式表效果图就显示效果图缩略（生图时会连同原图一起发出去），没有就退回落色块
-        const marker = color.effect
-          ? `<img class="chip-thumb" src="${esc(color.effect)}" alt="" loading="lazy"/>`
-          : `<span class="dot" style="background:${esc(color.hex)}"></span>`;
+        // 只用色块：效果图是给模型的，不在面板里铺图（之前铺缩略图把卡片顶变形了）
         return `<button class="chip${on ? " sel" : ""}" type="button" data-color="${esc(color.label)}"
           title="${esc(color.name_zh)} ${esc(color.hex)}${color.effect ? " · 带效果图" : ""}" aria-pressed="${on}">
-          ${marker}${esc(color.name_zh)}</button>`;
+          <span class="dot" style="background:${esc(color.hex)}"></span>${esc(color.name_zh)}</button>`;
       }).join("");
       return `<div class="style-block" data-index="${index}">
         <div class="style-top">

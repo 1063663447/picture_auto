@@ -278,8 +278,6 @@ body::before {
   font-size: 10.5px; color: var(--muted); transition: 0.22s var(--ease);
 }
 #colors .chip .dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid #ffffff1f; box-shadow: none; }
-/* 款式表效果图缩略（生图时连同原图一起发出去） */
-#colors .chip .chip-thumb { width: 18px; height: 18px; border-radius: 6px; object-fit: cover; background: #ffffff10; border: 1px solid #ffffff1f; }
 #colors .chip:hover { border-color: #b5a0ff55; color: #ded4ff; transform: translateY(-1px); }
 #colors .chip.sel {
   border-color: #c2aaff; background: #a488ff17; color: #e9e1ff;
