@@ -1183,6 +1183,13 @@ class Workbench:
         rework_cfg = defaults.get("rework") or {}
         chosen_model = str(model or source_job.params.get("model") or
                            provider_obj.cfg.get("model") or "")
+        # 换模型改图：成品当参考图交给另一个模型，提示词里要明说别整张重画
+        source_provider = str(source_job.params.get("provider") or "")
+        source_model = str(source_job.params.get("model") or "")
+        model_switched = bool(
+            (source_provider and provider_obj.name != source_provider)
+            or (source_model and chosen_model and chosen_model != source_model)
+        )
         rework_mode = _resolve_pattern_mode(pattern_mode, instruction)
 
         job_id = new_job_id()
@@ -1218,6 +1225,9 @@ class Workbench:
                     pattern_mode=rework_mode,
                 )
             refiners.add(used)
+            if model_switched:
+                # 参考图是上一个模型出的：明确交底，别让新模型把它当素材重新生成
+                prompt = f"{prompt}{refine.SWITCH_MODEL_CLAUSE}".strip()
             new_task = Task(
                 id=f"{folder}__{task.color}-v2",
                 item=folder,
@@ -1276,6 +1286,9 @@ class Workbench:
             "refiner": ",".join(sorted(refiners)) or "template",
             "source_job": source_job_id,
             "source_tasks": [t.id for t in selected],
+            "source_provider": source_provider,
+            "source_model": source_model,
+            "model_switched": model_switched,
             "brief": briefs[0] if briefs else "",
             "account": str(account or source_job.params.get("account") or ""),
             "pattern_mode": rework_mode,
@@ -1299,7 +1312,16 @@ class Workbench:
         job.root = root
         job.tasks = tasks
         job.total = len(tasks)
-        job.add_log(f"改图任务：{len(tasks)} 张，接口 {provider_obj.name}，提示词由 {params['refiner']} 生成")
+        job.add_log(
+            f"改图任务：{len(tasks)} 张，接口 {provider_obj.name}，模型 {chosen_model or '默认'}，"
+            f"提示词由 {params['refiner']} 生成"
+        )
+        if model_switched:
+            job.add_log(
+                f"换模型重画：{source_provider or '?'} / {source_model or '?'} → "
+                f"{provider_obj.name} / {chosen_model or '默认'}（成品作为参考图交给新模型）",
+                level="warn",
+            )
         job.add_log(f"用户需求：{instruction}")
         job.save()
         self.jobs[job_id] = job

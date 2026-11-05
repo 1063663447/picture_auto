@@ -28,6 +28,15 @@ REWORK_TEMPLATE = (
     "brief for context only — do not re-execute what is already correct: {original_prompt}"
 )
 
+#: 换模型改图时追加：明确「这张图是参考图/上一步成品」，别让新模型整张重画
+SWITCH_MODEL_CLAUSE = (
+    " CROSS-MODEL HANDOFF — the attached image was rendered by a different model and is the "
+    "reference to edit: reproduce its garment, printed artwork registration and scale, fabric "
+    "colour, person, pose, background and framing exactly as they are, then apply only the "
+    "requested revision. Do not reinterpret the photo, do not re-invent the artwork, do not "
+    "change the crop or colour balance."
+)
+
 LLM_SYSTEM = (
     "You are a prompt engineer for an image-editing model used by an apparel e-commerce team. "
     "Rewrite the operator's revision request into ONE precise English image-editing prompt.\n"

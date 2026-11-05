@@ -1829,6 +1829,7 @@
       $("harnessApply").textContent = "确认返工";
       $("harnessDefault").textContent = "取消";
       renderQuick(QUICK_REWORK);
+      await initReworkModels();
       chatBubble("assistant", `要返工 ${state.reworkTargets.length} 张。说说要改什么（哪一处、往哪个方向），我先看清楚再动手。`);
     } else {
       try { await ensureDraft(); }
@@ -1853,6 +1854,8 @@
         `这批：${styleText} · ${items} 图 × 共 ${colors} 色，${model}，${cost}。\n有特殊要求可以直接说，也可以让我先看图判断风险。`
       );
     }
+    // 只有改图才显示「换模型」那一行
+    $("reworkModel").hidden = mode !== "rework";
     $("harnessApply").disabled = true;
     openDrawer("harness");
     if (state.pendingBrief) {
@@ -1860,6 +1863,97 @@
       state.pendingBrief = "";
       $("harnessInput").focus();
     }
+  }
+
+  /* ------------------------------------------------- 改图：换模型 ---------- */
+  // 成品当参考图交给别的模型重画：默认跟原任务同接口同模型，选了别人才换
+  function sourceJobMeta() {
+    const job = state.job || {};
+    const params = job.params || {};
+    return {
+      provider: String(params.provider || ""),
+      model: String(params.model || ""),
+      size: String(params.size || "auto"),
+    };
+  }
+
+  async function initReworkModels() {
+    const meta = sourceJobMeta();
+    const providerSel = $("reworkProvider");
+    providerSel.innerHTML = "";
+    for (const provider of state.providers) {
+      const option = document.createElement("option");
+      option.value = provider.name;
+      option.textContent = provider.label;
+      providerSel.appendChild(option);
+    }
+    const wanted = state.providers.find((p) => p.name === meta.provider)
+      || state.providers.find((p) => p.ready)
+      || state.providers[0];
+    if (wanted) providerSel.value = wanted.name;
+    providerSel.onchange = () => loadReworkModels(providerSel.value, "");
+    await loadReworkModels(providerSel.value, meta.model);
+  }
+
+  async function loadReworkModels(providerName, preferred) {
+    const select = $("reworkModelSel");
+    select.disabled = true;
+    select.innerHTML = '<option value="">正在读取模型…</option>';
+    let rows = [];
+    try {
+      const data = await api(
+        `/api/models?provider=${encodeURIComponent(providerName)}&refresh=false`
+      );
+      rows = (data.models || []).filter((m) => m.image);
+    } catch (err) {
+      console.warn("改图模型拉取失败", err.message);
+    }
+    select.innerHTML = "";
+    if (!rows.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "（这个接口没有可用的图像模型）";
+      select.appendChild(option);
+    }
+    for (const model of rows) {
+      const option = document.createElement("option");
+      option.value = model.id;
+      option.textContent = model.id;
+      select.appendChild(option);
+    }
+    const keep = rows.find((m) => m.id === preferred) ? preferred : (rows[0] ? rows[0].id : "");
+    select.value = keep;
+    select.disabled = false;
+    select.onchange = () => renderReworkHint();
+    renderReworkHint();
+  }
+
+  function reworkChoice() {
+    const provider = $("reworkProvider").value;
+    const model = $("reworkModelSel").value;
+    return { provider, model };
+  }
+
+  function renderReworkHint() {
+    const hint = $("reworkModelHint");
+    if (!hint) return;
+    const count = state.reworkTargets.length;
+    const meta = sourceJobMeta();
+    const { provider, model } = reworkChoice();
+    const switched = (meta.provider && provider !== meta.provider)
+      || (meta.model && model !== meta.model);
+    const size = currentSize() || meta.size;
+    const info = model ? priceOf(model, size) : { unit: null };
+    const priceText = info.unit !== null && info.unit !== undefined
+      ? `预计 ${money(info.unit * Math.max(1, count), state.pricing.currency)}`
+        + `（${money(info.unit, state.pricing.currency)}/张）`
+      : "该模型未定价";
+    let head;
+    if (!switched) head = `沿用 ${model || "原模型"}`;
+    else if (meta.model) head = `换模型重画：${meta.model} → ${model || "未选"}`;
+    else head = `换成 ${model || "未选"} 重画`;
+    hint.textContent = `${head} · ${count} 张 · 成品作为参考图 · ${priceText}`;
+    hint.dataset.state = switched ? "switch" : "same";
   }
 
   async function streamHarness(payload) {
@@ -2040,11 +2134,15 @@
     if (!state.reworkTargets.length) { toast("bad", "没有选中成品"); return; }
     const instruction = ($("harnessInput").value || "").trim() || state.requirements ||
       "按 harness 分析结果调整";
+    const choice = reworkChoice();
+    const provider = choice.provider || $("provider").value;
+    const model = choice.model || currentModel();
+    if (!provider || !model) { toast("bad", "请选择改图用的接口和模型"); return; }
     const form = new FormData();
     for (const id of state.reworkTargets) form.append("task_ids", id);
     form.append("instruction", instruction);
-    form.append("provider", $("provider").value);
-    form.append("model", currentModel());
+    form.append("provider", provider);
+    form.append("model", model);
     form.append("size", currentSize());
     form.append("quality", $("quality").value);
     form.append("output_format", currentOutputFormat());

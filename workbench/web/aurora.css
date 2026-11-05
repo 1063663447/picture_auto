@@ -589,6 +589,24 @@ body::before {
 }
 .quick button:hover { background: #b5a0ff17; color: #e7dcff; }
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
+/* 改图换模型：抽屉里的一小块，和下面的输入框区分开 */
+.rework-model {
+  display: grid; gap: 4px; padding: 8px 10px; border-radius: 10px;
+  background: #b5a0ff0f; border: 1px solid #b5a0ff2e;
+}
+.rework-model[hidden] { display: none; }
+.rework-model .row2 { gap: 8px; }
+.rework-model .field { margin: 0; }
+.rework-model .field .lbl { font-size: 10px; color: #a9a1c6; }
+.rework-model select {
+  height: 30px; font-size: 11px; padding: 0 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: #12111d; color: #e5e1f3;
+}
+.rework-model .hint {
+  font-size: 10px; line-height: 1.5; color: #9f97bd;
+  white-space: normal; word-break: break-word;
+}
+.rework-model .hint[data-state="switch"] { color: #ffc98a; }
 .input-row textarea {
   flex: 1; min-height: 44px; max-height: 120px; padding: 9px 11px; resize: vertical;
   border-radius: 10px; border: 1px solid var(--line); background: #0f0e1a; color: #e5e1f3;
