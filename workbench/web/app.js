@@ -10,7 +10,7 @@
   const $ = (id) => document.getElementById(id);
   const TERMINAL = ["done", "partial", "failed", "canceled"];
   const STATUS = {
-    pending: "排队", running: "生成中", done: "完成",
+    pending: "等待", queued: "排队中", running: "生成中", done: "完成",
     failed: "失败", skipped: "跳过", canceled: "取消",
   };
   const TOOL_LABEL = {
@@ -1124,11 +1124,12 @@
     const queuedTotal = Number(queue.queued || 0);
     const limit = Number(queue.limit || 0);
     const running = Number(stats.running || 0);
+    const waiting = Number(stats.queued || 0) + Number(stats.pending || 0);
     const queueParts = [];
-    if (running) queueParts.push(`运行 ${running}`);
+    if (running) queueParts.push(`生成中 ${running}`);
     if (ahead > 0 && !TERMINAL.includes(job.status)) queueParts.push(`前方还有 ${ahead} 个任务`);
-    if (queuedTotal > 0 && limit) queueParts.push(`队列 ${queuedTotal} 张 / 额度 ${limit}`);
-    if (!queueParts.length && stats.pending) queueParts.push(`排队 ${stats.pending}`);
+    if (queuedTotal > 0 && limit) queueParts.push(`飞书队列 ${queuedTotal} 张 / 额度 ${limit}`);
+    if (!queueParts.length && waiting) queueParts.push(`排队 ${waiting}`);
     queueParts.push(`失败 ${stats.failed}`);
     if (job.error) queueParts.push(job.error);
     $("progressStats").textContent = queueParts.join(" · ");
@@ -1315,14 +1316,21 @@
     const status = task.status;
     if (entry.status !== status) {
       entry.el.classList.remove(
-        "st-pending", "st-running", "st-done", "st-failed", "st-skipped", "st-canceled"
+        "st-pending", "st-queued", "st-running", "st-done", "st-failed", "st-skipped", "st-canceled"
       );
       entry.el.classList.add(`st-${status}`);
       entry.status = status;
     }
     entry.el.classList.toggle("sel", state.selected.has(task.id));
 
-    const stateText = `${STATUS[status] || status}${task.duration ? ` ${task.duration}s` : ""}`;
+    // 排队中的图要说清楚「还差几个」，不能都显示成生成中
+    let stateText = `${STATUS[status] || status}`;
+    if (status === "queued") {
+      const ahead = Number(task.queue_ahead);
+      stateText = Number.isFinite(ahead) && ahead > 0 ? `排队中，还有 ${ahead} 个` : "排队中";
+    } else if (task.duration) {
+      stateText += ` ${task.duration}s`;
+    }
     if (entry.state.textContent !== stateText) entry.state.textContent = stateText;
 
     // 只有真的换了图（版本变化）才动 <img>：否则进度轮询会不停重新解码

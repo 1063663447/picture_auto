@@ -367,6 +367,16 @@ body::before {
 }
 .cardimg.st-done .state { border-color: #9aebdb66; color: #c7f4ec; }
 .cardimg.st-running .state { border-color: #f2c07866; color: #ffe0b0; }
+/* 排队中：琥珀色 + 呼吸灯，和「生成中」的扫描条明显区分 */
+.cardimg.st-queued .state { border-color: #ffb84d88; color: #ffdfae; background: #2a1f0fb3; }
+.cardimg.st-queued .state::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: #ffb84d; animation: queueDot 1.4s ease-in-out infinite;
+}
+@keyframes queueDot { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .cardimg.st-queued .state::before { animation: none; }
+}
 .cardimg.st-failed .state { border-color: #ff8f8f66; color: #ffd0d0; }
 .cardimg .pick {
   position: absolute; right: 10px; left: auto; top: 10px; z-index: 5;

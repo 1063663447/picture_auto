@@ -190,6 +190,12 @@ class JobRunner:
         self._last_save = now
         try:
             self.job.params["queue"] = self._queue_payload()
+            # 每张图自己的排队位置（界面卡片显示「排队中，还有 N 个」）
+            self.job.params["queue_tasks"] = {
+                key: {"ahead": int(note.get("ahead") or 0), "at": round(float(note.get("at") or 0), 1)}
+                for key, note in self._queue_notes.items()
+                if time.time() - float(note.get("at") or 0) <= 30
+            }
             self.job.save()
         except OSError:
             pass
@@ -208,15 +214,16 @@ class JobRunner:
         ]
         gate_ahead = min((int(note.get("ahead") or 0) for note in fresh), default=0)
         gate_queued = max((int(note.get("queued") or 0) for note in fresh), default=0)
-        pending = int(stats.get("pending") or 0)
+        waiting = int(stats.get("pending") or 0) + int(stats.get("queued") or 0)
         busy = int(stats.get("running") or 0)
-        if not pending and not busy:
-            return {"ahead": 0, "pending": 0, "running": 0, "active": False}
+        if not waiting and not busy:
+            return {"ahead": 0, "pending": 0, "queued": 0, "running": 0, "active": False}
         return {
-            "ahead": max(pending, gate_ahead),
+            "ahead": max(waiting, gate_ahead),
             "gate_ahead": gate_ahead,
             "queued": gate_queued,
-            "pending": pending,
+            "pending": int(stats.get("pending") or 0),
+            "waiting": waiting,
             "running": busy,
             "limit": int(getattr(self.gate, "limit", 0) or 0),
             "active": True,
@@ -234,7 +241,7 @@ class JobRunner:
     def _mark_unfinished_canceled(self) -> None:
         """A cancelled asyncio task never reaches its own status update."""
         for task in self.job.tasks:
-            if task.status in {"pending", "running"}:
+            if task.status in {"pending", "queued", "running"}:
                 task.status = "canceled"
                 task.error = task.error or "已取消"
                 task.finished_at = time.time()
@@ -600,7 +607,8 @@ class JobRunner:
     async def _attempt(self, task: Task, request: EditRequest) -> None:
         if task.status == "running":
             return
-        self._set_status(task, "running", started_at=time.time())
+        # 先记「排队中」：真正发请求时才翻成「生成中」，否则界面上排队和生成分不清
+        self._set_status(task, "queued")
         attempt = 0
         last_error = "未知错误"
         while attempt < self.max_retries:
@@ -609,6 +617,8 @@ class JobRunner:
                 return
             attempt += 1
             task.attempts = attempt
+            if attempt > 1:
+                self._set_status(task, "queued")
             try:
                 data = await self._guarded_call(request, task)
                 rel = self._store(task, data)
@@ -676,6 +686,8 @@ class JobRunner:
             f"排队中：前方还有 {ahead} 个任务（闸门 {in_use}/{limit}，已等 {waited:.0f}s）",
             level="warn",
         )
+        # 立刻落盘一份排队数据：不然要等别的任务完成才刷新，界面上会「看不到排队」
+        self._save(force=True)
 
     async def _guarded_call(self, request: EditRequest, task: Task | None = None) -> bytes:
         """Every API call passes the rpm gate, the shared provider cap, and the job cap.
@@ -704,12 +716,20 @@ class JobRunner:
             if self.provider_sem is not None:
                 async with self.provider_sem:
                     async with self.sem:
+                        self._enter_running(task)
                         return await self._call(request)
             async with self.sem:
+                self._enter_running(task)
                 return await self._call(request)
         finally:
             if lease is not None:
                 await self.gate.release(lease)
+
+    def _enter_running(self, task: Task | None) -> None:
+        """真正拿到并发位、要发请求了：排队 → 生成中（计时从这里开始，不含排队时间）。"""
+        if task is None or task.status == "running":
+            return
+        self._set_status(task, "running", started_at=task.started_at or time.time())
 
     @staticmethod
     def _validate_image(data: bytes) -> None:

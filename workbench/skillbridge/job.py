@@ -113,7 +113,9 @@ class Task:
     garment: str = ""               # 款式 slug（多款式任务时用于区分目录/命名）
     garment_name: str = ""          # 款式展示名
     prompt: str = ""
-    status: str = "pending"          # pending|running|done|failed|skipped|canceled
+    #: pending（还没轮到）| queued（在飞书队列里排队）| running（正在生成）
+    #: | done | failed | skipped | canceled
+    status: str = "pending"
     attempts: int = 0
     error: str | None = None
     error_kind: str = ""             # "" | "rate_limit"（被并发限制打回来） | "error"
@@ -185,8 +187,8 @@ class Job:
         self.updated_at = time.time()
 
     def counts(self) -> dict:
-        stats = {"total": len(self.tasks), "pending": 0, "running": 0, "done": 0,
-                 "failed": 0, "skipped": 0, "canceled": 0}
+        stats = {"total": len(self.tasks), "pending": 0, "queued": 0, "running": 0,
+                 "done": 0, "failed": 0, "skipped": 0, "canceled": 0}
         for task in self.tasks:
             stats[task.status] = stats.get(task.status, 0) + 1
         stats["finished"] = stats["done"] + stats["skipped"]
@@ -219,6 +221,7 @@ class Job:
             ),
         }
         if with_tasks:
+            queue_map = (self.params or {}).get("queue_tasks") or {}
             items = []
             for task in self.tasks:
                 data = task.as_dict()
@@ -226,6 +229,9 @@ class Job:
                     # 提示词每条 3~4KB，轮询时必须去掉：10 张图每 1.5s 拉一次会白烧几十 KB/次
                     data.pop("prompt", None)
                 data["version"] = self._task_version(task)
+                # 这张图自己排在第几（飞书表轮询出来的），界面显示「排队中，还有 x 个」
+                note = queue_map.get(task.id) or {}
+                data["queue_ahead"] = note.get("ahead")
                 # thumb 是原图（下载/大图用），thumb_small 是列表用的缩略图（几 MB → 几十 KB）
                 data["error_kind"] = task.error_kind
                 data["garment"] = task.garment

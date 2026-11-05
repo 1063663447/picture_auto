@@ -131,6 +131,12 @@ class FeishuGate:
         self._slots_ready = False
         # 本进程取过的号（record_id）：算「我前面还有几张」要用
         self._own_tickets: set[str] = set()
+        # 本进程当前持有的租约：飞书 search 是最终一致的，刚写的租约可能读不到，
+        # 光信表就会「全以为有空位」→ 一起放行。本机这几个自己最清楚，用它兜底，
+        # 超过额度就老老实实取号排队（否则界面上永远看不到排队）。
+        self._local_leases: set[str] = set()
+        # 正在「读→抢」过程中的本机名额（抢到就转成 _local_leases）
+        self._local_reserved = 0
         self.stats = {
             "acquired": 0, "released": 0, "queue_rounds": 0,
             "waited_total": 0.0, "waited_max": 0.0,
@@ -239,6 +245,8 @@ class FeishuGate:
             ids = [slot.record_id for slot in tickets]
             if ticket_id in ids:
                 ahead_in_queue = ids.index(ticket_id)
+            # 刚取号还没出现在表里（索引延迟）：至少算我自己这张
+            queued = max(queued, 1)
         elif not queued:
             ahead_in_queue = 0
         return {
@@ -324,9 +332,14 @@ class FeishuGate:
                 )
                 free = [slot for slot in usables if not slot.busy(now, self.stale_sec)]
                 my_turn = self._my_turn(rows, ticket)
+                # 本机自己占着 / 正在占的几张（飞书读不到最新租约，这几张只有自己最清楚）
+                local_busy = len(self._local_leases) + self._local_reserved
+                in_use_now = max(
+                    sum(1 for slot in usables if slot.busy(now, self.stale_sec)), local_busy
+                )
 
-                if not free or not my_turn:
-                    # 没空位、或者有空位但前面还有人排队 → 取号/继续等
+                if not free or not my_turn or local_busy >= self.limit:
+                    # 没空位、或者有空位但前面还有人排队、或者本机额度已满 → 取号/继续等
                     if not ticket:
                         ticket = await asyncio.to_thread(self._make_ticket, job, task)
                     wait_now = time.monotonic()
@@ -341,8 +354,7 @@ class FeishuGate:
                         self.stats["ticket_waits"] += 1
                     if on_wait and (wait_now - last_note > 5 or attempt == 1):
                         last_note = wait_now
-                        in_use = sum(1 for slot in usables if slot.busy(now, self.stale_sec))
-                        info = self._queue_info(rows, ticket, in_use, wait_now - started)
+                        info = self._queue_info(rows, ticket, in_use_now, wait_now - started)
                         try:
                             on_wait(info)
                         except Exception:  # noqa: BLE001
@@ -359,22 +371,36 @@ class FeishuGate:
                 candidates = list(free)
                 random.shuffle(candidates)      # 打散：别都去抢 01 号坑
                 wrote_id = ""
+                reserved = False
                 async with self._lock:
-                    # 锁里只做「写占位」（很短），等索引 + 回读放到锁外
-                    for slot in candidates:
-                        try:
-                            await asyncio.to_thread(self._claim, slot, lease, job, task, note)
-                            wrote_id = slot.record_id
-                            break
-                        except Exception as exc:  # noqa: BLE001
-                            self.last_error = f"写闸门表失败：{exc}"
-                if wrote_id:
-                    if self.settle_ms:
-                        await asyncio.sleep(self.settle_ms / 1000.0)
-                    claimed = await self._verify(wrote_id, lease)
-                    if claimed is None:
-                        # 被别的机器抢走了（后写覆盖）→ 下一轮换坑
-                        self.stats["lost_race"] += 1
+                    # 锁里只做「写占位」，等索引 + 回读放到锁外；
+                    # 但「判断还有没有本地额度」必须在锁内做，否则几个任务同时读到
+                    # 「3 个空位」→ 一起抢同一批槽位 → 超发（真机踩过：limit=3 跑出 5）
+                    if len(self._local_leases) + self._local_reserved >= self.limit:
+                        continue
+                    self._local_reserved += 1
+                    reserved = True
+                try:
+                    async with self._lock:
+                        for slot in candidates:
+                            try:
+                                await asyncio.to_thread(self._claim, slot, lease, job, task, note)
+                                wrote_id = slot.record_id
+                                break
+                            except Exception as exc:  # noqa: BLE001
+                                self.last_error = f"写闸门表失败：{exc}"
+                    if wrote_id:
+                        if self.settle_ms:
+                            await asyncio.sleep(self.settle_ms / 1000.0)
+                        claimed = await self._verify(wrote_id, lease)
+                        if claimed is None:
+                            # 被别的机器抢走了（后写覆盖）→ 下一轮换坑
+                            self.stats["lost_race"] += 1
+                finally:
+                    if claimed is not None:
+                        self._local_leases.add(claimed.record_id)
+                    if reserved:
+                        self._local_reserved -= 1
 
                 if claimed is None:
                     await asyncio.sleep((self.poll_ms / 1000.0) * random.uniform(0.5, 0.9))
@@ -387,6 +413,7 @@ class FeishuGate:
                         claimed = None
                         break
                 if claimed is None:
+                    self._local_leases.discard(wrote_id)
                     self.stats["lost_race"] += 1
                     await asyncio.sleep((self.poll_ms / 1000.0) * random.uniform(0.5, 0.9))
                     continue
@@ -400,7 +427,11 @@ class FeishuGate:
                 self.stats["waited_total"] += waited
                 self.stats["waited_max"] = max(self.stats["waited_max"], waited)
                 self.last_error = ""
-                busy_now = sum(1 for slot in usables if slot.busy(now, self.stale_sec)) + 1
+                self._local_leases.add(claimed.record_id)
+                busy_now = max(
+                    sum(1 for slot in usables if slot.busy(now, self.stale_sec)),
+                    len(self._local_leases),
+                )
                 return Lease(
                     id=claimed.record_id,
                     limit=self.limit,
@@ -418,6 +449,7 @@ class FeishuGate:
     async def release(self, lease: Lease | None) -> None:
         if not lease or not lease.id:
             return
+        self._local_leases.discard(lease.id)
         try:
             await asyncio.to_thread(
                 self.client.update_record,
@@ -444,6 +476,7 @@ class FeishuGate:
         now = time.time()
         usables = [slot for slot in rows if 1 <= slot.index() <= self.limit]
         busy = [slot for slot in usables if slot.busy(now, self.stale_sec)]
+        in_use = max(len(busy), len(self._local_leases))
         # 队列：还有多少张在排队、我前面还有几张（全是飞书表里的实时行）
         tickets = sorted(self._tickets(rows), key=lambda slot: (slot.order_key(), slot.record_id))
         mine = [slot for slot in tickets if slot.record_id in self._own_tickets]
@@ -456,7 +489,7 @@ class FeishuGate:
         return GateStatus(
             ok=True,
             enabled=True,
-            in_use=len(busy),
+            in_use=in_use,
             limit=self.limit,
             checked_at=now,
             extra={
@@ -464,7 +497,7 @@ class FeishuGate:
                 "table_id": self.table_id,
                 "slots": len(usables),
                 "queued": len(tickets),
-                "ahead": ahead,
+                "ahead": max(ahead, in_use),
                 "holders": [slot.holder for slot in busy][:20],
                 "holder": self.cfg.holder,
                 "stats": {k: (round(v, 2) if isinstance(v, float) else v)

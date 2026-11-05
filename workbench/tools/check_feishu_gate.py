@@ -111,8 +111,12 @@ class FakeTable:
             self.history = self.history[-150:]
 
     def _refresh_peak(self) -> None:
-        busy = sum(1 for row in self.rows.values()
-                   if str(row["fields"].get("租约") or "").strip())
+        # 只数**槽位**行（占位 01..N）的占用；排队号行的「租约」写的是 wait|…，不算并发
+        busy = sum(
+            1
+            for rid, row in self.rows.items()
+            if not self._is_ticket(rid) and str(row["fields"].get("租约") or "").strip()
+        )
         self.busy_peak = max(self.busy_peak, busy)
 
     # --- 断言辅助 --------------------------------------------------------- #
@@ -205,6 +209,41 @@ def main() -> int:
           stats_a["acquired"] - stats_a["released"] <= 1
           and stats_b["acquired"] - stats_b["released"] <= 1,
           f"A={stats_a['acquired']}/{stats_a['released']} B={stats_b['acquired']}/{stats_b['released']}")
+
+    print("[1.5] 同一台机器 10 张同时抢 3 个槽位（飞书索引落后也不许超发）")
+    table15 = FakeTable(lag=2)
+    table15.seed_slots(3)
+    gate15 = FeishuGate(
+        gate_config(3, settle_ms=10, poll_ms=30, wait_timeout_sec=60), table15, label="S"
+    )
+    notes15: list[dict] = []
+
+    async def ten_at_once():
+        async def one(index: int):
+            lease = await gate15.acquire(
+                job="job", task=f"s{index:02d}", on_wait=notes15.append
+            )
+            if lease is None:
+                return None
+            await asyncio.sleep(0.15)
+            await gate15.release(lease)
+            return lease
+
+        return await asyncio.gather(*(one(i) for i in range(10)))
+
+    leases15 = asyncio.run(ten_at_once())
+    check("10 张都拿到槽位", all(lease is not None for lease in leases15),
+          str([bool(lease) for lease in leases15]))
+    check("单机峰值 ≤ 3（不靠表也要守住）", table15.busy_peak <= 3,
+          f"peak={table15.busy_peak}")
+    check("确实取过排队号", gate15.stats["tickets"] > 0,
+          f"tickets={gate15.stats['tickets']}")
+    check("排队时回调报了「前方还有几个」",
+          bool(notes15) and all({"ahead", "queued", "limit"} <= set(note) for note in notes15),
+          str(notes15[:1]))
+    check("前方数字不会是 0（自己前面确实有人）",
+          bool(notes15) and all(int(note.get("ahead") or 0) >= 1 for note in notes15),
+          str([note.get("ahead") for note in notes15[:5]]))
 
     print("[2] 先到先得：额度 1，5 个人按顺序排队")
     table2 = FakeTable(lag=0)
