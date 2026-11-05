@@ -214,6 +214,30 @@
       "max_concurrency": 20,
       "global_concurrency": 20,
       "show_in_ui": false
+    },
+    "a6api": {
+      "type": "openai_compat",
+      "label": "a6api 备用（gpt-image-2.5-sunburst）",
+      "enabled": true,
+      "base_url": "https://api.a6api.vip/v1",
+      "model": "gpt-image-2.5-sunburst",
+      "api_key_env": "A6API_API_KEY",
+      "image_field": "image[]",
+      "max_images": 4,
+      "response_format": "b64_json",
+      "auto_size_presets": [
+        "1024x1024",
+        "1536x1024",
+        "1024x1536"
+      ],
+      "concurrency": 4,
+      "rpm": 0,
+      "input_fidelity": "high",
+      "show_in_ui": true,
+      "max_concurrency": 50,
+      "global_concurrency": 50,
+      "gate_limit": 50,
+      "note": "实测 50 并发 50/50 成功、0 限流（2026-11-05，tools/check_backup_50.py）"
     }
   },
   "feishu": {

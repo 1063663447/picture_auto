@@ -508,6 +508,7 @@ Key 放 `.env`，`config.json` 只写变量名，避免代理/共享文件时泄
 
 ```ini
 TERRA_API_KEY=sk-...      # 65535 网关（已预置）
+A6API_API_KEY=sk-...      # a6api 备用接口（已预置）
 OPENAI_API_KEY=...
 ARK_API_KEY=...
 GEMINI_API_KEY=...
@@ -520,7 +521,47 @@ GEMINI_API_KEY=...
 | `terra`（默认） | `gpt-image-2` | 实测 1 图 ~30s、2 图（原图+参考色）~31s，出图 1024×1536、约 1.3MB |
 | `terra-nano` | `gemini-nano-banana-2.1` | 同类里改图保真度通常更好，人物/图案更稳，适合“必须保留原图案”的单子 |
 | `terra-eco` | `gpt-image-2-eco` | 便宜快速，适合先小批量试提示词 |
+| `a6api` | `gpt-image-2.5-sunburst` | **备用接口**（`https://api.a6api.vip/v1`），实测 50 并发 50/50 成功、0 限流，见下 |
 | `local` | 本地算法 | 不调接口，只换颜色、图案零失真，秒出图（见 §7.5） |
+
+### 备用接口 a6api：50 并发实测（2026-11-05）
+
+`tools/check_backup_50.py` 对 provider 直接开火（绕过飞书闸门与本地队列，纯测接口上限）：
+
+```powershell
+python tools/check_backup_50.py --provider a6api --n 50 --keep 3
+```
+
+| 指标 | 结果 |
+|---|---|
+| 请求数 / 成功 | **50 / 50** |
+| 429 限流 | **0** |
+| 其他错误 | 0 |
+| 峰值同时在飞 | **50**（真的 50 个一起在跑） |
+| 总墙钟 | 56.2s（≈ **53 张/分钟**） |
+| 单张耗时 | p50 44.3s · p95 47.8s · max 56.1s |
+| 出图 | 1087×1447（跟随原图比例）、2.4~2.5MB、b64 |
+
+结论：**这个接口 50 并发不会触发限流**，直接把 `max_concurrency` / `global_concurrency` 设成 50。
+飞书闸门默认只有 15 个槽位，所以给它单独开了 `gate_limit: 50`（`gate_for()` 支持按接口覆盖额度），
+否则走产品链路时会被闸门卡在 15。
+
+```json
+"a6api": {
+  "type": "openai_compat",
+  "base_url": "https://api.a6api.vip/v1",
+  "model": "gpt-image-2.5-sunburst",
+  "api_key_env": "A6API_API_KEY",
+  "image_field": "image[]",
+  "max_images": 4,
+  "response_format": "b64_json",
+  "max_concurrency": 50,
+  "global_concurrency": 50,
+  "gate_limit": 50
+}
+```
+
+产品链路也验过：4 张真接口任务 43.1s 全成功，估价 ¥0.152（4 × ¥0.038），命名 `24CXCR_WH[0]_<批次>.png` 正常。
 
 网关上还有 `gemini-3-pro-image`、`gpt-image-2.5*`、`grok-imagine-image*` 等，界面「拉取」后随手换一个模型即可对比效果（`grok-imagine-video` / `veo-*` / `seedance-*` 是视频模型，不能用于改图）。
 
@@ -927,6 +968,7 @@ python tools/check_accounts.py    # 飞书账号表 / 定价表 / 密码哈希 /
 python tools/check_login_http.py  # 登录页、会话 Cookie、账号用量接口
 python tools/check_account_e2e.py --sync   # mock 跑一单，验证「账号」写进飞书记录
 python tools/check_real_job.py --base http://127.0.0.1:8787   # 真接口跑一单并核对用量（会花 ¥0.038）
+python tools/check_backup_50.py --provider a6api --n 50       # 备用接口并发实测（50 张 ≈ ¥1.9，查会不会限流）
 python tools/probe_quality.py --model gpt-image-2 --size 1024x1024   # 验证 quality 不影响分辨率/计价
 python tools/check_incremental.py --base http://127.0.0.1:8789       # 10 张任务：验证轮询不会重复加载图片
 python tools/check_rework_flow.py --base http://127.0.0.1:8789 <任务ID>  # 改图提交耗时 + 响应自带可渲染任务
