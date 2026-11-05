@@ -234,10 +234,13 @@
       "rpm": 0,
       "input_fidelity": "high",
       "show_in_ui": true,
-      "max_concurrency": 50,
-      "global_concurrency": 50,
-      "gate_limit": 50,
-      "note": "实测 50 并发 50/50 成功、0 限流（2026-11-05，tools/check_backup_50.py）"
+      "max_concurrency": 100,
+      "global_concurrency": 100,
+      "gate_limit": 100,
+      "note": "实测 50 并发 50/50 成功、0 限流；100 任务跑满 64 并发 100/100 成功、0 限流；真实计费 $0.088/张（/v1/dashboard/billing/usage 增量 ×2 次核对），定价表按 ¥0.65/张折算",
+      "model_prices": {
+        "gpt-image-2.5-sunburst": 0.65
+      }
     }
   },
   "feishu": {

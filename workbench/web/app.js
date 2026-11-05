@@ -187,6 +187,15 @@
   }
 
   function priceOf(model, size) {
+    // 同一个模型名在不同网关售价不一样（实测差十几倍）：接口带了覆盖价就先用它
+    const provider = state.providers.find((p) => p.name === ($("provider") || {}).value);
+    const override = provider && provider.model_prices && provider.model_prices[model];
+    if (override !== undefined && override !== null) {
+      return {
+        unit: Number(override), tier: "", tiered: false, fallback: false,
+        tiers: {}, other: null, override: true,
+      };
+    }
     const entry = (state.pricing.raw || {})[model];
     if (entry === null || entry === undefined) {
       return { unit: null, tier: "", tiered: false, fallback: false, tiers: {}, other: null };

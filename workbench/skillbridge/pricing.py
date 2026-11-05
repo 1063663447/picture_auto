@@ -80,7 +80,15 @@ class Price:
 
 
 class Pricer:
-    def __init__(self, path: Path | None = None, currency: str = "") -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        currency: str = "",
+        provider_prices: dict[str, dict[str, float]] | None = None,
+    ) -> None:
+        #: 按接口覆盖单价：{"a6api": {"gpt-image-2.5-sunburst": 0.65}}
+        #: 同一个模型名在不同网关卖的价格不一样（实测差 17 倍），所以覆盖要挂在接口上
+        self.provider_prices: dict[str, dict[str, float]] = dict(provider_prices or {})
         self.path = path or DEFAULT_PRICING
         self.currency = "USD"
         self.currency_override = (currency or "").strip().upper()
@@ -178,8 +186,10 @@ class Pricer:
                 models[name] = None
         return models
 
-    def price(self, model: str, size: str | None = None) -> Price:
-        entry = self.raw.get(model)
+    def price(self, model: str, size: str | None = None, provider: str = "") -> Price:
+        """单价。传了 provider 就先看该接口的覆盖价（同模型不同网关价格不同）。"""
+        override = (self.provider_prices.get(provider) or {}).get(model) if provider else None
+        entry = override if override is not None else self.raw.get(model)
         tier = tier_for(size, self.tier_mp)
         if entry is None or entry is False or entry == "":
             return Price(model=model, unit=None, currency=self.currency, tier=tier)
@@ -204,8 +214,10 @@ class Pricer:
             )
         return Price(model=model, unit=None, currency=self.currency, tier=tier)
 
-    def estimate(self, model: str, count: int, size: str | None = None) -> dict:
-        price = self.price(model, size)
+    def estimate(
+        self, model: str, count: int, size: str | None = None, provider: str = ""
+    ) -> dict:
+        price = self.price(model, size, provider)
         count = max(0, int(count))
         if price.unit is None:
             return {
@@ -288,17 +300,19 @@ class UsageLedger:
         detail: str = "",
         garment: str = "",
         color: str = "",
+        provider: str = "",
     ) -> dict | None:
         if images <= 0:
             return None
         exists = next((e for e in self.entries if e.get("job_id") == job_id), None)
         if exists:  # idempotent: a retried job must not be billed twice
             return exists
-        price = self.pricer.price(model, size)
+        price = self.pricer.price(model, size, provider)
         entry = {
             "job_id": job_id,
             "account": account or "anonymous",
             "model": model,
+            "provider": provider,
             "kind": kind,
             "images": int(images),
             "unit": price.unit,

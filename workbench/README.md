@@ -524,27 +524,35 @@ GEMINI_API_KEY=...
 | `a6api` | `gpt-image-2.5-sunburst` | **备用接口**（`https://api.a6api.vip/v1`），实测 50 并发 50/50 成功、0 限流，见下 |
 | `local` | 本地算法 | 不调接口，只换颜色、图案零失真，秒出图（见 §7.5） |
 
-### 备用接口 a6api：50 并发实测（2026-11-05）
+### 备用接口 a6api：价格与 50 / 100 并发实测（2026-11-05）
 
-`tools/check_backup_50.py` 对 provider 直接开火（绕过飞书闸门与本地队列，纯测接口上限）：
+**价格能从接口读到**，而且真实单价不是定价表里的 ¥0.038：
 
-```powershell
-python tools/check_backup_50.py --provider a6api --n 50 --keep 3
+| 途径 | 返回 | 说明 |
+|---|---|---|
+| `GET /api/pricing`（不用鉴权） | `{"model_name":"gpt-image-2.5-sunburst","quota_type":1,"model_price":1,...}` | 网关自己标的是「按次计费」，但 `model_price: 1` 不能直接当单价用 |
+| `GET /v1/dashboard/billing/usage`（带 sk-key） | `{"total_usage": 14.37}` | **累计用量（USD）**，用它算增量最准 |
+
+实测两次核对：2 张 → 增量 0.1792；102 张（100 张并发测试 + 2 张测价）→ 增量 **8.96**，
+即 **$0.0878/张 ≈ ¥0.63/张**（旧的 ¥0.038 差 16~17 倍）。
+
+所以工作台加了「按接口覆盖价」：`config.json` 里给 provider 写 `model_prices`，
+预计花费 / 账本 / 飞书「金额元」都按它算（界面也优先用它，而不是定价表的同名价格）：
+
+```json
+"a6api": { "model_prices": { "gpt-image-2.5-sunburst": 0.65 } }
 ```
 
-| 指标 | 结果 |
-|---|---|
-| 请求数 / 成功 | **50 / 50** |
-| 429 限流 | **0** |
-| 其他错误 | 0 |
-| 峰值同时在飞 | **50**（真的 50 个一起在跑） |
-| 总墙钟 | 56.2s（≈ **53 张/分钟**） |
-| 单张耗时 | p50 44.3s · p95 47.8s · max 56.1s |
-| 出图 | 1087×1447（跟随原图比例）、2.4~2.5MB、b64 |
+并发实测（真接口）：
 
-结论：**这个接口 50 并发不会触发限流**，直接把 `max_concurrency` / `global_concurrency` 设成 50。
-飞书闸门默认只有 15 个槽位，所以给它单独开了 `gate_limit: 50`（`gate_for()` 支持按接口覆盖额度），
-否则走产品链路时会被闸门卡在 15。
+| 场景 | 结果 |
+|---|---|
+| 50 并发（`tools/check_backup_50.py`，绕过队列） | 50/50 成功、**0 个 429**、峰值在飞 50、56.2s、p50 44.3s |
+| 100 任务全推（`tools/check_a6api_100.py`，5 张老图 × 20 组款式/颜色） | **100/100 成功、0 个 429**、峰值 64（旧代码把并发放大到 64，已改 200）、245.9s、p50 45.7s、p95 83.3s |
+| 100 并发边界（mock，免费） | 并发上限改成 200 后实测**峰值 100**、100/100 完成 |
+
+- 修复：`service.create_job` 里「自动并发」的 `min(64, …)` → `min(200, …)`，`runner` 的两处 clamp 64 → 128。
+- 100 张成品（0.22GB，按款式分文件夹）：`data/test/a6api-100/a6api-100.zip` + `contact-sheet.png` + `report.json`。
 
 ```json
 "a6api": {
@@ -555,13 +563,12 @@ python tools/check_backup_50.py --provider a6api --n 50 --keep 3
   "image_field": "image[]",
   "max_images": 4,
   "response_format": "b64_json",
-  "max_concurrency": 50,
-  "global_concurrency": 50,
-  "gate_limit": 50
+  "max_concurrency": 100,
+  "global_concurrency": 100,
+  "gate_limit": 100,
+  "model_prices": { "gpt-image-2.5-sunburst": 0.65 }
 }
 ```
-
-产品链路也验过：4 张真接口任务 43.1s 全成功，估价 ¥0.152（4 × ¥0.038），命名 `24CXCR_WH[0]_<批次>.png` 正常。
 
 网关上还有 `gemini-3-pro-image`、`gpt-image-2.5*`、`grok-imagine-image*` 等，界面「拉取」后随手换一个模型即可对比效果（`grok-imagine-video` / `veo-*` / `seedance-*` 是视频模型，不能用于改图）。
 

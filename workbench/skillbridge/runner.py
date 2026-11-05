@@ -112,9 +112,9 @@ class JobRunner:
         # 「并发数」已从界面去掉：默认**全推**，超过飞书闸门额度 / 接口上限的自动排队，
         # 排队位置来自飞书表轮询（见 _queue_payload）。
         try:
-            self.concurrency = max(1, min(64, int(params.get("concurrency") or 4)))
+            self.concurrency = max(1, min(128, int(params.get("concurrency") or 4)))
         except (TypeError, ValueError):
-            self.concurrency = max(1, min(64, len(job.tasks) or 4))
+            self.concurrency = max(1, min(128, len(job.tasks) or 4))
         self.max_retries = max(1, int(params.get("max_retries") or 3))
         # 图片接口常见 60~120s；超时往往代表上游仍在跑（可能已出图），自动重试会重复计费
         self.retry_on_timeout = bool(params.get("retry_on_timeout", False))

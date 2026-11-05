@@ -91,6 +91,16 @@ class Workbench:
                 or self.config.get("pricing_currency")
                 or ""
             ),
+            # 同一个模型名在不同网关售价不同：按接口给覆盖价
+            provider_prices={
+                name: {
+                    str(model): float(unit)
+                    for model, unit in ((cfg or {}).get("model_prices") or {}).items()
+                    if unit is not None
+                }
+                for name, cfg in (self.config.get("providers") or {}).items()
+                if (cfg or {}).get("model_prices")
+            },
         )
         self.usage = UsageLedger(self.data_dir, self.pricer)
         self.feishu_config = None
@@ -179,7 +189,17 @@ class Workbench:
         ]
         if not visible:  # fallback so the UI is never empty
             visible = list(self.providers.values())
-        return [provider.info() for provider in visible]
+        rows = []
+        for provider in visible:
+            info = provider.info()
+            # 该接口自己的覆盖价（同名模型不同网关售价不同），界面算预估要用
+            overrides = (provider.cfg or {}).get("model_prices") or {}
+            if overrides:
+                info["model_prices"] = {
+                    str(k): float(v) for k, v in overrides.items() if v is not None
+                }
+            rows.append(info)
+        return rows
 
     def defaults(self) -> dict:
         return self.config.get("defaults") or {}
@@ -580,7 +600,7 @@ class Workbench:
         # 并发不再让用户选：默认一次全推，超过接口上限/闸门额度的自动排队
         if str(concurrency).strip().lower() in {"", "auto", "none"} or concurrency is None:
             max_conc = max(1, int(provider_obj.setting("max_concurrency", 20) or 20))
-            wanted = max(1, min(64, len(job.tasks)))
+            wanted = max(1, min(200, len(job.tasks)))
             job.params["concurrency"] = min(wanted, max_conc)
             gate_limit = int(
                 ((self.config.get("defaults") or {}).get("gate") or {}).get("limit") or 0
@@ -598,7 +618,7 @@ class Workbench:
                 )
 
         job.params["estimate"] = self.pricer.estimate(
-            chosen_model, len(job.tasks), str(job.params.get("size") or "auto")
+            chosen_model, len(job.tasks), str(job.params.get("size") or "auto"), provider_obj.name
         )
         try:
             self._quota_guard(
@@ -698,6 +718,7 @@ class Workbench:
             detail=detail,
             garment=str(params.get("garment_name") or ""),
             color="、".join(str(c) for c in (params.get("colors") or [])),
+            provider=str(params.get("provider") or ""),
         )
 
     def _feishu_rows(self, max_pages: int = 6) -> list[dict] | None:
@@ -954,7 +975,8 @@ class Workbench:
             "pricing_source": self.pricer.source,
         }
 
-    def _quota_guard(self, account: str, model: str, count: int, size: str) -> None:
+    def _quota_guard(self, account: str, model: str, count: int, size: str,
+                     provider: str = "") -> None:
         """额度拦截：非管理员的账号（设了额度元）在用超时不让开工。"""
         if not account:
             return
@@ -971,7 +993,7 @@ class Workbench:
                 0.0,
             )
         )
-        est = self.pricer.estimate(model, count, size)
+        est = self.pricer.estimate(model, count, size, provider)
         estimate_total = float(est.get("total") or 0)
         if used + estimate_total > quota + 1e-9:
             raise WorkbenchError(
@@ -1011,7 +1033,7 @@ class Workbench:
 
         model = str(job.params.get("model") or "")
         size = str(job.params.get("size") or "auto")
-        price = self.pricer.price(model, size)
+        price = self.pricer.price(model, size, str(job.params.get("provider") or ""))
         rows = feishu_mod.build_rows(job, size, price.unit, price.currency, per=cfg.per)
         if not rows:
             return 0
@@ -1295,7 +1317,7 @@ class Workbench:
         }
 
         params["estimate"] = self.pricer.estimate(
-            chosen_model, len(tasks), str(params.get("size") or "auto")
+            chosen_model, len(tasks), str(params.get("size") or "auto"), provider_obj.name
         )
         try:
             self._quota_guard(
@@ -1303,6 +1325,7 @@ class Workbench:
                 chosen_model,
                 len(tasks),
                 str(params.get("size") or "auto"),
+                provider_obj.name,
             )
         except WorkbenchError:
             shutil.rmtree(root, ignore_errors=True)
