@@ -246,6 +246,28 @@ def main() -> int:
     check("改款中间图在 work/ 内", (job2.root / "work" / "item-01.png").is_file())
     check("两段式 ZIP 3 个文件", len(zip_entries(job2)) == 3)
 
+    print("\n[3.5] 改图必须用「对话框里选的接口」，不能退回原接口")
+    # 造一个第二接口（复制一份 mock，只改名字），验证改图会切过去
+    import copy as _copy
+    alt = _copy.copy(bench.providers["mock"])
+    alt.name = "mock-alt"
+    bench.providers["mock-alt"] = alt
+    done_ids = [t.id for t in job.tasks if t.status == "done"][:1]
+    rework = asyncio.run(
+        bench.create_rework_job(job.id, done_ids, "把袖口改窄一点", provider="mock-alt",
+                                model="mock-image")
+    )
+    check("改图 params.provider = 指定接口", rework.params["provider"] == "mock-alt",
+          rework.params["provider"])
+    check("runner 用的是指定接口", bench._runner_for(rework).provider.name == "mock-alt",
+          bench._runner_for(rework).provider.name)
+    check("换了接口就记 model_switched", rework.params.get("model_switched") is True,
+          str(rework.params.get("model_switched")))
+    rework_same = asyncio.run(bench.create_rework_job(job.id, done_ids, "把袖口改窄一点"))
+    check("不指定接口时沿用原任务接口",
+          rework_same.params["provider"] == job.params["provider"],
+          f'{rework_same.params["provider"]} vs {job.params["provider"]}')
+
     print("\n[4] 失败重试")
     flaky = build_bench("flaky", fail_rate=0.9)
     job3 = flaky.create_job(

@@ -582,6 +582,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         garment_slug = body.get("garment_type")
         colors = [str(c) for c in (body.get("colors") or []) if str(c).strip()]
         model_choice = str(body.get("model") or "")
+        provider_name = str(body.get("provider") or "").strip()
         # 连续对话：前端把最近几轮问答带上来（[{role, content}]）
         parsed_selections = [
             {"garment_type": str(item.get("garment_type") or ""),
@@ -633,7 +634,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         agent_cfg = defaults.get("harness") or {}
         agent_key = str(bench.env.get(str(agent_cfg.get("api_key_env") or ""), "")).strip()
         agent_model = str(agent_cfg.get("model") or "").strip()
-        provider_obj = bench.get_provider(None)
+        # 用请求指定的接口；没指定才回退默认接口。
+        # 以前这里写死 get_provider(None)，导致「改图选了 a6api 还是发到 65535」
+        provider_obj = bench.get_provider(provider_name or None)
         model_choice = model_choice or str(provider_obj.cfg.get("model") or "")
 
         def sse(event: dict) -> bytes:

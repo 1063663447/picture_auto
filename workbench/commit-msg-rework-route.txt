@@ -1,0 +1,26 @@
+fix(rework): 改图选了什么接口就发到哪里（之前被对话通道写死回原始接口）
+
+现象：在 65535 上出图，改图时把「改图接口」选成 a6api，结果仍发到 65535。
+
+根因（两处，都在对话/harness 通道）
+1. 前端 harnessPayload() 的 rework 分支只带 model，**不带 provider**；intake 分支也不带，
+   于是后端只能用默认接口
+2. 后端 /api/harness/stream 里 `provider_obj = bench.get_provider(None)` 写死默认接口，
+   tool_rework / tool_submit 都用它 → 无论界面选什么，永远是 terra（默认接口）
+   （REST 的 /api/jobs/{id}/rework 本来是对的，所以只有走对话提交时才会串）
+
+修复
+- api.py：读取请求里的 provider（`provider_name = body["provider"]`），
+  `provider_obj = bench.get_provider(provider_name or None)`，默认值只在没传时才用
+- app.js：harnessPayload() 的 rework 分支带上 `reworkChoice()` 的 provider+model；
+  intake 分支也带上主面板的 provider（之前同样被写死）
+- 顺带确认改图仍记录 source_provider/source_model/model_switched，日志写「换模型重画：A → B」
+
+验证
+- REST：POST /api/jobs/{id}/rework provider=local → 新任务 provider=local / model=local-recolor；
+  不传 provider → 沿用源任务 provider（mock）✓
+- 后端直调：create_rework_job(provider="local") → params.provider=local、runner.provider=local、
+  model_switched=True；不指定 → 继承源任务 ✓
+- selftest 新增 [3.5] 四条断言（指定接口生效 / runner 用指定接口 / 记 model_switched /
+  不指定时沿用源接口），全套绿
+- 版本 v=7.7.0（前端改了，需硬刷新）

@@ -2083,15 +2083,19 @@
       instruction: text,
     };
     if (state.harnessMode === "rework") {
+      // 改图必须带上对话框里选的那个接口/模型，否则会退回左侧主面板（= 原接口）
+      const choice = reworkChoice();
       payload.job_id = state.reworkSourceJob;
       payload.task_ids = state.reworkTargets;
-      payload.model = currentModel();
+      payload.provider = choice.provider || $("provider").value;
+      payload.model = choice.model || currentModel();
     } else {
       payload.draft_id = state.draftId;
       const head = primaryStyle();
       payload.garment_type = head.slug || "";
       payload.colors = [...head.colors];
       payload.selections = selectionsPayload();
+      payload.provider = $("provider").value;
       payload.model = currentModel();
       payload.count = expectedCalls();
       payload.size = currentSize();
