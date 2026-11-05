@@ -454,6 +454,7 @@ class Workbench:
         pattern_brief: str = "",
         subject: str = "",
         retry_on_person: bool = False,
+        shape_lock: str = "",
         account: str = "",
     ) -> Job:
         if not uploads:
@@ -575,6 +576,13 @@ class Workbench:
             # 主体：auto（按原图判）/ garment（纯衣服平铺）/ person（真人上身）
             "subject": subject_module.normalise(subject),
             "retry_on_person": bool(retry_on_person),
+            # 版型锁定：master（先出基准色再改色，同款各色版型一致）/ off（每色独立生成）
+            "shape_lock": (
+                "off"
+                if str(shape_lock or defaults.get("shape_lock") or "master").strip().lower()
+                in {"off", "0", "false", "no", "none", "不锁"}
+                else "master"
+            ),
             "account": str(account or ""),
             "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto")),
         }

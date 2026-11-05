@@ -903,6 +903,17 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **同款版型锁定 `shape_lock`（7.9.0）**：同一个款式选多个颜色时，模型是**每个颜色各生成一次**，
+  每次都会轻微重画轮廓 —— 袖长、袖口角度、衣身宽度、下摆位置全在漂，客户一眼看出「这几张不是同一件衣服」
+  （实测同一单 3 色的轮廓相似度只有 0.3~0.6）。现在的做法：
+  1. 同款第一个颜色当**基准版型**（卡片角标「基准版型」），正常按原图生成；
+  2. 其余颜色（角标「跟随基准」）**以基准成品为参考图**，提示词换成「只改面料颜色」+ `SILHOUETTE_LOCK_CLAUSE`
+     （锁死轮廓/袖长/袖口/衣宽/下摆/领型/褶皱/印花位置/机位，禁止重画或重新裁切）；
+  3. 基准色失败（没出图）时自动退回原文原图生成，并写一条警告 —— 该色版型可能与其它颜色不同；
+  4. 关闭开关（`shape_lock=off`）就回到「每色独立生成」，更快但会漂。
+  代价：多一轮（基准色 40s + 其余并发 40s ≈ 80s），换来整单版型统一。
+  回归：`python tools/check_shape_lock.py`（离线）；真接口 A/B 对照 `python tools/check_shape_lock_real.py --yes`
+  （6 张 ≈ ¥0.04，出 `data/test/shape-lock/shape-lock-ab.png`）。
 - **改图返工（rework）**：见 §3 末尾——把不满意的成品挑出来，用「本次需求 + 原始提示词」合成新提示词，并以该成品为参考图重跑，只影响挑中的那几张。改图的主体**继承源任务**（平铺图返工不会被顺手补个人上去）。
 - **负面约束**：接口有 `negative` 字段就单独传（`supports_negative: true`），没有就合并到提示词末尾——和 skill 的要求一致。
 - **颜色参考图**：`max_images >= 2` 时自动把「原图 + 对应参考色图」一起发送；只支持单图的接口靠提示词里的色值 + 颜色名约束，仍然可用。
@@ -1022,6 +1033,8 @@ python tools/check_price_table.py    # 打印飞书定价表现状（三位小�
 python tools/check_cuff.py           # 袖口工艺回归：T 恤平口 / 卫衣螺纹（离线）
 python tools/check_no_person.py      # 主体约束回归：平铺图禁止补模特 / 真人图保留同一个人（离线）
 python tools/check_no_person.py --live --source=library/refs/23-sorona-tee/white.jpg  # 真跑一张（≈¥0.006）看成品有没有人
+python tools/check_shape_lock.py     # 版型锁定回归：同款多色 → 先出基准色、其余跟随（离线）
+python tools/check_shape_lock_real.py --yes   # 真接口 A/B：每色独立 vs 版型锁定（6 张 ≈ ¥0.04）
 python tools/check_cuff_real.py --yes # 同上但真接口出 2 张对照图（约 ¥0.08，看 data/test/cuff/real-cuffs.png）
 python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表维护
 ```

@@ -928,6 +928,8 @@ html { scroll-behavior: smooth; }
   border: 1px solid #b5a0ff26; border-radius: 5px; padding: 1px 5px;
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* 版型锁定：基准色 / 跟随基准 的角标（绿色系，和款式标签区分开） */
+.cardimg .meta .sync-tag { color: #7ef0c6; background: #34d39914; border-color: #34d39933; }
 
 /* 队列状态（原来是「并发数」下面那行小字，并发数已去掉，这行单独成行） */
 .queue-line { margin: -2px 0 10px; }

@@ -328,6 +328,21 @@ PATTERN_FREE_CLAUSE = (
     "if it is not mentioned, keep the source artwork as close to identical as possible."
 )
 
+#: **版型锁**：同款不同色必须长得一模一样。做法是「先出基准色，再以它为参考图只改颜色」，
+#: 所以这段是给第 2..N 个颜色用的（理由与实测见 README §7 与 tools/check_shape_lock.py）。
+SILHOUETTE_LOCK_CLAUSE = (
+    "COLOUR PASS ON THE APPROVED MASTER — the attached image is the approved master shot of this "
+    "exact style, and the goal is that every colourway looks like the SAME physical garment. Hold "
+    "the master image pixel-identical and change ONLY the fabric base colour: same silhouette, same "
+    "shoulder drop and sleeve length, same sleeve angle and opening, same body width and hem "
+    "position, same neckline shape and ribbing, same seams, pockets and cuffs, same folds, wrinkles, "
+    "drape, print placement and print scale, same camera, framing, crop, background, lighting, "
+    "shadows and grain. Do not redraw, reshape, slim, widen, lengthen, shorten, straighten, "
+    "re-crop or re-frame the garment, do not change how it is lying or how the sleeves hang, and do "
+    "not move the print. If the requested colour would make you redraw any part of the shape, keep "
+    "the master's shape exactly and only change the colour."
+)
+
 #: 需求分类关键词（中文为主，兼容英文）。顺序有意义：图案类先判定并从文本里摘掉，
 #: 免得「每个颜色用不同图案」又被算成一次「改颜色」。
 INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (

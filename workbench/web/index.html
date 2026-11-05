@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=7.8.0" />
-<link rel="stylesheet" href="/aurora.css?v=7.8.0" />
+<link rel="stylesheet" href="/style.css?v=7.9.0" />
+<link rel="stylesheet" href="/aurora.css?v=7.9.0" />
 </head>
 <body>
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -137,6 +137,13 @@
               <option value="auto">自动判断 · 按原图</option>
               <option value="garment">只有衣服 · 平铺/挂拍（禁止加人）</option>
               <option value="person">真人上身 · 保留同一个人</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="lbl">同款版型 <span class="tip" title="开启后先出第一个颜色当「基准版型」，其余颜色基于它只改色 —— 同款各色长得一模一样；关闭则每色独立生成（更快，但袖长/衣宽会漂）">?</span></span>
+            <select id="shapeLock">
+              <option value="master">锁定 · 先出基准色再改色（推荐）</option>
+              <option value="off">不锁 · 每色独立生成（更快）</option>
             </select>
           </label>
           <label class="field">
@@ -394,6 +401,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=7.8.0"></script>
+<script src="/app.js?v=7.9.0"></script>
 </body>
 </html>

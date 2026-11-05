@@ -974,6 +974,7 @@
     }
     setSelect("patternMode", restore("patternMode", state.defaults.pattern_mode || ""));
     setSelect("subject", restore("subject", state.defaults.subject || "auto"));
+    setSelect("shapeLock", restore("shapeLock", state.defaults.shape_lock || "master"));
     setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
     setSelect("downloadFmt", "png");
@@ -990,6 +991,7 @@
     store("quality", $("quality").value);
     store("patternMode", currentPatternMode());
     store("subject", $("subject") ? $("subject").value : "auto");
+    store("shapeLock", $("shapeLock") ? $("shapeLock").value : "master");
     store("outputFormat", currentOutputFormat());
   }
 
@@ -1029,6 +1031,8 @@
       form.append("pattern_mode", currentPatternMode());
       // 画面主体：原图只有衣服时禁止模型补模特（提示词层+否定词层都生效）
       form.append("subject", $("subject") ? $("subject").value : "auto");
+      // 同款版型：锁定 → 先出基准色，其余颜色基于它只改色
+      form.append("shape_lock", $("shapeLock") ? $("shapeLock").value : "master");
       form.append("send_reference", "true");   // 默认总是带颜色参考图
       if (extraRequirements) form.append("extra_requirements", extraRequirements);
       form.append("start", "true");
@@ -1253,6 +1257,9 @@
         <span class="dot" style="background:${esc(task.color_hex || "#94a3b8")}"></span>
         <span class="name">${esc(task.color_name)}</span>
         <span class="garment" title="${esc(task.garment_name || "")}">${esc(shortName(task.garment_name))}</span>
+        ${task.master
+          ? `<span class="garment sync-tag" title="这一色是基准版型，同款其它颜色都以它为参考图改色">基准版型</span>`
+          : (task.master_task ? `<span class="garment sync-tag" title="参考图用的是基准色成品，只改面料颜色">跟随基准</span>` : "")}
         <span class="file" title="${esc(task.out || task.item)}">${esc(fileLabel(task))}</span>
       </div>
       <div class="acts">

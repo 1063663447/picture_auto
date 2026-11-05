@@ -117,6 +117,12 @@ class Task:
     subject: str = ""
     #: 成品复查发现「原图是空衣服、成品却冒出人」时为 True（界面/日志用于提示重画）
     person_alert: bool = False
+    #: 版型锁定：同款第一个颜色是**基准色**（master=True），其余颜色的 master_task 指向它，
+    #: 生成时以基准成品为参考图，只改面料颜色 —— 这样同款各色版型一模一样
+    master: bool = False
+    master_task: str = ""
+    #: 实际用作参考图的文件（版型锁定时是基准成品；否则等同上图 source）
+    reference: str = ""
     #: pending（还没轮到）| queued（在飞书队列里排队）| running（正在生成）
     #: | done | failed | skipped | canceled
     status: str = "pending"
@@ -160,6 +166,9 @@ class Task:
             "source": self.source,
             "subject": self.subject,
             "person_alert": self.person_alert,
+            "master": self.master,
+            "master_task": self.master_task,
+            "reference": self.reference,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
         }
@@ -318,6 +327,9 @@ class Job:
                     prompt=raw.get("prompt") or "",
                     subject=raw.get("subject") or "",
                     person_alert=bool(raw.get("person_alert")),
+                    master=bool(raw.get("master")),
+                    master_task=raw.get("master_task") or "",
+                    reference=raw.get("reference") or "",
                     status=raw.get("status") or "pending",
                     attempts=raw.get("attempts") or 0,
                     error=raw.get("error"),

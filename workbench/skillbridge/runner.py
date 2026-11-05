@@ -140,6 +140,10 @@ class JobRunner:
         self.subject_override = subject_mod.normalise(params.get("subject"))
         # 出图后发现「又画了个人」要不要自动重画一次（默认只警告，不偷偷多花钱）
         self.retry_on_person = bool(params.get("retry_on_person", False))
+        # 版型锁定：master（先出基准色再改色，默认）/ off（每色独立生成）
+        self.shape_lock = str(params.get("shape_lock") or "master").strip().lower() != "off"
+        if str(params.get("mode") or "") == "two_phase":
+            self.shape_lock = False      # 两段式本身就是「先改款再换色」，不再套第二层
         self.negative = prompts.full_negative(self.skill, self.pattern_mode)
         # 多款式时每个款式有各自的袖口工艺（平口/螺纹），否定词必须按款取，
         # 不能共用第一款的：否则长袖 T 恤会拿到卫衣的否定、或者反过来
@@ -304,14 +308,31 @@ class JobRunner:
             for item, view, path in sources:
                 base = f"{item}-{view}" if view else item
                 subject = subjects.get(str(path), "person")
-                for color in colors:
+                # 版型锁定：同款同图的第一个颜色当基准，其余颜色以它为参考图只改色，
+                # 否则每色独立生成 → 袖长/衣宽/下摆每次都漂，客户一眼看出「不是同一件」
+                lock = self.shape_lock and len(colors) > 1
+                master_id = ""
+                for index, color in enumerate(colors):
                     # 多款式时 id 里带上款式，避免「同图同色不同款」撞号
                     task_id = (
                         f"{base}__{garment.slug}__{color.label}"
                         if self.multi_style
                         else f"{base}__{color.label}"
                     )
-                    if self.mode in {"two_phase", "recolor_only"}:
+                    is_master = lock and index == 0
+                    if lock and index == 0:
+                        master_id = task_id
+                    derive = lock and index > 0
+                    if derive:
+                        # 只改色的提示词 + 版型锁，参考图在跑的时候换成基准成品
+                        prompt = prompts.build_recolor_only(
+                            color,
+                            pattern_mode=self.pattern_mode,
+                            garment=garment,
+                            subject=subject,
+                        )
+                        prompt = f"{prompt} {prompts.SILHOUETTE_LOCK_CLAUSE}"
+                    elif self.mode in {"two_phase", "recolor_only"}:
                         prompt = prompts.build_recolor_only(
                             color,
                             pattern_mode=self.pattern_mode,
@@ -341,10 +362,17 @@ class JobRunner:
                             source=str(path.relative_to(self.root)).replace("\\", "/"),
                             prompt=prompt,
                             subject=subject,
+                            master=is_master,
+                            master_task="" if (is_master or not derive) else master_id,
                         )
                     )
         self.job.tasks = tasks
         self.job.total = len(tasks)
+        if any(task.master_task for task in tasks):
+            self.job.add_log(
+                f"版型锁定：先出 {sum(1 for t in tasks if t.master)} 张基准色，"
+                f"其余 {sum(1 for t in tasks if t.master_task)} 张按基准成品改色（同款各色版型一致）"
+            )
         self._save(force=True)
 
     def _retarget_failed(self, task_ids: set[str] | None = None) -> list[Task]:
@@ -441,7 +469,46 @@ class JobRunner:
             # （实测报 "provider 未初始化"）。统一在服务退出时关闭。
 
     async def _run_single_pass(self) -> None:
-        await self._gather(self.job.tasks, self._execute_color_task)
+        masters = [t for t in self.job.tasks if t.master]
+        derived = [t for t in self.job.tasks if t.master_task]
+        plain = [t for t in self.job.tasks if not t.master and not t.master_task]
+        if not derived:
+            await self._gather(self.job.tasks, self._execute_color_task)
+            return
+        # ① 先把基准色出完（同款各色共用这一版版型）
+        if masters:
+            await self._gather(masters, self._execute_color_task)
+        # ② 其余颜色以基准成品为参考图，只改面料颜色
+        await self._gather(derived + plain, self._execute_shape_task)
+
+    def _task_by_id(self, task_id: str) -> Task | None:
+        for task in self.job.tasks:
+            if task.id == task_id:
+                return task
+        return None
+
+    async def _execute_shape_task(self, task: Task) -> None:
+        """版型锁定下的「非基准色」任务：参考图换成基准成品，只改颜色。
+
+        基准色失败（没出图）时退回原图正常生成，只是这一天该色版型可能不同 —— 记一条警告。
+        """
+        master = self._task_by_id(task.master_task) if task.master_task else None
+        if not task.master_task:
+            # 不参与版型锁定的任务（单色/未锁定）走普通路径，别写「基准不可用」
+            await self._execute_color_task(task)
+            return
+        master_path = (self.root / str(master.out)) if (master and master.out) else None
+        if master_path is None or not master_path.is_file():
+            self.job.add_log(
+                f"{task.id} 基准色不可用（{task.master_task or '未指定'}），已退回用原图生成，"
+                f"该色版型可能与其它颜色不同",
+                level="warn",
+            )
+            task.master_task = ""
+            await self._execute_color_task(task)
+            return
+        task.reference = str(master.out or "")
+        await self._execute_color_task(task, source_override=master_path)
 
     async def _run_rework(self) -> None:
         """Every task already carries its reference image and its revised prompt."""
@@ -619,6 +686,13 @@ class JobRunner:
             )
             return
         source = source_override or (self.root / task.source)
+        if not task.reference:
+            # 记下这张实际拿什么当参考图（界面显示「跟随基准」用）
+            task.reference = (
+                str(source.relative_to(self.root)).replace("\\", "/")
+                if source_override is not None
+                else task.source
+            )
         images = [source]
         if self.send_reference:
             if color.path.is_file():

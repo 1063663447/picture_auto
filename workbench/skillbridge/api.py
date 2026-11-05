@@ -434,6 +434,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         pattern_brief: str = Form(""),
         subject: str = Form(""),
         retry_on_person: bool = Form(False),
+        shape_lock: str = Form(""),
         start: bool = Form(True),
     ):
         bench = wb(request)
@@ -489,6 +490,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             pattern_brief=pattern_brief,
             subject=subject,
             retry_on_person=retry_on_person,
+            shape_lock=shape_lock,
             account=current_account(request),
         )
         if start:
