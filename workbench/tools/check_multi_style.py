@@ -168,6 +168,18 @@ def main() -> int:
     check("颜色合并成 3", job3.params.get("total_colors") == 3, str(job3.params.get("total_colors")))
     check("任务数 = 3", len(job3.tasks) == 3, str(len(job3.tasks)))
 
+    print("[4] 选中导出（批量导出）也要按款式分文件夹")
+    export_path = bench.export_zip(job.id, [])
+    with zipfile.ZipFile(export_path) as archive:
+        exported = [n for n in archive.namelist() if not n.endswith("/")]
+    check("导出的 ZIP 按款式分文件夹",
+          all(("/06LMWY/" in n) or ("/23SLNDX/" in n) for n in exported), str(exported))
+    check("导出也不再平铺在根目录",
+          not any(n.count("/") < 2 for n in exported), str(exported[:2]))
+    check("导出包含两个款式文件夹",
+          bool({n.split("/")[1] for n in exported}) and len({n.split("/")[1] for n in exported}) == 2,
+          str(sorted({n.split("/")[1] for n in exported})))
+
     print()
     if FAILED:
         print(f"FAILED: {len(FAILED)} 项失败：{FAILED}")

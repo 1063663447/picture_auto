@@ -185,8 +185,20 @@ def _guess_ext(data: bytes) -> str:
     return ".png"
 
 
+def _style_folder(name: str) -> str:
+    """从成品名里取款式文件夹：`24CXCR_WH[0]_2026...` → `24CXCR`。
+
+    新记录（7.6.3 起）文件名就是「款式代号_色号_批次号」，前缀即款式；
+    老记录（`item-01 / 红色`）认不出来，统一放 `others/`。
+    """
+    head = str(name or "").split("_")[0].strip()
+    if head and re.fullmatch(r"[0-9]{1,3}[A-Za-z]{2,8}", head):
+        return head.upper()
+    return "others"
+
+
 def build_zip(cfg: FeishuConfig, records: list[dict], *, folder: str = "feishu-export") -> bytes:
-    """下载选中记录的成品图并打包。失败的记录会写进 _missing.txt。"""
+    """下载选中记录的成品图并打包（**按款式分文件夹**）。失败的记录会写进 _missing.txt。"""
     picked = [r for r in records if r.get("file_token")]
     if not picked:
         raise RuntimeError("选中的记录里没有可下载的成品图附件")
@@ -196,16 +208,18 @@ def build_zip(cfg: FeishuConfig, records: list[dict], *, folder: str = "feishu-e
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for record in picked:
             name = _safe_name(record.get("name"), str(record.get("record_id")))
+            style = _style_folder(name)
             try:
                 data = download_attachment(cfg, str(record["file_token"]))
             except Exception as exc:  # noqa: BLE001
                 missing.append(f"{name}: {exc}")
                 continue
             ext = _guess_ext(data)
-            count = used.get(name, 0) + 1
-            used[name] = count
+            key = f"{style}/{name}"
+            count = used.get(key, 0) + 1
+            used[key] = count
             suffix = "" if count == 1 else f"-{count}"
-            archive.writestr(f"{folder}/{name}{suffix}{ext}", data)
+            archive.writestr(f"{folder}/{style}/{name}{suffix}{ext}", data)
         if missing:
             archive.writestr(f"{folder}/_missing.txt", "\n".join(missing))
     return buffer.getvalue()

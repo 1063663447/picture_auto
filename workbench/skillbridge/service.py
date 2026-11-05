@@ -1341,17 +1341,41 @@ class Workbench:
         except Exception:  # noqa: BLE001 - 压缩失败就用原图
             return None
 
+    def _style_folder(self, job: Job, task: Task) -> str:
+        """导出/打包时用的款式文件夹名（`24CXCR`）。
+
+        优先按任务自己的款式解析出英文代号；老任务没有 garment 字段时用 job 的款式；
+        实在解析不出来才退回 staging 里的目录名，保证导出结构与打包结构一致。
+        """
+        for slug in (task.garment, str((job.params or {}).get("garment_type") or "")):
+            slug = str(slug or "").strip()
+            if not slug:
+                continue
+            try:
+                key = self._resolve_garment(slug).file_key
+            except Exception:  # noqa: BLE001 - 款式找不到就换下一个来源
+                key = ""
+            if key:
+                return key
+        if task.out:
+            parent = Path(str(task.out)).parent.name
+            if parent and parent not in {"staging", ""}:
+                return parent
+        return "images"
+
     def export_zip(
         self, job_id: str, task_ids: list[str] | None = None, fmt: str = ""
     ) -> Path:
         """把选中的成品打成 ZIP（不传 task_ids 则导出全部成功图片）。
 
-        `fmt=jpg` 时打包压缩版（体积约原图的 1/10），省下载流量。
+        **目录结构和打包一致**：`<批次>/<款式代号>/<文件名>`，解压后同款式的图在同一个
+        文件夹里，不会所有图混在一起。`fmt=jpg` 时打包压缩版（体积约原图的 1/10）。
         """
         job = self.get_job(job_id)
         root = job.root or self.job_dir(job_id)
         wanted = {str(t) for t in (task_ids or [])}
         use_fmt = str(fmt or "").lower() in {"jpg", "jpeg", "webp"}
+        batch = job.batch_name or job_id
         files: list[tuple[Path, str]] = []
         for task in job.tasks:
             if not task.out or (wanted and task.id not in wanted):
@@ -1359,14 +1383,16 @@ class Workbench:
             source = root / str(task.out)
             if not source.is_file():
                 continue
+            folder = self._style_folder(job, task)
             if use_fmt:
                 derived = self.derived_image(
                     job_id, task.id, fmt=str(fmt).lower(), quality=85
                 )
                 if derived is not None:
-                    files.append((derived, derived.name))
+                    # derived 缓存名带 `@full` 后缀，进包时用干净的原名
+                    files.append((derived, folder, f"{source.stem}{derived.suffix}"))
                     continue
-            files.append((source, source.name))
+            files.append((source, folder, source.name))
         if not files:
             raise WorkbenchError("没有可导出的图片")
         export_dir = root / "exports"
@@ -1374,13 +1400,14 @@ class Workbench:
         stamp = time.strftime("%Y%m%d-%H%M%S")
         suffix = "selected" if wanted else "all"
         tag = f"-{str(fmt).lower()}" if use_fmt else ""
-        target = export_dir / f"{job.batch_name or job_id}-{suffix}{tag}-{stamp}.zip"
+        target = export_dir / f"{batch}-{suffix}{tag}-{stamp}.zip"
 
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for path, name in files:
-                archive.write(path, Path(name))
+            for path, folder, name in files:
+                archive.write(path, Path(batch) / folder / name)
         job.add_log(
-            f"导出 {len(files)} 张{'(压缩 JPG)' if use_fmt else ''}：{target.name}"
+            f"导出 {len(files)} 张{'(压缩 JPG)' if use_fmt else ''}："
+            f"{target.name}（按款式分了 {len({folder for _p, folder, _n in files})} 个文件夹）"
         )
         job.save()
         return target

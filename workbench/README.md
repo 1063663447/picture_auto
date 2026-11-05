@@ -866,6 +866,12 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
     颜色没有 code 时按通用色号表（`skill.COLOR_CODES`）换算，再不行退回 `label` 大写。
 - 每张图**严格 < 2,000,000 字节**：小于就原样复制，超了才压（PNG 先最大压缩 + 减色，JPG/WEBP 先降质量，都不行才缩尺寸）；
 - ZIP 保留目录层级；`work/` 中间图绝不进包；
+- **三个下载入口结构一致**（都是 `<批次>/<款式代号>/<文件名>`，解压后同款式的图在一个文件夹里）：
+  | 入口 | 走哪条路 | 备注 |
+  |---|---|---|
+  | 「下载 ZIP」 | skill 的 `package_outputs.py` 打包 `staging/` | 完整批次 |
+  | 「批量导出 / 导出所选」 | `service.export_zip()` | 只导选中的，结构照旧分层；`fmt=jpg` 时用压缩版 |
+  | 「飞书历史 → 打包下载」 | `feishu_export.build_zip()` | 按成品名里的款式前缀分文件夹，老记录进 `others/` |
 - 有失败任务时按现有成品打包并在日志里标注；`package_outputs.py` 缺失/跑不起来时退化为内置 ZIP 并提示。
 
 > **多视角不会互相覆盖**（7.6 修）：上传 `item-01.jpg` + `item-01_view-02.jpg` 时，落盘后第二个文件名只剩
