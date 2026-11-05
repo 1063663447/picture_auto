@@ -22,19 +22,32 @@ from . import prompts
 REWORK_TEMPLATE = (
     "REVISION REQUEST — the attached image is the current accepted result and must be adjusted, "
     "not regenerated from scratch. {change} {keep} Keep the image photographic and unchanged "
-    "everywhere the request does not touch: same person, face, hair, skin, hands, pose and body "
-    "proportions, same background, props, camera angle, framing, crop, lighting, grain and "
-    "resolution. Do not beautify, upscale, denoise or re-render the photo. Original production "
-    "brief for context only — do not re-execute what is already correct: {original_prompt}"
+    "everywhere the request does not touch: {subject_keep} same background, props, camera angle, "
+    "framing, crop, lighting, grain and resolution. Do not beautify, upscale, denoise or re-render "
+    "the photo. Original production brief for context only — do not re-execute what is already "
+    "correct: {original_prompt}"
+)
+
+#: 主体那一段：以前写死 "same person, face, hair, skin, hands"，纯衣服平铺图会被带出人。
+SUBJECT_KEEP_NEUTRAL = (
+    "the same subject the reference image shows — the same person if it shows a person, an empty "
+    "garment if it shows the garment on its own, and never a person, body part or prop that the "
+    "reference does not already contain;"
+)
+SUBJECT_KEEP_GARMENT = (
+    "the same empty garment exactly as it is, with nobody in the frame — no person, no face, no "
+    "head, no hair, no neck, no hands, no arms, no legs and no skin anywhere, and nothing holding "
+    "or wearing it;"
 )
 
 #: 换模型改图时追加：明确「这张图是参考图/上一步成品」，别让新模型整张重画
 SWITCH_MODEL_CLAUSE = (
     " CROSS-MODEL HANDOFF — the attached image was rendered by a different model and is the "
     "reference to edit: reproduce its garment, printed artwork registration and scale, fabric "
-    "colour, person, pose, background and framing exactly as they are, then apply only the "
-    "requested revision. Do not reinterpret the photo, do not re-invent the artwork, do not "
-    "change the crop or colour balance."
+    "colour, subject (the same person if the image shows one, an empty garment if it does not), "
+    "pose or folds, background and framing exactly as they are, then apply only the requested "
+    "revision. Do not reinterpret the photo, do not re-invent the artwork, do not change the crop "
+    "or colour balance, and do not add a person or body part that the reference does not show."
 )
 
 LLM_SYSTEM = (
@@ -45,7 +58,9 @@ LLM_SYSTEM = (
     "printed artwork pixel-identical' rule (e.g. they want a new or different pattern), the "
     "instruction wins — allow the artwork to be redesigned and say so explicitly.\n"
     "2. Everything the instruction does NOT mention must stay identical: garment type/cut/seams, "
-    "fabric colour, person, pose, background, camera angle, framing, lighting, grain, resolution.\n"
+    "fabric colour, the subject (the same person if the reference shows one; an empty garment with "
+    "nobody added if it does not), pose or folds, background, camera angle, framing, lighting, "
+    "grain, resolution.\n"
     "3. Never describe the whole photo again, never add unrequested changes, no lists, no markdown "
     "— output only the prompt text."
 )
@@ -79,8 +94,9 @@ def compose_template(
     original_prompt: str,
     *,
     pattern_mode: str = "",
+    subject: str = "",
 ) -> str:
-    """把一条改图需求合并成结构化提示词（不再"原话贴末尾"）。"""
+    """把一条改图需求合并成结构化提示词（不再"原话贴尾"）。"""
     instruction = " ".join((instruction or "").split())
     original_prompt = " ".join((original_prompt or "").split())
     intents = prompts.classify_requirement(instruction)
@@ -97,16 +113,18 @@ def compose_template(
             "The default 'artwork must stay pixel-identical' rule is LIFTED for this pass: "
             + prompts.pattern_clause(mode, brief=instruction)
         )
-    keep = prompts.keep_clause(intents, pattern_mode=mode)
+    keep = prompts.keep_clause(intents, pattern_mode=mode, subject=subject)
     if not keep:
         keep = (
             "KEEP UNCHANGED — everything the request does not mention stays identical."
         )
+    garment = str(subject or "").strip().lower() == "garment"
     return REWORK_TEMPLATE.format(
         change=" ".join(change),
         keep=keep,
+        subject_keep=SUBJECT_KEEP_GARMENT if garment else SUBJECT_KEEP_NEUTRAL,
         original_prompt=original_prompt or "(none)",
-    )
+    ) + (" " + prompts.NO_PERSON_CLAUSE if garment else "")
 
 
 def signature(text: str) -> str:
@@ -124,10 +142,12 @@ def format_brief(
     garment: str = "",
     color: str = "",
     pattern_mode: str = "",
+    subject: str = "",
 ) -> str:
     """Structured brief for an external harness / human reviewer."""
     intents = prompts.classify_requirement(instruction)
     mode = (pattern_mode or "").strip().lower() or prompts.detect_pattern_mode(instruction) or "preserve"
+    keep = prompts.keep_clause(intents, pattern_mode=mode, subject=subject)
     return "\n".join(
         [
             "# 改图需求（rework brief）",
@@ -135,6 +155,7 @@ def format_brief(
             f"- 来源任务：{task_id}",
             f"- 款式 / 颜色：{garment} / {color}",
             f"- 图案策略：{prompts.PATTERN_MODES.get(mode, mode)}",
+            f"- 主体：{subject or 'auto'}",
             "",
             "## 用户本次需求（优先级最高）",
             (instruction or "").strip() or "(未填写)",
@@ -143,7 +164,7 @@ def format_brief(
             "、".join(intents) if intents else "（未识别到具体类别，按原话执行）",
             "",
             "## 其余保持不变",
-            prompts.keep_clause(intents, pattern_mode=mode) or "（用户要求整体重做，无额外锁定）",
+            keep or "（用户要求整体重做，无额外锁定）",
             "",
             "## 原始生产提示词（仅作上下文）",
             (original_prompt or "").strip() or "(无)",
@@ -202,9 +223,12 @@ async def compose(
     cfg: dict | None = None,
     env: dict | None = None,
     pattern_mode: str = "",
+    subject: str = "",
 ) -> tuple[str, str]:
     """Return (prompt, refiner_used)."""
     refiner = (refiner or "template").strip().lower()
+    garment = str(subject or "").strip().lower() == "garment"
+    tail = (" " + prompts.NO_PERSON_CLAUSE) if garment else ""
     if refiner == "llm" and cfg:
         model = str(cfg.get("model") or "").strip()
         key = str((env or {}).get(str(cfg.get("api_key_env") or ""), "")).strip()
@@ -218,12 +242,17 @@ async def compose(
                     api_key=key,
                     pattern_mode=pattern_mode,
                 )
-                return prompt, "llm"
+                return f"{prompt}{tail}".strip(), "llm"
             except Exception:  # noqa: BLE001 - fall back, never block a rework
                 return compose_template(
-                    instruction, original_prompt, pattern_mode=pattern_mode
+                    instruction, original_prompt, pattern_mode=pattern_mode, subject=subject
                 ), "template(降级)"
         return compose_template(
-            instruction, original_prompt, pattern_mode=pattern_mode
+            instruction, original_prompt, pattern_mode=pattern_mode, subject=subject
         ), "template(未配置 LLM)"
-    return compose_template(instruction, original_prompt, pattern_mode=pattern_mode), "template"
+    return (
+        compose_template(
+            instruction, original_prompt, pattern_mode=pattern_mode, subject=subject
+        ),
+        "template",
+    )

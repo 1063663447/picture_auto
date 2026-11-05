@@ -135,7 +135,7 @@ def main() -> int:
     check("连帽卫衣 3 色", len(bench.skill.types["hoodie"].colors) == 3)
     check("短袖 10 色", len(bench.skill.types["short-sleeve"].colors) == 10)
     check("解析到提示词模板", "[TARGET_GARMENT_TYPE]" in bench.skill.prompt_template)
-    check("解析到负面提示词", "Do not change the person" in bench.skill.negative_prompt)
+    check("解析到负面提示词", "Do not change the subject" in bench.skill.negative_prompt)
     check("2MB 限制", bench.skill.max_bytes == 2_000_000, str(bench.skill.max_bytes))
     check("解析无警告", not bench.skill.warnings, str(bench.skill.warnings))
 

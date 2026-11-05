@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=7.7.0" />
-<link rel="stylesheet" href="/aurora.css?v=7.7.0" />
+<link rel="stylesheet" href="/style.css?v=7.8.0" />
+<link rel="stylesheet" href="/aurora.css?v=7.8.0" />
 </head>
 <body>
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -131,6 +131,14 @@
           <div class="queue-line">
             <span class="gate-hint" id="gateHint" title="点一下刷新队列状态">队列 —</span>
           </div>
+          <label class="field">
+            <span class="lbl">画面主体 <span class="tip" title="原图只有衣服（平铺/挂拍）时选「只有衣服」，提示词会禁止模型添加模特">?</span></span>
+            <select id="subject">
+              <option value="auto">自动判断 · 按原图</option>
+              <option value="garment">只有衣服 · 平铺/挂拍（禁止加人）</option>
+              <option value="person">真人上身 · 保留同一个人</option>
+            </select>
+          </label>
           <label class="field">
             <span class="lbl">画面比例</span>
             <select id="aspect">
@@ -386,6 +394,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=7.7.0"></script>
+<script src="/app.js?v=7.8.0"></script>
 </body>
 </html>

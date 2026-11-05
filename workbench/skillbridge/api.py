@@ -403,6 +403,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             color,
             requirement=str(body.get("requirement") or body.get("extra_requirements") or ""),
             pattern_mode=str(body.get("pattern_mode") or ""),
+            subject=str(body.get("subject") or ""),
         )
         payload["ok"] = True
         return payload
@@ -431,6 +432,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         extra_requirements: str = Form(""),
         pattern_mode: str = Form(""),
         pattern_brief: str = Form(""),
+        subject: str = Form(""),
+        retry_on_person: bool = Form(False),
         start: bool = Form(True),
     ):
         bench = wb(request)
@@ -484,6 +487,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
             extra_requirements=extra_requirements,
             pattern_mode=pattern_mode,
             pattern_brief=pattern_brief,
+            subject=subject,
+            retry_on_person=retry_on_person,
             account=current_account(request),
         )
         if start:
@@ -600,6 +605,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         garment = None
         color = ""
         image_paths: list[Path] = []
+        subject_kind = ""
         if job_id:
             job = bench.get_job(job_id)
             garment = bench.skill.type_by_alias(job.params.get("garment_type"))
@@ -609,6 +615,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 base_prompt = base_prompt or ready[0].prompt
                 color = ready[0].color_name
                 image_paths = [(job.root or bench.job_dir(job_id)) / str(t.out) for t in ready][:3]
+                subject_kind = str(getattr(ready[0], "subject", "") or "")
             model_choice = model_choice or str(job.params.get("model") or "")
         else:
             try:
@@ -622,12 +629,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
             color = ref.name_zh if ref else ""
             if draft_id:
                 image_paths = bench.draft_image_paths(draft_id)[:3]
+            if image_paths:
+                from . import subject as subject_mod
+
+                subject_kind = subject_mod.detect(image_paths[0])
             if not base_prompt and ref is not None:
                 base_prompt = prompts.build_single_pass(
                     bench.skill,
                     garment,
                     ref,
                     " ".join(instruction.split()) if instruction else None,
+                    subject=subject_kind,
                 )
 
         defaults = bench.defaults()
@@ -971,6 +983,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         refiner: str = Form(""),
         prompt_override: str = Form(""),
         pattern_mode: str = Form(""),
+        subject: str = Form(""),
         start: bool = Form(True),
     ):
         bench = wb(request)
@@ -988,6 +1001,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             prompt_override=prompt_override,
             account=current_account(request),
             pattern_mode=pattern_mode,
+            subject=subject,
         )
         if start:
             bench.start(job.id)

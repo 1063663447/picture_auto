@@ -29,6 +29,71 @@ PRESERVE_CLAUSE = (
     "crop, lighting, depth of field, resolution, and image quality."
 )
 
+#: **主体中立**约束：原图有模特就保持同一个模特，原图是平铺就保持平铺，且绝不新增
+#: 原图没有的人和身体部位。这一条对两种原图都成立 —— 以前直接写 "keep the same person,
+#: face, hair, skin, hands" 是在**邀请**模型给纯衣服平铺图补一个模特（实测出现过）。
+SUBJECT_CLAUSE = (
+    "SUBJECT — the source image alone decides what the subject is, so do not change it. If the "
+    "source shows the garment on a person, keep that same person: same face, hair, skin tone, "
+    "hands, pose, body proportions, pants and shoes. If the source shows the garment on its own "
+    "(flat lay, hanger, invisible or ghost mannequin), keep it exactly that way. Either way, never "
+    "introduce anything the source does not already contain: no new person, no model, no face, no "
+    "head, no hair, no neck, no hands, no arms, no legs, no feet, no skin, no body, no stylist, and "
+    "no extra body part or limb."
+)
+
+#: 原图 = 纯衣服（判定为 garment）时替换掉 PRESERVE_CLAUSE 的硬约束。
+NO_PERSON_CLAUSE = (
+    "NO PERSON — the source photo shows the garment on its own, so the output must contain ONLY "
+    "the garment. No mannequin, no human model, no face, no head, no neck, no hair, no arms, no "
+    "hands, no fingers, no legs, no feet, no skin, and no body of any kind inside, behind or around "
+    "the garment. The garment must stay empty and hollow: the neckline opening shows the backdrop "
+    "or the dark inside of the collar, never a neck or a chest; the sleeves and body are empty, "
+    "never filled out by a body; nothing holds, wears, lifts or touches the garment — no hands, no "
+    "hanger held by a person, no stylist, no model posing. Keep the source's flat-lay or "
+    "ghost-mannequin presentation, camera angle, framing, crop, background, props, lighting, depth "
+    "of field, resolution and image quality exactly as they are."
+)
+
+#: 成品复查发现"又画了个人"时，追加重画用的强化句。
+NO_PERSON_REINFORCE = (
+    " HARD RULE, THE PREVIOUS ATTEMPT FAILED THIS — the image must contain the empty garment "
+    "ONLY: absolutely no person, no face, no head, no hair, no hands, no arms, no legs, no skin "
+    "and no body anywhere in the frame, not even in shadow or out of focus."
+)
+
+#: 原图是纯衣服时追加的否定词。
+NEGATIVE_NO_PERSON = (
+    "No person, no human being, no model, no woman, no man, no child, no face, no portrait, no "
+    "selfie, no headshot, no head, no hair, no neck, no skin, no skin tone, no arms, no hands, no "
+    "fingers, no legs, no feet, no body, no torso, no shoulder wearing the shirt, no one wearing "
+    "the garment, no model posing, no stylist or assistant, no reflection of a person, no mannequin "
+    "with a head, no filled-out garment silhouette, no body shape showing through the fabric."
+)
+
+
+def preserve_clause(subject: str = "") -> str:
+    """按主体给出"保持不变"的那一段。
+
+    * ``garment``（判定为纯衣服）→ NO_PERSON_CLAUSE，明确禁止画人。
+    * ``person``（真人上身）→ PRESERVE_CLAUSE，锁住原人物。
+    * 空/auto（不确定）→ SUBJECT_CLAUSE，中立表述，既不邀请也不擦除。
+    """
+    kind = str(subject or "").strip().lower()
+    if kind == "garment":
+        return NO_PERSON_CLAUSE
+    if kind == "person":
+        return PRESERVE_CLAUSE
+    return SUBJECT_CLAUSE
+
+
+def subject_clause(subject: str = "") -> str:
+    """中性主体句：只有在主体未知时才需要额外强调（其余两种已含在 preserve_clause 里）。"""
+    kind = str(subject or "").strip().lower()
+    if kind in {"garment", "person"}:
+        return ""
+    return SUBJECT_CLAUSE
+
 #: The single most important clause for e-commerce: never let the model re-create art.
 PRINT_LOCK_CLAUSE = (
     "PRINT LOCK — treat the artwork already on the garment as an untouchable asset and "
@@ -151,8 +216,10 @@ def sleeve_negative(garment: GarmentType) -> str:
 STYLE_ONLY_TEMPLATE = (
     "Transform only the visible garment in this photo into a {phrase}. "
     "Change nothing but the garment's silhouette and construction: the shoulder line, armhole, "
-    "neckline, cuffs, hem and folds must follow the person's pose and body shape, with no extra "
-    "limbs, warped anatomy, or unnatural garment edges. "
+    "neckline, cuffs, hem and folds must follow the source's own silhouette and drape — a worn "
+    "garment follows that person's pose and body shape, a flat-lay follows its own folds and "
+    "hanging shape — with no extra limbs, warped anatomy, or unnatural garment edges, and without "
+    "adding a person or a body that the source does not show. "
     "Keep the garment's own original base colour exactly as it appears in the source photo; "
     "do not recolour the fabric. "
     + PRINT_CLAUSE
@@ -176,7 +243,8 @@ RECOLOR_ONLY_TEMPLATE = (
     "Match the new colour's hue, brightness, saturation and warm/cool balance precisely, and let "
     "it follow the garment's existing highlights, shadows, folds and weave instead of becoming a "
     "flat colour block: keep visible fabric layering on dark and desaturated colours, and never "
-    "spill colour onto skin, hair, hands, pants, shoes, jewelry, hardware or the background. "
+    "spill colour onto the background, props or hardware — nor, when the garment is being worn, "
+    "onto skin, hair, hands, pants, shoes or jewelry. "
     + PRINT_CLAUSE
     + " "
     + PRINT_LOCK_CLAUSE
@@ -296,8 +364,11 @@ INTENT_UNLOCKS: dict[str, tuple[str, ...]] = {
 }
 
 KEEP_ITEMS: dict[str, str] = {
-    "person": "the same person, face, hair, skin and hands",
-    "pose": "the same pose and body proportions",
+    # 主体统一成一条中性表述：以前写死 "the same person, face, hair, skin and hands"，
+    # 对纯衣服平铺图等于要求模型「造一个人出来」。
+    "subject": "the same subject exactly as in the source (a person stays that same person, with "
+               "the same face, hair, skin and hands; a flat-lay or hanger shot stays a flat-lay "
+               "with nothing and nobody added)",
     "garment": "the same garment type, cut, seams, ribbing, cuffs, hem, collar, hood and pockets",
     "artwork": "the printed / embroidered artwork with the same letterforms, spacing, scale, "
                "position and material relief",
@@ -396,7 +467,9 @@ def pattern_clause(pattern_mode: str, color_name: str = "", brief: str = "") -> 
     return ""
 
 
-def keep_clause(intents: list[str], *, pattern_mode: str = "preserve") -> str:
+def keep_clause(
+    intents: list[str], *, pattern_mode: str = "preserve", subject: str = ""
+) -> str:
     """把"必须保持不变"的部分列成一句；用户要改的项自动从清单里去掉。"""
     unlocked: set[str] = set()
     for intent in intents:
@@ -406,6 +479,12 @@ def keep_clause(intents: list[str], *, pattern_mode: str = "preserve") -> str:
     if "pattern_replace" in intents or "pattern_variant" in intents:
         unlocked.add("artwork")
     items = [text for key, text in KEEP_ITEMS.items() if key not in unlocked]
+    if str(subject or "").strip().lower() == "garment":
+        # 原图是空衣服：明确「不许添人」，而不是靠模型自己体会
+        items.append(
+            "an empty garment only — do not add a person, a model, hands, arms, a neck, skin or "
+            "any body part that the source does not show"
+        )
     if not items:
         return ""
     return "KEEP UNCHANGED — " + "; ".join(items) + "."
@@ -453,6 +532,7 @@ def build_single_pass(
     *,
     pattern_mode: str = "preserve",
     pattern_brief: str = "",
+    subject: str = "",
 ) -> str:
     mode = (pattern_mode or "preserve").strip().lower()
     if mode not in PATTERN_MODES:
@@ -460,7 +540,8 @@ def build_single_pass(
     intents = classify_requirement(extra)
 
     template = skill.prompt_template or (
-        "Transform only the visible garment into {phrase}. " + PRINT_CLAUSE + " " + PRESERVE_CLAUSE
+        "Transform only the visible garment into {phrase}. " + PRINT_CLAUSE + " "
+        + preserve_clause(subject)
     )
     if "[TARGET_GARMENT_TYPE]" in template:
         prompt = template.replace("[TARGET_GARMENT_TYPE]", garment.phrase)
@@ -481,25 +562,40 @@ def build_single_pass(
         # 用户要改图案：不再塞"逐像素保留"，改成正向的图案策略
         parts.append(pattern_clause(mode, color.name_zh, pattern_brief))
     parts.append(MATERIAL_CLAUSE)
-    keep = keep_clause(intents, pattern_mode=mode)
+    keep = keep_clause(intents, pattern_mode=mode, subject=subject)
     if keep:
         parts.append(keep)
-    elif mode == "preserve":
+    # 主体约束始终补一次：skill 模板已改成中性表述，这里按任务主体的判定结果钉死
+    parts.append(subject_clause(subject))
+    kind = str(subject or "").strip().lower()
+    if kind == "garment":
+        parts.append(NO_PERSON_CLAUSE)
+    elif kind == "person":
+        # 真人上身：锁住同一个人（skill 模板不再写死这句，必须显式补）
         parts.append(PRESERVE_CLAUSE)
+    elif mode == "preserve" and not keep:
+        parts.append(preserve_clause(subject))
     return tidy_articles(" ".join(part for part in parts if part).strip())
 
 
-def build_style_only(garment: GarmentType) -> str:
+def build_style_only(garment: GarmentType, *, subject: str = "") -> str:
     return tidy_articles(
         STYLE_ONLY_TEMPLATE.format(phrase=garment.phrase)
         + " " + sleeve_clause(garment)
         + " " + cuff_clause(garment)
+        + " " + subject_clause(subject)
+        + (" " + NO_PERSON_CLAUSE if str(subject or "").lower() == "garment" else "")
     )
 
 
 def build_recolor_only(
-    color: ColorRef, *, pattern_mode: str = "preserve", garment: GarmentType | None = None
+    color: ColorRef,
+    *,
+    pattern_mode: str = "preserve",
+    garment: GarmentType | None = None,
+    subject: str = "",
 ) -> str:
+    garment_mode = str(subject or "").strip().lower() == "garment"
     if (pattern_mode or "preserve") != "preserve":
         base = (
             f"This is a colour + artwork task, not a redraw of the photo. Change the garment's base "
@@ -509,7 +605,7 @@ def build_recolor_only(
             + " "
             + MATERIAL_CLAUSE
             + " "
-            + keep_clause([], pattern_mode=pattern_mode)
+            + keep_clause([], pattern_mode=pattern_mode, subject=subject)
         )
     else:
         base = RECOLOR_ONLY_TEMPLATE.format(
@@ -518,21 +614,30 @@ def build_recolor_only(
     if garment is not None:
         # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长：把这两条再钉一次
         base = base + " " + sleeve_clause(garment) + " " + cuff_clause(garment)
-    return base
+    base = base + " " + subject_clause(subject)
+    if garment_mode:
+        base = base + " " + NO_PERSON_CLAUSE
+    return tidy_articles(base)
 
 
 def full_negative(
-    skill: Skill, pattern_mode: str = "preserve", garment: GarmentType | None = None
+    skill: Skill,
+    pattern_mode: str = "preserve",
+    garment: GarmentType | None = None,
+    subject: str = "",
 ) -> str:
     """Skill negative prompt + workbench negatives（图案允许重画时换一套否定词）。
 
-    传了 garment 就再按它的袖口工艺追加一组否定（平口/螺纹互相排斥的那几条）。
+    传了 garment 就再按它的袖口工艺追加一组否定（平口/螺纹互相排斥的那几条）；
+    主体判定为「只有衣服」时再追加一组禁人的否定词。
     """
     base = " ".join((skill.negative_prompt or "").split())
     mode = (pattern_mode or "preserve").strip().lower()
     extra = NEGATIVE_EXTRA if mode == "preserve" else NEGATIVE_VARIANT
     if garment is not None:
         extra = extra + " " + sleeve_negative(garment) + " " + cuff_negative(garment)
+    if str(subject or "").strip().lower() == "garment":
+        extra = extra + " " + NEGATIVE_NO_PERSON
     return (base + " " + extra).strip()
 
 
@@ -560,6 +665,7 @@ def apply_requirement(
     *,
     pattern_mode: str = "",
     pattern_brief: str = "",
+    subject: str = "",
 ) -> str:
     """把一条需求整合进"已经拼好的提示词"（harness 预览/改图用）。
 
@@ -583,7 +689,10 @@ def apply_requirement(
         parts.append(PRINT_LOCK_CLAUSE)
     else:
         parts.append(pattern_clause(mode, brief=pattern_brief or requirement))
-    parts.append(keep_clause(intents, pattern_mode=mode))
+    parts.append(keep_clause(intents, pattern_mode=mode, subject=subject))
+    parts.append(subject_clause(subject))
+    if str(subject or "").strip().lower() == "garment":
+        parts.append(NO_PERSON_CLAUSE)
     return " ".join(part for part in parts if part).strip()
 
 
@@ -594,6 +703,7 @@ def preview(
     *,
     requirement: str = "",
     pattern_mode: str = "",
+    subject: str = "",
 ) -> dict:
     color = color or (garment.colors[0] if garment.colors else None)
     if color is None:
@@ -603,13 +713,16 @@ def preview(
         mode = detect_pattern_mode(requirement) or "preserve"
     return {
         "single_pass": build_single_pass(
-            skill, garment, color, requirement, pattern_mode=mode
+            skill, garment, color, requirement, pattern_mode=mode, subject=subject
         ),
-        "style_only": build_style_only(garment),
-        "recolor_only": build_recolor_only(color, pattern_mode=mode, garment=garment),
-        "negative": full_negative(skill, mode, garment),
+        "style_only": build_style_only(garment, subject=subject),
+        "recolor_only": build_recolor_only(
+            color, pattern_mode=mode, garment=garment, subject=subject
+        ),
+        "negative": full_negative(skill, mode, garment, subject),
         "pattern_mode": mode,
         "pattern_modes": PATTERN_MODES,
+        "subject": subject or "auto",
         "cuff": garment.cuff,
         "cuff_zh": garment.cuff_zh,
         "color": color.as_dict(),

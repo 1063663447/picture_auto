@@ -891,7 +891,19 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
 - **PRINT LOCK（图案锁）**：三种模式的提示词都会附一段硬约束——印花必须**逐像素照抄**：同样的字形/字重/字距/大小/位置/旋转，同样的立体浮雕、光泽、边缘高光与投影；明确禁止重新打字、重排字距、拉伸、压平立体字、缩放或移动图案。同时在工作台的负面词里追加了对应的 ~20 条禁止项（不换字体、不改字距、不把平面印变立体、不丢斜面高光、不改领标…）。
 - **MATERIAL（材质锁）**：针对“图案像贴上去”的问题——要求印花保留源图的**物理材质与摄影质感**：同样的表面工艺（磨砂胶印/发泡/刺绣/植绒）、字母内部的微纹理与胶片颗粒、同样的边缘柔度、同方向的高光、与面料交界处的接触阴影与厚度，并且衣服的褶皱和光线要**穿过**图案继续延伸。明确禁止：干净矢量 logo、铬合金渐变、贴纸/贴花感、CGI 渲染感、均匀平涂、比周围照片更锐利的边缘。负面词同步补了对应条目。
 - **原图保真度 `input_fidelity`**：`gpt-image` 系列支持该参数，`high` 会让模型尽量沿用原图细节（人物、文字、图案）。`terra*` 三个接口已默认写死 `high`；需要临时改动时用命令行 `--fidelity low`，或在 `config.json` 里改 provider 的 `input_fidelity`。
-- **改图返工（rework）**：见 §3 末尾——把不满意的成品挑出来，用「本次需求 + 原始提示词」合成新提示词，并以该成品为参考图重跑，只影响挑中的那几张。
+- **主体（画面里有没有人）· 7.8.0**：原图是「纯衣服平铺/挂拍」还是「真人上身」，决定提示词完全不同。
+  以前 skill 模板里写死 *Keep the exact same person, face, hair, skin, hands…*，**平铺图等于被要求造一个人出来**，
+  实测同一批 3 张平铺里就有 1 张变成女生穿着卖。现在改成三层：
+  1. **中性主体句**（默认）：`SUBJECT — the source image alone decides what the subject is`，
+     原图有模特就保持同一个人、原图是空衣服就保持空衣服，**两者都不许新增原图没有的人和身体部位**；
+  2. **禁人硬约束**（判定为纯衣服时）：`NO PERSON — …only the garment…` + 否定词 `no person / no human / no face / no hands / no neck / no skin …`，
+     并且领口只能露背景或领内暗部、袖筒与衣身必须是空的；
+  3. **成品复查**：出图后拿原图背景做遮罩，若「原背景区域」变成大片皮肤色 → 任务记 `person_alert` 并写日志；
+     `retry_on_person=true` 时会加 `NO_PERSON_REINFORCE` 自动重画一次。
+  判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
+  界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
+  回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **改图返工（rework）**：见 §3 末尾——把不满意的成品挑出来，用「本次需求 + 原始提示词」合成新提示词，并以该成品为参考图重跑，只影响挑中的那几张。改图的主体**继承源任务**（平铺图返工不会被顺手补个人上去）。
 - **负面约束**：接口有 `negative` 字段就单独传（`supports_negative: true`），没有就合并到提示词末尾——和 skill 的要求一致。
 - **颜色参考图**：`max_images >= 2` 时自动把「原图 + 对应参考色图」一起发送；只支持单图的接口靠提示词里的色值 + 颜色名约束，仍然可用。
 - 每次任务实际发送的提示词可在界面点 **查看提示词**，或看 `job.json` 里每个 `task.prompt`。
@@ -1008,6 +1020,8 @@ python tools/repair_job.py --dry-run      # 列出需要修复的历史任务（
 python tools/repair_job.py --all          # 搬回缓存目录 + 重新打包，能救回没 ZIP 的旧任务
 python tools/check_price_table.py    # 打印飞书定价表现状（三位小数 / 分档）
 python tools/check_cuff.py           # 袖口工艺回归：T 恤平口 / 卫衣螺纹（离线）
+python tools/check_no_person.py      # 主体约束回归：平铺图禁止补模特 / 真人图保留同一个人（离线）
+python tools/check_no_person.py --live --source=library/refs/23-sorona-tee/white.jpg  # 真跑一张（≈¥0.006）看成品有没有人
 python tools/check_cuff_real.py --yes # 同上但真接口出 2 张对照图（约 ¥0.08，看 data/test/cuff/real-cuffs.png）
 python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表维护
 ```

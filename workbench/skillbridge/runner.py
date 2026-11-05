@@ -8,11 +8,13 @@ import io
 import random
 import shutil
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image
 
 from . import prompts
+from . import subject as subject_mod
 from .job import Job, Task, job_stamp, normalise_item, view_of
 from .gate import GateBusy
 from .packaging import package_outputs
@@ -133,6 +135,11 @@ class JobRunner:
                 prompts.detect_pattern_mode(self.extra_requirements) or "preserve"
             )
         self.pattern_brief = str(params.get("pattern_brief") or "").strip()
+        # 主体：garment（原图只有衣服）/ person（真人上身）/ auto（按原图判断）。
+        # 判不准就按 person 走中性提示词，见 subject.detect
+        self.subject_override = subject_mod.normalise(params.get("subject"))
+        # 出图后发现「又画了个人」要不要自动重画一次（默认只警告，不偷偷多花钱）
+        self.retry_on_person = bool(params.get("retry_on_person", False))
         self.negative = prompts.full_negative(self.skill, self.pattern_mode)
         # 多款式时每个款式有各自的袖口工艺（平口/螺纹），否定词必须按款取，
         # 不能共用第一款的：否则长袖 T 恤会拿到卫衣的否定、或者反过来
@@ -270,14 +277,33 @@ class JobRunner:
                 entries.append((item_dir.name, view, path))
         return entries
 
+    def subject_for(self, path: Path) -> str:
+        """这张原图有没有真人：判不准按 person（中性提示词，不多禁）。"""
+        return subject_mod.detect(path, self.subject_override)
+
     def plan(self) -> None:
         sources = self._sources()
         if not sources:
             raise ValueError("没有可处理的输入图片")
+        # 每张原图先判主体：纯衣服平铺图绝不能拿到「保持同一个人」那句
+        subjects = {str(path): self.subject_for(path) for _item, _view, path in sources}
+        counts = {"garment": 0, "person": 0}
+        for kind in subjects.values():
+            counts[kind] = counts.get(kind, 0) + 1
+        self.job.params["subject"] = (
+            "garment" if counts.get("garment") and not counts.get("person") else "person"
+        )
+        self.job.params["subjects"] = dict(counts)
+        if counts.get("garment"):
+            self.job.add_log(
+                f"主体判定：{counts['garment']} 张是纯衣服（平铺/挂拍），已禁止添加人物；"
+                f"{counts.get('person', 0)} 张按真人/不确定处理"
+            )
         tasks: list[Task] = []
         for garment, colors in self.selections:
             for item, view, path in sources:
                 base = f"{item}-{view}" if view else item
+                subject = subjects.get(str(path), "person")
                 for color in colors:
                     # 多款式时 id 里带上款式，避免「同图同色不同款」撞号
                     task_id = (
@@ -287,7 +313,10 @@ class JobRunner:
                     )
                     if self.mode in {"two_phase", "recolor_only"}:
                         prompt = prompts.build_recolor_only(
-                            color, pattern_mode=self.pattern_mode, garment=garment
+                            color,
+                            pattern_mode=self.pattern_mode,
+                            garment=garment,
+                            subject=subject,
                         )
                     else:
                         prompt = prompts.build_single_pass(
@@ -297,6 +326,7 @@ class JobRunner:
                             self.extra_requirements,
                             pattern_mode=self.pattern_mode,
                             pattern_brief=self.pattern_brief,
+                            subject=subject,
                         )
                     tasks.append(
                         Task(
@@ -310,6 +340,7 @@ class JobRunner:
                             garment_name=garment.display_name,
                             source=str(path.relative_to(self.root)).replace("\\", "/"),
                             prompt=prompt,
+                            subject=subject,
                         )
                     )
         self.job.tasks = tasks
@@ -424,7 +455,7 @@ class JobRunner:
         request = EditRequest(
             images=[source],
             prompt=task.prompt,
-            negative=self.negative_for(self.garment_for_task(task)),
+            negative=self.negative_for(self.garment_for_task(task), task.subject),
             size=self._resolve_size(source),
             quality=str(self.job.params.get("quality") or "high"),
             seed=None,
@@ -455,8 +486,8 @@ class JobRunner:
                 return
             request = EditRequest(
                 images=[path],
-                prompt=prompts.build_style_only(self.garment),
-                negative=self.negative_for(self.garment),
+                prompt=prompts.build_style_only(self.garment, subject=self.subject_for(path)),
+                negative=self.negative_for(self.garment, self.subject_for(path)),
                 size=self._resolve_size(path),
                 quality=str(self.job.params.get("quality") or "high"),
                 seed=self.job.params.get("seed"),
@@ -567,14 +598,14 @@ class JobRunner:
         except KeyError:
             return self.garment
 
-    def negative_for(self, garment: GarmentType | None) -> str:
-        """按款式取否定词（袖口工艺可能不同），结果缓存。"""
-        if garment is None:
-            return self.negative
-        cached = self._negatives.get(garment.slug)
+    def negative_for(self, garment: GarmentType | None, subject: str = "") -> str:
+        """按款式+主体取否定词（袖口工艺、是否禁人都可能不同），结果缓存。"""
+        kind = subject_mod.normalise(subject) if subject else ""
+        key = f"{(garment.slug if garment is not None else '')}|{kind}"
+        cached = self._negatives.get(key)
         if cached is None:
-            cached = prompts.full_negative(self.skill, self.pattern_mode, garment)
-            self._negatives[garment.slug] = cached
+            cached = prompts.full_negative(self.skill, self.pattern_mode, garment, kind)
+            self._negatives[key] = cached
         return cached
 
     async def _execute_color_task(self, task: Task, *, source_override: Path | None = None) -> None:
@@ -602,7 +633,7 @@ class JobRunner:
         request = EditRequest(
             images=images,
             prompt=task.prompt,
-            negative=self.negative_for(garment),
+            negative=self.negative_for(garment, task.subject),
             size=self._resolve_size(source),
             quality=str(self.job.params.get("quality") or "high"),
             seed=self.job.params.get("seed"),
@@ -610,6 +641,13 @@ class JobRunner:
             input_fidelity=self.input_fidelity,
         )
         await self._attempt(task, request)
+
+    def _person_alert(self, task: Task, data: bytes) -> dict:
+        """原图是空衣服，成品里却冒出人 → 记警告（可选自动重画，见 retry_on_person）。"""
+        if subject_mod.normalise(task.subject) != subject_mod.GARMENT:
+            return {"alert": False, "skin": 0.0}
+        source = self.root / task.source
+        return subject_mod.person_alert(source, data)
 
     async def _attempt(self, task: Task, request: EditRequest) -> None:
         if task.status == "running":
@@ -628,6 +666,23 @@ class JobRunner:
                 self._set_status(task, "queued")
             try:
                 data = await self._guarded_call(request, task)
+                alert = self._person_alert(task, data)
+                if alert.get("alert"):
+                    self.job.add_log(
+                        f"{task.id} 疑似生成了真人（原图是空衣服，新增皮肤区域 "
+                        f"{alert.get('skin', 0):.1%}）",
+                        level="warn",
+                    )
+                    task.person_alert = True
+                    if self.retry_on_person and attempt < self.max_retries:
+                        # 只加一次强化约束重画，别把「疑似」当成失败无限重试
+                        self.retry_on_person = False
+                        request = replace(
+                            request, prompt=f"{request.prompt}{prompts.NO_PERSON_REINFORCE}"
+                        )
+                        raise ProviderError(
+                            "成品里出现了人物，已加禁人约束重画一次", retryable=True
+                        )
                 rel = self._store(task, data)
                 self._set_status(task, "done", out=rel, error=None, error_kind="", bytes=len(data))
                 return

@@ -15,6 +15,7 @@ import httpx
 
 from . import feishu as feishu_mod
 from . import refine
+from . import subject as subject_module
 from .config import WORKBENCH_DIR, load_config, load_env
 from .gate import GateConfig, RemoteGate
 from .pricing import Pricer, UsageLedger
@@ -451,6 +452,8 @@ class Workbench:
         extra_requirements: str = "",
         pattern_mode: str = "",
         pattern_brief: str = "",
+        subject: str = "",
+        retry_on_person: bool = False,
         account: str = "",
     ) -> Job:
         if not uploads:
@@ -569,6 +572,9 @@ class Workbench:
             "extra_requirements": " ".join((extra_requirements or "").split()),
             "pattern_mode": _resolve_pattern_mode(pattern_mode, extra_requirements),
             "pattern_brief": " ".join((pattern_brief or "").split()),
+            # 主体：auto（按原图判）/ garment（纯衣服平铺）/ person（真人上身）
+            "subject": subject_module.normalise(subject),
+            "retry_on_person": bool(retry_on_person),
             "account": str(account or ""),
             "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto")),
         }
@@ -1210,6 +1216,7 @@ class Workbench:
         prompt_override: str = "",
         account: str = "",
         pattern_mode: str = "",
+        subject: str = "",
     ) -> Job:
         """以选中的成品为参考图返工（改图）。"""
         source_job = self.get_job(source_job_id)
@@ -1258,6 +1265,11 @@ class Workbench:
             target = target_dir / f"{stem}{original.suffix or '.png'}"
             target.write_bytes(original.read_bytes())
 
+            # 改图的主体跟**参考图**一致：源任务判定过就直接继承，否则现判一次
+            task_subject = subject_module.normalise(subject or getattr(task, "subject", ""))
+            if not task_subject:
+                task_subject = subject_module.detect(target)
+
             if prompt_override.strip():
                 prompt, used = prompt_override.strip(), "harness"
             else:
@@ -1268,6 +1280,7 @@ class Workbench:
                     cfg=rework_cfg.get("llm") or {},
                     env=self.env,
                     pattern_mode=rework_mode,
+                    subject=task_subject,
                 )
             refiners.add(used)
             if model_switched:
@@ -1282,6 +1295,7 @@ class Workbench:
                 color_name=f"{task.color_name}·改图",
                 source=str(target.relative_to(root)).replace("\\", "/"),
                 prompt=prompt,
+                subject=task_subject,
             )
             tasks.append(new_task)
             briefs.append(
@@ -1293,6 +1307,7 @@ class Workbench:
                     garment=garment.display_name,
                     color=task.color_name,
                     pattern_mode=rework_mode,
+                    subject=task_subject,
                 )
             )
 
@@ -1337,6 +1352,7 @@ class Workbench:
             "brief": briefs[0] if briefs else "",
             "account": str(account or source_job.params.get("account") or ""),
             "pattern_mode": rework_mode,
+            "subject": str(tasks[0].subject or "person") if tasks else "person",
         }
 
         params["estimate"] = self.pricer.estimate(

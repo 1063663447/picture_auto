@@ -113,6 +113,10 @@ class Task:
     garment: str = ""               # 款式 slug（多款式任务时用于区分目录/命名）
     garment_name: str = ""          # 款式展示名
     prompt: str = ""
+    #: 主体：garment（原图只有衣服，禁止添加人物）| person（真人上身/不确定）
+    subject: str = ""
+    #: 成品复查发现「原图是空衣服、成品却冒出人」时为 True（界面/日志用于提示重画）
+    person_alert: bool = False
     #: pending（还没轮到）| queued（在飞书队列里排队）| running（正在生成）
     #: | done | failed | skipped | canceled
     status: str = "pending"
@@ -154,6 +158,8 @@ class Task:
             "bytes": self.bytes,
             "prompt": self.prompt,
             "source": self.source,
+            "subject": self.subject,
+            "person_alert": self.person_alert,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
         }
@@ -310,6 +316,8 @@ class Job:
                     garment_name=raw.get("garment_name") or "",
                     source=raw.get("source") or "",
                     prompt=raw.get("prompt") or "",
+                    subject=raw.get("subject") or "",
+                    person_alert=bool(raw.get("person_alert")),
                     status=raw.get("status") or "pending",
                     attempts=raw.get("attempts") or 0,
                     error=raw.get("error"),

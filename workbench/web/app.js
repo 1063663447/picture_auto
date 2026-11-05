@@ -973,6 +973,7 @@
       }
     }
     setSelect("patternMode", restore("patternMode", state.defaults.pattern_mode || ""));
+    setSelect("subject", restore("subject", state.defaults.subject || "auto"));
     setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
     setSelect("downloadFmt", "png");
@@ -988,6 +989,7 @@
     store("sizeTier", currentTierChoice());
     store("quality", $("quality").value);
     store("patternMode", currentPatternMode());
+    store("subject", $("subject") ? $("subject").value : "auto");
     store("outputFormat", currentOutputFormat());
   }
 
@@ -1025,6 +1027,8 @@
       form.append("quality", $("quality").value);
       form.append("output_format", currentOutputFormat());
       form.append("pattern_mode", currentPatternMode());
+      // 画面主体：原图只有衣服时禁止模型补模特（提示词层+否定词层都生效）
+      form.append("subject", $("subject") ? $("subject").value : "auto");
       form.append("send_reference", "true");   // 默认总是带颜色参考图
       if (extraRequirements) form.append("extra_requirements", extraRequirements);
       form.append("start", "true");
@@ -1539,6 +1543,7 @@
           color,
           requirement: state.requirements || "",
           pattern_mode: currentPatternMode(),
+          subject: $("subject") ? $("subject").value : "auto",
         }),
       });
       const modeLabel = (data.pattern_modes || {})[data.pattern_mode] || data.pattern_mode || "";
