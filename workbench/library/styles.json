@@ -106,7 +106,8 @@
         "effect": "effects/23-sorona-tee/GN[0].jpg",
         "effect_source": "23#SLNDX / 墨绿色 / image39.jpg"
       }
-    ]
+    ],
+    "fit": "relaxed loose fit: dropped shoulders, wide roomy short sleeves, straight boxy body with soft drape, ribbed neckband"
   },
   {
     "slug": "07-washed-tee",
@@ -134,7 +135,8 @@
         "effect": "effects/07-washed-tee/BK[0].jpg",
         "effect_source": "07#SXT / 黑色 / image57.jpg"
       }
-    ]
+    ],
+    "fit": "oversized washed fit: dropped shoulders, loose body and wide short sleeves, slightly faded garment-dyed surface"
   },
   {
     "slug": "24-long-sleeve",
@@ -198,7 +200,8 @@
         "effect": "effects/24-long-sleeve/GN[0].jpg",
         "effect_source": "24#CXCR / 墨绿色 / image64.jpg"
       }
-    ]
+    ],
+    "fit": "regular straight fit: set-in shoulders, straight body, long sleeves with a straight tube that ends at the wrist"
   },
   {
     "slug": "21-kids-sorona-tee",
@@ -298,7 +301,8 @@
         "effect": "effects/21-kids-sorona-tee/GN[0].jpg",
         "effect_source": "21#TZSLN / 墨绿色 / image75.jpg"
       }
-    ]
+    ],
+    "fit": "relaxed kids fit: dropped shoulders, roomy short sleeves, straight body"
   },
   {
     "slug": "10-stretch-tee",
@@ -380,7 +384,8 @@
         "effect": "effects/10-stretch-tee/BN[0].jpg",
         "effect_source": "10#TLDX / 棕色 / image92.jpg"
       }
-    ]
+    ],
+    "fit": "slim, body-hugging stretch jersey: narrow straight body that follows the torso, no drop shoulder, short fitted sleeves that hug the upper arm and end above the elbow, close round neckband, straight hem"
   },
   {
     "slug": "03-crewneck-sweatshirt",
@@ -444,7 +449,8 @@
         "effect": "effects/03-crewneck-sweatshirt/APR[0].jpg",
         "effect_source": "03#YLWY / 杏色 / image99.jpg"
       }
-    ]
+    ],
+    "fit": "regular fit crewneck sweatshirt: set-in shoulders, straight body, ribbed cuffs and ribbed hem, mid-weight fleece"
   },
   {
     "slug": "06-hoodie",
@@ -490,7 +496,8 @@
         "effect": "effects/06-hoodie/FGY[0].jpg",
         "effect_source": "06#LMWY / 花灰色 / image4.jpg"
       }
-    ]
+    ],
+    "fit": "relaxed fit hoodie: slightly dropped shoulders, roomy body, ribbed cuffs and ribbed hem"
   },
   {
     "slug": "25-kids-long-sleeve",
@@ -553,7 +560,8 @@
         "effect": "effects/25-kids-long-sleeve/GN[0].jpg",
         "effect_source": "25#CXTZ / 墨绿色 / image12.jpg"
       }
-    ]
+    ],
+    "fit": "regular kids fit: set-in shoulders, straight body, long straight sleeves ending at the wrist"
   },
   {
     "slug": "28-kids-sweatshirt",
@@ -598,7 +606,8 @@
         "effect": "effects/28-kids-sweatshirt/FGY[0].jpg",
         "effect_source": "28#WYTZ / 花灰色 / image17.jpg"
       }
-    ]
+    ],
+    "fit": "regular kids sweatshirt fit: set-in shoulders, straight body, ribbed cuffs and ribbed hem"
   },
   {
     "slug": "29-kids-washed-tee",
@@ -625,6 +634,7 @@
         "effect": "effects/29-kids-washed-tee/BK[0].jpg",
         "effect_source": "29#SXTZ / 黑色 / image20.jpg"
       }
-    ]
+    ],
+    "fit": "oversized kids washed fit: dropped shoulders, loose body, wide short sleeves"
   }
 ]

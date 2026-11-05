@@ -1,0 +1,28 @@
+fix(prompt): 效果图真正决定版型——重塑版型 + 具体 fit 词 + 首轮关掉 input_fidelity
+
+客户反馈：生图带着效果图，出来的「弹力短袖」根本不是效果图的版型（还是原图的宽松大落肩）。
+
+排查（探针实测，各 1 张）：
+- 只发效果图 → 模型能准确画出紧身版型（说明模型能力没问题）
+- 【原图, 效果图】+ 生产提示词 → 颜色/印花都来自正确的图，说明**两张图确实都发出去了**
+- 同一组图换成「重塑版型」的写法 → 版型立刻贴合效果图
+结论：不是图没发成功，是提示词和参数把原图版型钉死了。
+
+改动
+1. EFFECT_CLAUSE 增加 `RESHAPE, DO NOT RECOLOUR`：原图的 fit/肩线/袖长袖型/领型/下摆
+   不许保留，必须换成 IMAGE 2 的；只保留原图的场景和印花。
+2. styles.json 新增 `fit` 字段（10 个款式按效果图填好，如 10TLDX =
+   "slim, body-hugging … short fitted sleeves that hug the upper arm …"），
+   提示词里写 "IMAGE 2 also shows this style's fit …: {fit}"，给模型具体形状词。
+3. `input_fidelity=high` 会把原图版型钉死：带效果图的**首轮自动关掉**
+   （provider 可用 `input_fidelity_with_effect` 覆盖）；派生任务（参考图=基准成品）仍 high 保形。
+4. 平口袖口原句 "the sleeve stays at full width all the way to its edge" 与紧身款冲突，
+   带效果图时改用 CUFF_PLAIN_CLAUSE_REF（只说折边、不提袖宽）。
+5. keep_clause 在带效果图时不再锁「原图的 cut/seams/cuffs」（否则自相矛盾）。
+
+验证（真链路 a6api，客户那张 06 印花红 T，3 色）
+- data/test/effect-ref/shape-fit-compare.png：效果图 / 修之前（照搬原图版型）/ 修之后（贴合效果图）
+- data/test/effect-ref/effect-ref-real.png：三色版型一致，只有颜色不同
+- check_effect_ref.py 新增断言（RESHAPE 文案、fit 注入、不含 full width、首轮 fidelity=None、
+  派生 fidelity=high）全绿；selftest / check_cuff / check_multi_style / check_thumb_package /
+  check_no_person / check_shape_lock 全绿

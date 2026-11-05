@@ -192,6 +192,8 @@ class GarmentType:
     sleeve: str = SLEEVE_SHORT
     #: 款式英文代号，形如 `24CXCR`（= 代号 24 + 字母 CXCR，来自款式表），成品文件名/文件夹用它
     name_en: str = ""
+    #: 版型描述（照着效果图写：紧身/常规/宽松、肩线、袖型、下摆），带效果图时写进提示词
+    fit: str = ""
 
     @property
     def sleeve_zh(self) -> str:

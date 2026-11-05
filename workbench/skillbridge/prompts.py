@@ -133,6 +133,18 @@ MATERIAL_CLAUSE = (
 #: 袖口/下摆工艺 —— 图片模型最爱的错：把长袖 T 恤画成卫衣的罗纹袖口。
 #: 平口（T 恤系）：袖口和下摆都是**同布平车折边**，没有罗纹/松紧/收口；
 #: 螺纹（卫衣系）：袖口下摆必须是真实的 1x1 罗纹带。选错就是「不是这件衣服」。
+#: 带效果图时的平口约束：只说"折边、没有罗纹"，**不提袖筒宽度** ——
+#: 原来那句 "the sleeve stays at full width all the way to its edge" 会让紧身款的袖子画成宽袖。
+CUFF_PLAIN_CLAUSE_REF = (
+    "CUFF & HEM CONSTRUCTION — the sleeve openings and the bottom hem are PLAIN, FLAT, self-fabric "
+    "turned-and-stitched edges, exactly like a cotton jersey T-shirt: a single narrow hem folded "
+    "under, and a straight flat hem line on the body. There is NO rib-knit band, NO elastic band, "
+    "NO gathered or shirred cuff, NO elasticated waistband and NO contrast trim on the sleeve or "
+    "hem. The sleeve keeps whatever width the reference photo shows (it may taper on a fitted "
+    "style); the only ribbed part is the neckband. Keep the cuffs and hem plain even where the hip "
+    "or sleeve edge is in shadow or partly covered."
+)
+
 CUFF_PLAIN_CLAUSE = (
     "CUFF & HEM CONSTRUCTION — the sleeve openings and the bottom hem are PLAIN, FLAT, "
     "self-fabric turned-and-stitched edges, exactly like a cotton jersey T-shirt: the sleeve stays "
@@ -151,12 +163,16 @@ CUFF_RIBBED_CLAUSE = (
 )
 
 
-def cuff_clause(garment: GarmentType) -> str:
-    """按款式的袖口工艺给出构造约束；没有 cuff 信息时默认平口（T 恤更多、更怕画错）。"""
+def cuff_clause(garment: GarmentType, *, reference: bool = False) -> str:
+    """按款式的袖口工艺给出构造约束；没有 cuff 信息时默认平口（T 恤更多、更怕画错）。
+
+    ``reference=True``（带着效果图重塑版型）时不写"袖筒到边保持原宽度"，
+    否则紧身款的袖型会被这句话拉宽。
+    """
     cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
     if cuff == "ribbed":
         return CUFF_RIBBED_CLAUSE
-    return CUFF_PLAIN_CLAUSE
+    return CUFF_PLAIN_CLAUSE_REF if reference else CUFF_PLAIN_CLAUSE
 
 
 def cuff_negative(garment: GarmentType) -> str:
@@ -275,7 +291,16 @@ EFFECT_CLAUSE = (
     "IMAGE 2 on every one of those points, put IMAGE 1's artwork on it, and keep IMAGE 1's scene "
     "unchanged. Do not borrow anything else from IMAGE 2: no print, text, logo, patch or label of "
     "its own, no person, no mannequin, no background, no props, no watermark, and do not replace "
-    "the customer's scene with IMAGE 2's white studio background."
+    "the customer's scene with IMAGE 2's white studio background. "
+    # 下面是关键的一句：不写死"重塑"，模型就会把原图的版型原样搬过来（实测：
+    # 原图是宽松大落肩、效果图是紧身弹力，结果出来还是宽松大落肩）
+    "RESHAPE, DO NOT RECOLOUR — the garment in IMAGE 1 is REPLACED by the construction in IMAGE 2: "
+    "its own fit, body width, shoulder line (drop vs set-in), sleeve length and sleeve shape, "
+    "neckline shape, hem and drape must NOT be preserved or reused; adopt IMAGE 2's fit exactly, "
+    "whether that is slim, body-hugging, regular or oversized. Keeping IMAGE 1's original silhouette "
+    "and only changing its colour is a failure. What carries over from IMAGE 1 is only the scene "
+    "and the artwork: the printed lettering, numbers, logo, patches and chest script move onto the "
+    "rebuilt garment with the same relative placement, proportion and photographic relief."
 )
 
 
@@ -284,10 +309,27 @@ def has_effect(color: "ColorRef | None") -> bool:
     return getattr(color, "effect", None) is not None
 
 
-def effect_clause(color: "ColorRef | None", override: bool | None = None) -> str:
+#: 效果图上「这个款式的版型长什么样」的具体描述（来自 styles.json 的 fit 字段）。
+#: 只写抽象一句「按效果图的版型」模型会把原图的版型照搬（实测），必须给具体形状词。
+FIT_TEMPLATE = (
+    " IMAGE 2 also shows this style's fit, and that is the one to build: {fit}."
+)
+
+
+def effect_clause(
+    color: "ColorRef | None",
+    override: bool | None = None,
+    fit: str = "",
+) -> str:
     """按是否带效果图给出角色说明；override 用于预览/测试强制开关。"""
     enabled = has_effect(color) if override is None else bool(override)
-    return EFFECT_CLAUSE if enabled else ""
+    if not enabled:
+        return ""
+    text = EFFECT_CLAUSE
+    fit = " ".join(str(fit or "").split())
+    if fit:
+        text = text + FIT_TEMPLATE.format(fit=fit)
+    return text
 
 
 #: 同款第 2..N 个颜色：参考图换成「上一版成品（=基准）」+「该色效果图」。
@@ -534,9 +576,17 @@ def pattern_clause(pattern_mode: str, color_name: str = "", brief: str = "") -> 
 
 
 def keep_clause(
-    intents: list[str], *, pattern_mode: str = "preserve", subject: str = ""
+    intents: list[str],
+    *,
+    pattern_mode: str = "preserve",
+    subject: str = "",
+    effect: bool = False,
 ) -> str:
-    """把"必须保持不变"的部分列成一句；用户要改的项自动从清单里去掉。"""
+    """把"必须保持不变"的部分列成一句；用户要改的项自动从清单里去掉。
+
+    ``effect=True``（带着效果图生成）时**不再锁原图的版型**：衣服的版型要以效果图为准，
+    再写「保持同样的 cut/seams/cuffs」就是自相矛盾 —— 实测模型会因此把原图的宽松大落肩原样搬过去。
+    """
     unlocked: set[str] = set()
     for intent in intents:
         unlocked.update(INTENT_UNLOCKS.get(intent, ()))
@@ -544,6 +594,8 @@ def keep_clause(
         unlocked.add("artwork")
     if "pattern_replace" in intents or "pattern_variant" in intents:
         unlocked.add("artwork")
+    if effect:
+        unlocked.add("garment")
     items = [text for key, text in KEEP_ITEMS.items() if key not in unlocked]
     if str(subject or "").strip().lower() == "garment":
         # 原图是空衣服：明确「不许添人」，而不是靠模型自己体会
@@ -616,8 +668,14 @@ def build_single_pass(
         prompt = f"{template}\n\nTarget garment type: {garment.phrase}."
     prompt = " ".join(prompt.split())
 
-    parts = [prompt, sleeve_clause(garment), cuff_clause(garment), color_hint(color).strip()]
-    effect_text = effect_clause(color, effect)
+    want_effect = has_effect(color) if effect is None else bool(effect)
+    parts = [
+        prompt,
+        sleeve_clause(garment),
+        cuff_clause(garment, reference=want_effect),
+        color_hint(color).strip(),
+    ]
+    effect_text = effect_clause(color, effect, getattr(garment, "fit", ""))
     if effect_text:
         parts.append(effect_text)
     requirement = requirement_block(extra or "", intents, mode)
@@ -632,7 +690,7 @@ def build_single_pass(
         # 用户要改图案：不再塞"逐像素保留"，改成正向的图案策略
         parts.append(pattern_clause(mode, color.name_zh, pattern_brief))
     parts.append(MATERIAL_CLAUSE)
-    keep = keep_clause(intents, pattern_mode=mode, subject=subject)
+    keep = keep_clause(intents, pattern_mode=mode, subject=subject, effect=bool(effect_text))
     if keep:
         parts.append(keep)
     # 主体约束始终补一次：skill 模板已改成中性表述，这里按任务主体的判定结果钉死
@@ -685,8 +743,12 @@ def build_recolor_only(
         )
     if garment is not None:
         # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长：把这两条再钉一次
-        base = base + " " + sleeve_clause(garment) + " " + cuff_clause(garment)
-    effect_text = effect_clause(color, effect)
+        base = (
+            base
+            + " " + sleeve_clause(garment)
+            + " " + cuff_clause(garment, reference=has_effect(color))
+        )
+    effect_text = effect_clause(color, effect, getattr(garment, "fit", "") if garment else "")
     if effect_text:
         base = base + " " + effect_text
     base = base + " " + subject_clause(subject)
@@ -711,7 +773,11 @@ def build_master_recolor(
         color_name=color.name_zh, color_label=color.label, color_hex=color.hex
     )
     if garment is not None:
-        base = base + " " + sleeve_clause(garment) + " " + cuff_clause(garment)
+        base = (
+            base
+            + " " + sleeve_clause(garment)
+            + " " + cuff_clause(garment, reference=has_effect(color))
+        )
     roles = master_effect_clause(color, effect)
     if not roles:
         roles = SILHOUETTE_LOCK_CLAUSE

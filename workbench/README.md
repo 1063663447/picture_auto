@@ -917,6 +917,15 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   4. 界面**没有**「同款版型」这个选项了（一致性是内部固定行为）；要退回「每色独立生成」可传
      `shape_lock=off`（接口/命令行）；
   5. 接口只支持单图（`max_images<2`）或该色缺效果图时，自动退回「原图 + 颜色参考图」，提示词也不再提两张图。
+  **光带图不够，还要逼模型重塑版型**（实测三条坑，8.0.2 修掉）：
+  - 只说「版型以效果图为准」→ 模型照样把原图的宽松大落肩搬过来。必须写 `RESHAPE, DO NOT RECOLOUR`：
+    原图的 fit/肩线/袖长袖型/下摆**不许保留**，并且给出**具体版型词**（`styles.json` 的 `fit` 字段，
+    如 10TLDX = `slim, body-hugging … short fitted sleeves that hug the upper arm …`）；
+  - `input_fidelity=high` 会把原图版型钉死：**带效果图的首轮自动关掉**（派生任务仍为 high 保形）；
+  - 平口袖口那段原来的「the sleeve stays at full width all the way to its edge」会跟紧身款打架，
+    带效果图时换成 `CUFF_PLAIN_CLAUSE_REF`（只说折边、不提袖宽）。
+  对照图：`python tools/make_shape_compare.py` → `data/test/effect-ref/shape-fit-compare.png`
+  （效果图 / 修之前照搬原图版型 / 修之后贴合效果图）。
   回归：`python tools/check_effect_ref.py`（离线）；真链路 3 色 `python tools/check_effect_ref_real.py --yes`
   （≈¥0.02，出 `data/test/effect-ref/effect-ref-real.png`）。
 - **同款版型兜底 `shape_lock`（7.9.0，界面已移除）**：没有效果图的款式仍可退到「先出基准色再改色」

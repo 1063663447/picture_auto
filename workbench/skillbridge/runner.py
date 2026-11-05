@@ -721,6 +721,13 @@ class JobRunner:
                     level="warn",
                 )
                 self._save()
+        # 带着效果图重塑版型时不能开 input_fidelity=high：高保真会把原图的版型（宽松/落肩）
+        # 钉死，效果图就白给了（实测同一条提示词，开=原样搬过来，关=真的变成效果图的紧身版型）。
+        # 派生任务（参考图是基准成品）要保形，仍然用原来的设置。
+        fidelity = self.input_fidelity
+        if source_override is None and self.use_effect(color):
+            override = str(self.provider.setting("input_fidelity_with_effect", "") or "").strip()
+            fidelity = override or None
         request = EditRequest(
             images=images,
             prompt=task.prompt,
@@ -729,7 +736,7 @@ class JobRunner:
             quality=str(self.job.params.get("quality") or "high"),
             seed=self.job.params.get("seed"),
             model=self.model,
-            input_fidelity=self.input_fidelity,
+            input_fidelity=fidelity,
         )
         await self._attempt(task, request)
 

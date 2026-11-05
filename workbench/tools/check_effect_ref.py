@@ -95,7 +95,7 @@ def build_root(wb: Workbench, colors: list[str], *, max_images: int = 4):
         id=new_job_id(),
         params={"mode": "single_pass", "provider": "recorder",
                 "concurrency": len(picked), "subject": "garment",
-                "send_reference": True},
+                "send_reference": True, "input_fidelity": "high"},
     )
     job.root = root
     provider = Recorder(max_images)
@@ -132,6 +132,12 @@ def main() -> int:
     check("silhouette, shoulder drop" in prompt or "shoulder drop" in prompt, "版型以效果图为准", show)
     check("no print, text, logo" in prompt, "禁止把效果图的印花/logo 抄过来", show)
     check("do not replace the customer's scene" in prompt, "禁止把客户场景换成白底", show)
+    check("RESHAPE, DO NOT RECOLOUR" in prompt, "明确要求「重塑版型」而不是只换色", show)
+    check("shows this style's fit" in prompt, "把该款式的具体版型写进提示词", show)
+    check(
+        "stays at full width" not in prompt,
+        "带效果图时不再写「袖筒到边保持原宽度」（会和紧身款打架）", show,
+    )
     noeffect = prompts.build_single_pass(wb.skill, garment23, first, subject="garment", effect=False)
     check(ROLES not in noeffect, "effect=False 时不写角色说明", show)
     recolor = prompts.build_recolor_only(first, garment=garment23, subject="garment")
@@ -151,6 +157,12 @@ def main() -> int:
             check(Path(images[0]).name == "item-01.png", "第 1 张是客户原图", show)
             check(Path(images[1]).name == first.effect.name, "第 2 张是效果图", show)
             check(Path(images[1]).parent.name == "23-sorona-tee", "第 2 张来自 effects/<款式>/", show)
+
+    if provider.requests:
+        check(
+            provider.requests[0].input_fidelity in (None, ""),
+            "带效果图重塑时自动关掉 input_fidelity（否则原图版型会被钉死）", show,
+        )
 
     print("④ 接口只支持单图时：不发效果图，也不再提两张图")
     job2, runner2, provider2, _, _ = build_root(wb, ["black"], max_images=1)
@@ -191,6 +203,10 @@ def main() -> int:
     if len(provider4.requests) == 2:
         images = provider4.requests[1].images
         check(len(images) == 2, f"跟随请求带 2 张图（实际 {len(images)}）", show)
+        check(
+            provider4.requests[1].input_fidelity == "high",
+            "跟随基准的任务仍用 input_fidelity=high（保形）", show,
+        )
         if len(images) == 2:
             check(Path(images[0]).name == Path(master4.out or "").name, "第 1 张是基准成品", show)
             pink = garment4.color("pink")

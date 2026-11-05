@@ -166,6 +166,7 @@ def load_library(
                 cuff=cuff,
                 sleeve=sleeve,
                 name_en=name_en,
+                fit=str(item.get("fit") or "").strip(),
             )
         )
     types.sort(key=lambda g: g.slug)
