@@ -901,9 +901,10 @@ html { scroll-behavior: smooth; }
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* 并发数下面的小字：全局阀门状态（点一下刷新） */
+/* 队列状态（原来是「并发数」下面那行小字，并发数已去掉，这行单独成行） */
+.queue-line { margin: -2px 0 10px; }
 .gate-hint {
-  display: block; margin-top: 5px; font-size: 9.5px; line-height: 1.5;
+  display: block; margin-top: 2px; font-size: 10px; line-height: 1.5;
   color: #8f88a8; cursor: pointer; word-break: break-word;
 }
 .gate-hint:hover { color: #c9bdf0; }
@@ -912,3 +913,18 @@ html { scroll-behavior: smooth; }
 .gate-hint[data-state="bad"] { color: #ffb3b3; }
 .gate-hint[data-state="bad"]::before { content: "○ "; }
 .gate-hint[data-state="off"]::before { content: "— "; }
+
+/* 任务条上的排队徽标：「前方还有 xx 个任务」 */
+.queue-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 8px; padding: 2px 9px; border-radius: 999px;
+  font-size: 10.5px; line-height: 1.5; white-space: nowrap;
+  color: #ffe0ad; background: #ffb84d1f; border: 1px solid #ffb84d45;
+  animation: queuePulse 2.4s ease-in-out infinite;
+}
+.queue-chip b { color: #ffd489; font-variant-numeric: tabular-nums; }
+@keyframes queuePulse {
+  0%, 100% { box-shadow: 0 0 0 0 #ffb84d00; }
+  50% { box-shadow: 0 0 0 3px #ffb84d14; }
+}
+@media (prefers-reduced-motion: reduce) { .queue-chip { animation: none; } }

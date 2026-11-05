@@ -234,6 +234,39 @@ def main() -> int:
     check("放行顺序 = 取号顺序（FIFO）", order == ["t1", "t2", "t3", "t4", "t5"], str(order))
     check("排队期间确实取过号", gate.stats["tickets"] >= 5, f"tickets={gate.stats['tickets']}")
 
+    print("[2.5] 排队位置：界面「前方还有 xx 个任务」的数字")
+    table2b = FakeTable(lag=0)
+    table2b.seed_slots(1)
+    gate_q = FeishuGate(gate_config(1, settle_ms=10, poll_ms=30, wait_timeout_sec=30),
+                        table2b, label="Q")
+    notes: list[dict] = []
+
+    async def position_scenario():
+        holder = await gate_q.acquire(job="job", task="holder")
+        await asyncio.sleep(0.15)
+        waiter = asyncio.create_task(
+            gate_q.acquire(job="job", task="waiter", on_wait=notes.append)
+        )
+        await asyncio.sleep(0.5)
+        status = await gate_q.status()
+        await gate_q.release(holder)
+        lease = await waiter
+        if lease is not None:
+            await gate_q.release(lease)
+        return status
+
+    status = asyncio.run(position_scenario())
+    first = notes[0] if notes else {}
+    check("排队时回调带了 ahead/queued/limit",
+          {"ahead", "queued", "limit", "in_use"} <= set(first),
+          str(first))
+    check("额度 1 被占着时 ahead ≥ 1", int(first.get("ahead") or 0) >= 1, str(first))
+    check("ahead = 正在跑 + 排我前面", 
+          int(first.get("ahead") or 0) == int(first.get("in_use") or 0) + int(first.get("ahead_in_queue") or 0),
+          str(first))
+    extra = status.extra or {}
+    check("status 里也有队列信息", {"queued", "ahead"} <= set(extra), str(sorted(extra)))
+
     print("[3] 抢坑冲突：两台机器同时抢唯一的槽位")
     table3 = FakeTable(lag=0)
     table3.seed_slots(1)

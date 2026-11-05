@@ -129,6 +129,8 @@ class FeishuGate:
         # 同一台机器内串行「读→抢」，减少自己人内耗
         self._lock = asyncio.Lock()
         self._slots_ready = False
+        # 本进程取过的号（record_id）：算「我前面还有几张」要用
+        self._own_tickets: set[str] = set()
         self.stats = {
             "acquired": 0, "released": 0, "queue_rounds": 0,
             "waited_total": 0.0, "waited_max": 0.0,
@@ -205,6 +207,8 @@ class FeishuGate:
             )
             self.stats["writes"] += 1
             self.stats["tickets"] += 1
+            if ids:
+                self._own_tickets.add(str(ids[0]))
             return str(ids[0]) if ids else ""
         except Exception as exc:  # noqa: BLE001
             self.last_error = f"取号失败：{exc}"
@@ -213,11 +217,38 @@ class FeishuGate:
     def _drop_ticket(self, record_id: str) -> None:
         if not record_id:
             return
+        self._own_tickets.discard(record_id)
         try:
             self.client.delete_record(self.table_id, record_id)
             self.stats["writes"] += 1
         except Exception:  # noqa: BLE001
             pass
+
+    def _queue_info(
+        self, rows: list[Slot], ticket_id: str, in_use: int, waited: float = 0.0
+    ) -> dict:
+        """排队位置：**前方还有几张**（正在跑 + 排在我前面的）。
+
+        这是界面上「前方还有 xx 个任务」的唯一来源：数字全部来自飞书表里的实时行，
+        所以别的电脑插进来排队也能算进去。
+        """
+        tickets = sorted(self._tickets(rows), key=lambda slot: (slot.order_key(), slot.record_id))
+        queued = len(tickets)
+        ahead_in_queue = queued
+        if ticket_id:
+            ids = [slot.record_id for slot in tickets]
+            if ticket_id in ids:
+                ahead_in_queue = ids.index(ticket_id)
+        elif not queued:
+            ahead_in_queue = 0
+        return {
+            "in_use": int(in_use),
+            "limit": self.limit,
+            "queued": queued,
+            "ahead_in_queue": ahead_in_queue,
+            "ahead": int(in_use) + ahead_in_queue,
+            "waited": round(waited, 1),
+        }
 
     def _my_turn(self, rows: list[Slot], ticket_id: str) -> bool:
         """我是不是排队最前面的那个（先到先得）。"""
@@ -308,11 +339,12 @@ class FeishuGate:
                     self.stats["queue_rounds"] += 1
                     if free:
                         self.stats["ticket_waits"] += 1
-                    if on_wait and (wait_now - last_note > 8 or attempt == 1):
+                    if on_wait and (wait_now - last_note > 5 or attempt == 1):
                         last_note = wait_now
                         in_use = sum(1 for slot in usables if slot.busy(now, self.stale_sec))
+                        info = self._queue_info(rows, ticket, in_use, wait_now - started)
                         try:
-                            on_wait(in_use, self.limit, wait_now - started)
+                            on_wait(info)
                         except Exception:  # noqa: BLE001
                             pass
                     await asyncio.sleep((self.poll_ms / 1000.0) * random.uniform(0.75, 1.25))
@@ -412,6 +444,15 @@ class FeishuGate:
         now = time.time()
         usables = [slot for slot in rows if 1 <= slot.index() <= self.limit]
         busy = [slot for slot in usables if slot.busy(now, self.stale_sec)]
+        # 队列：还有多少张在排队、我前面还有几张（全是飞书表里的实时行）
+        tickets = sorted(self._tickets(rows), key=lambda slot: (slot.order_key(), slot.record_id))
+        mine = [slot for slot in tickets if slot.record_id in self._own_tickets]
+        ahead = len(busy)
+        if mine:
+            first = mine[0]
+            ahead += sum(1 for slot in tickets if slot.order_key() < first.order_key())
+        elif tickets:
+            ahead += len(tickets)
         return GateStatus(
             ok=True,
             enabled=True,
@@ -422,6 +463,8 @@ class FeishuGate:
                 "provider": "feishu",
                 "table_id": self.table_id,
                 "slots": len(usables),
+                "queued": len(tickets),
+                "ahead": ahead,
                 "holders": [slot.holder for slot in busy][:20],
                 "holder": self.cfg.holder,
                 "stats": {k: (round(v, 2) if isinstance(v, float) else v)

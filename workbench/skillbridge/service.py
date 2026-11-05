@@ -577,18 +577,25 @@ class Workbench:
             shutil.rmtree(root, ignore_errors=True)
             raise WorkbenchError(f"任务规划失败：{exc}") from exc
 
-        # 并发默认等于预计调用次数（用户要求：一次把能发的都发出去）
+        # 并发不再让用户选：默认一次全推，超过接口上限/闸门额度的自动排队
         if str(concurrency).strip().lower() in {"", "auto", "none"} or concurrency is None:
             max_conc = max(1, int(provider_obj.setting("max_concurrency", 20) or 20))
             wanted = max(1, min(64, len(job.tasks)))
             job.params["concurrency"] = min(wanted, max_conc)
+            gate_limit = int(
+                ((self.config.get("defaults") or {}).get("gate") or {}).get("limit") or 0
+            )
+            queue_hint = f"，闸门额度 {gate_limit}" if gate_limit else ""
             if wanted > max_conc:
                 job.add_log(
-                    f"并发自动设为 {max_conc}（接口上限 20），其余 {wanted - max_conc} 个排队等下一批",
+                    f"全部提交：{wanted} 张，同时最多 {max_conc} 张在跑{queue_hint}，"
+                    f"其余 {wanted - max_conc} 张排队（界面会显示「前方还有 xx 个任务」）",
                     level="warn",
                 )
             else:
-                job.add_log(f"并发自动设为 {job.params['concurrency']}（= 预计调用次数）")
+                job.add_log(
+                    f"全部提交：{wanted} 张一起发（接口上限 {max_conc}{queue_hint}，超了自动排队）"
+                )
 
         job.params["estimate"] = self.pricer.estimate(
             chosen_model, len(job.tasks), str(job.params.get("size") or "auto")

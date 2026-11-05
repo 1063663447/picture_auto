@@ -109,10 +109,11 @@ class JobRunner:
 
         params = job.params
         self.mode = str(params.get("mode") or "single_pass")
+        # 「并发数」已从界面去掉：默认**全推**，超过飞书闸门额度 / 接口上限的自动排队，
+        # 排队位置来自飞书表轮询（见 _queue_payload）。
         try:
             self.concurrency = max(1, min(64, int(params.get("concurrency") or 4)))
         except (TypeError, ValueError):
-            # "auto": one slot per task
             self.concurrency = max(1, min(64, len(job.tasks) or 4))
         self.max_retries = max(1, int(params.get("max_retries") or 3))
         # 图片接口常见 60~120s；超时往往代表上游仍在跑（可能已出图），自动重试会重复计费
@@ -133,18 +134,12 @@ class JobRunner:
         # 多款式时每个款式有各自的袖口工艺（平口/螺纹），否定词必须按款取，
         # 不能共用第一款的：否则长袖 T 恤会拿到卫衣的否定、或者反过来
         self._negatives: dict[str, str] = {}
+        # 排队信息：任务 id → 最近一次「前方还有几张」（来自飞书闸门）
+        self._queue_notes: dict[str, dict] = {}
         self.limiter = RateLimiter(int(params.get("rpm") or 0))
-        # 本机并发不能超过接口实测能吃的并发（terra 实测 20），超出的排队等
+        # 本机并发不能超过接口实测能吃的并发（terra 实测 20）；闸门额度不在这里收，
+        # 因为「超过额度就排队」本来就该在飞书表里排，界面才看得见前方还有几张
         self.max_concurrency = max(1, int(provider.setting("max_concurrency", 20) or 20))
-        if gate is not None and getattr(gate, "limit", 0):
-            gate_limit = max(1, int(gate.limit))
-            if self.concurrency > gate_limit:
-                job.add_log(
-                    f"并发从 {self.concurrency} 收到闸门额度 {gate_limit}（其余排队等空位）",
-                    level="warn",
-                )
-                self.concurrency = gate_limit
-                self.job.params["concurrency"] = self.concurrency
         if self.concurrency > self.max_concurrency:
             job.add_log(
                 f"并发从 {self.concurrency} 收到接口上限 {self.max_concurrency}（其余排队）",
@@ -192,9 +187,39 @@ class JobRunner:
             return
         self._last_save = now
         try:
+            self.job.params["queue"] = self._queue_payload()
             self.job.save()
         except OSError:
             pass
+
+    def _queue_payload(self) -> dict:
+        """排队情况：**前方还有几个任务**（界面就显示这个数）。
+
+        两个来源取较大值：
+          * 飞书闸门轮询到的 `ahead`（正在跑 + 排我前面的票，含别的电脑）；
+          * 本机还没轮到出图的任务数（本地并发位不够时，这些还没进飞书队列）。
+        """
+        stats = self.job.counts()
+        now = time.time()
+        fresh = [
+            note for note in self._queue_notes.values() if now - float(note.get("at") or 0) <= 25
+        ]
+        gate_ahead = min((int(note.get("ahead") or 0) for note in fresh), default=0)
+        gate_queued = max((int(note.get("queued") or 0) for note in fresh), default=0)
+        pending = int(stats.get("pending") or 0)
+        busy = int(stats.get("running") or 0)
+        if not pending and not busy:
+            return {"ahead": 0, "pending": 0, "running": 0, "active": False}
+        return {
+            "ahead": max(pending, gate_ahead),
+            "gate_ahead": gate_ahead,
+            "queued": gate_queued,
+            "pending": pending,
+            "running": busy,
+            "limit": int(getattr(self.gate, "limit", 0) or 0),
+            "active": True,
+            "updated": round(now, 1),
+        }
 
     def _set_status(self, task: Task, status: str, **fields) -> None:
         task.status = status
@@ -634,9 +659,19 @@ class JobRunner:
         self._validate_image(data)
         return data
 
-    def _gate_wait_note(self, in_use: int, limit: int, waited: float) -> None:
+    def _gate_wait_note(self, info: dict) -> None:
+        """闸门排队回调节点：把「前方还有几张」记下来，界面据此显示排队进度。"""
+        info = dict(info or {})
+        now = time.time()
+        info["at"] = now
+        task_key = str(info.get("task") or "") or f"r{int(now * 10) % 1000}"
+        self._queue_notes[task_key] = info
+        ahead = int(info.get("ahead") or 0)
+        in_use = int(info.get("in_use") or 0)
+        limit = int(info.get("limit") or 0)
+        waited = float(info.get("waited") or 0)
         self.job.add_log(
-            f"排队中：全局并发 {in_use}/{limit}（其他电脑也在跑），已等 {waited:.0f}s",
+            f"排队中：前方还有 {ahead} 个任务（闸门 {in_use}/{limit}，已等 {waited:.0f}s）",
             level="warn",
         )
 
@@ -649,10 +684,12 @@ class JobRunner:
         await self.limiter.acquire()
         lease = None
         if self.gate is not None:
+            task_id = task.id if task else ""
             lease = await self.gate.acquire(
                 job=self.job.id,
-                task=(task.id if task else ""),
-                on_wait=self._gate_wait_note,
+                task=task_id,
+                # 每个任务各自记一条排队位置，界面取「最快那张」的数
+                on_wait=lambda info: self._gate_wait_note({**info, "task": task_id}),
             )
             if lease is None and not self._gate_warned:
                 self._gate_warned = True

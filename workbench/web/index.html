@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=7.6.1" />
-<link rel="stylesheet" href="/aurora.css?v=7.6.1" />
+<link rel="stylesheet" href="/style.css?v=7.6.2" />
+<link rel="stylesheet" href="/aurora.css?v=7.6.2" />
 </head>
 <body>
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -127,22 +127,19 @@
             <select id="model"></select>
             <input type="text" id="modelManual" placeholder="手填模型名" hidden />
           </label>
-          <div class="row2">
-            <label class="field">
-              <span class="lbl">并发数（自动）</span>
-              <input type="number" id="concurrency" readonly />
-              <span class="gate-hint" id="gateHint" title="点一下刷新全局并发阀门状态">全局阀门 —</span>
-            </label>
-            <label class="field">
-              <span class="lbl">画面比例</span>
-              <select id="aspect">
-                <option value="auto">自动 · 跟随原图</option>
-                <option value="1:1">1:1 方形</option>
-                <option value="3:4">3:4 竖版</option>
-                <option value="4:3">4:3 横版</option>
-              </select>
-            </label>
+          <!-- 「并发数」已去掉：默认全推，超额的自动进飞书队列排队，这里只显示排队情况 -->
+          <div class="queue-line">
+            <span class="gate-hint" id="gateHint" title="点一下刷新队列状态">队列 —</span>
           </div>
+          <label class="field">
+            <span class="lbl">画面比例</span>
+            <select id="aspect">
+              <option value="auto">自动 · 跟随原图</option>
+              <option value="1:1">1:1 方形</option>
+              <option value="3:4">3:4 竖版</option>
+              <option value="4:3">4:3 横版</option>
+            </select>
+          </label>
           <div class="row2">
             <label class="field">
               <span class="lbl">分辨率档位（定单价）</span>
@@ -186,6 +183,7 @@
             <div class="job-strip">
               <b id="jobTitle">尚未开始</b>
               <span id="jobStage">选择原图与颜色后开始生成</span>
+              <span class="queue-chip" id="queueChip" hidden></span>
             </div>
           </div>
           <div class="tools">
@@ -374,6 +372,6 @@
 
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=7.6.1"></script>
+<script src="/app.js?v=7.6.2"></script>
 </body>
 </html>

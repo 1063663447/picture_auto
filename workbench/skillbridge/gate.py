@@ -272,10 +272,20 @@ class RemoteGate:
                 wait_s = max(0.15, float(body.get("retry_after_ms") or self.cfg.poll_ms) / 1000.0)
                 in_use = int(body.get("in_use") or 0)
                 limit = int(body.get("limit") or self.cfg.limit)
-                if on_wait and (now - last_note > 8 or attempt == 1):
+                if on_wait and (now - last_note > 5 or attempt == 1):
                     last_note = now
                     try:
-                        on_wait(in_use, limit, now - started)
+                        # 和飞书闸门保持同一份结构，界面上「前方还有 xx 个任务」两边通用
+                        on_wait(
+                            {
+                                "in_use": in_use,
+                                "limit": limit,
+                                "queued": int(body.get("queued") or 0),
+                                "ahead_in_queue": int(body.get("ahead") or 0),
+                                "ahead": int(body.get("ahead") or in_use),
+                                "waited": round(now - started, 1),
+                            }
+                        )
                     except Exception:  # noqa: BLE001
                         pass
                 await asyncio.sleep(wait_s + random.uniform(0, 0.2))

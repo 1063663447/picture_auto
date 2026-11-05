@@ -668,24 +668,28 @@
     const el = $("gateHint");
     if (!el) return;
     const cfg = (info && info.config) || {};
-    const cap = state.providerCap ? `本机 ≤${state.providerCap}` : "";
+    const cap = state.providerCap ? `接口上限 ${state.providerCap}` : "";
     const isQueue = (cfg.provider || "http") === "feishu";
     if (!cfg.enabled) {
-      el.textContent = `闸门未启用${cap ? " · " + cap : ""}`;
+      el.textContent = `排队：未启用（全推，靠接口自己限流）${cap ? " · " + cap : ""}`;
       el.dataset.state = "off";
-      el.title = "只用本机并发限制。想多台电脑统一排队：配 defaults.gate（飞书表队列或 Cloudflare 阀门）";
+      el.title = "没配闸门时不会排队，全部一起提交；想看到「前方还有几张」，配 defaults.gate 用飞书表当队列";
       return;
     }
     if (info.ok) {
-      const label = isQueue ? "队列" : "阀门";
-      el.textContent = `${label} ${info.in_use}/${info.limit}${cap ? " · " + cap : ""}`;
+      const queued = Number(info.queued || 0);
+      const ahead = Number(info.ahead || 0);
+      el.textContent = `${isQueue ? "队列" : "阀门"} ${info.in_use}/${info.limit}`
+        + (queued ? ` · 排队 ${queued} 张` : "")
+        + (ahead && isQueue ? ` · 前方还有 ${ahead} 个` : "")
+        + (cap ? ` · ${cap}` : "");
       el.dataset.state = "ok";
       el.title = isQueue
-        ? `飞书表当队列：占位 ${info.in_use}/${info.limit}，满了就在表里排队等别人删；点一下刷新`
+        ? `飞书表当队列：正在跑 ${info.in_use}/${info.limit}，表里还有 ${queued} 张在排队；点一下刷新`
         : `全部电脑合计上限 ${info.limit}，当前占用 ${info.in_use}；点一下刷新`;
       return;
     }
-    el.textContent = `闸门离线${cap ? " · " + cap : ""}`;
+    el.textContent = `队列离线${cap ? " · " + cap : ""}`;
     el.dataset.state = "bad";
     el.title = `${info.error || "连不上闸门"}（fail_open 时照常出图）`;
   }
@@ -745,9 +749,8 @@
     const colors = totalColors();
     const calls = expectedCalls();
     $("outputCount").textContent = state.skill
-      ? `将产出 ${items * colors} 张成品（${items} 图 × ${colors} 色）· 预计调用 ${calls} 次`
+      ? `将产出 ${items * colors} 张成品（${items} 图 × ${colors} 色）· 全部一起提交，超额的自动排队`
       : "";
-    $("concurrency").value = calls || "";
 
     const model = currentModel();
     const size = currentSize();
@@ -1115,9 +1118,29 @@
     bar.querySelector("i").style.width = `${job.progress}%`;
     bar.classList.toggle("done", TERMINAL.includes(job.status));
     $("progressLabel").textContent = `${done} / ${stats.total}`;
-    const queue = stats.pending ? ` · 排队 ${stats.pending}` : "";
-    $("progressStats").textContent =
-      `运行 ${stats.running}${queue} · 失败 ${stats.failed}${job.error ? ` · ${job.error}` : ""}`;
+    // 排队位置（来自飞书表轮询）：前方还有 xx 个任务
+    const queue = params.queue || {};
+    const ahead = Number(queue.ahead || 0);
+    const queuedTotal = Number(queue.queued || 0);
+    const limit = Number(queue.limit || 0);
+    const running = Number(stats.running || 0);
+    const queueParts = [];
+    if (running) queueParts.push(`运行 ${running}`);
+    if (ahead > 0 && !TERMINAL.includes(job.status)) queueParts.push(`前方还有 ${ahead} 个任务`);
+    if (queuedTotal > 0 && limit) queueParts.push(`队列 ${queuedTotal} 张 / 额度 ${limit}`);
+    if (!queueParts.length && stats.pending) queueParts.push(`排队 ${stats.pending}`);
+    queueParts.push(`失败 ${stats.failed}`);
+    if (job.error) queueParts.push(job.error);
+    $("progressStats").textContent = queueParts.join(" · ");
+    const chip = $("queueChip");
+    if (chip) {
+      const waiting = ahead > 0 && !TERMINAL.includes(job.status);
+      chip.hidden = !waiting;
+      if (waiting) {
+        chip.innerHTML = `前方还有 <b>${ahead}</b> 个任务`;
+        chip.title = `正在跑 ${running} 张${queuedTotal ? `，飞书队列里还有 ${queuedTotal} 张` : ""}${limit ? `（额度 ${limit}）` : ""}`;
+      }
+    }
 
     if ($("galleryCount")) {
       $("galleryCount").textContent = String(done).padStart(2, "0");
