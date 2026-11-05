@@ -359,10 +359,9 @@ class JobRunner:
             self._save(force=True)
         finally:
             self._save(force=True)
-            try:
-                await self.provider.close()
-            except Exception:  # pragma: no cover
-                pass
+            # 注意：**不要**在这里 close()。provider 是按接口共享的（同一台机器上
+            # 可能有好几个任务同时用它），谁先跑完谁关，会把别人正在发的请求打断
+            # （实测报 "provider 未初始化"）。统一在服务退出时关闭。
 
     async def _run_single_pass(self) -> None:
         await self._gather(self.job.tasks, self._execute_color_task)

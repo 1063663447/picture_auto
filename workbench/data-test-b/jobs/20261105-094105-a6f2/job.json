@@ -1,0 +1,170 @@
+{
+ "id": "20261105-094105-a6f2",
+ "status": "done",
+ "stage": "完成：2 张成功",
+ "params": {
+  "garment_type": "23-sorona-tee",
+  "garment_name": "23 索罗娜短袖",
+  "colors": [
+   "blue",
+   "brown"
+  ],
+  "selections": [
+   {
+    "garment_type": "23-sorona-tee",
+    "garment_name": "23 索罗娜短袖",
+    "colors": [
+     "blue",
+     "brown"
+    ]
+   }
+  ],
+  "style_count": 1,
+  "total_colors": 2,
+  "mode": "single_pass",
+  "provider": "terra",
+  "provider_label": "65535 网关",
+  "model": "gpt-image-2",
+  "concurrency": 2,
+  "rpm": 0,
+  "size": "auto",
+  "quality": "low",
+  "seed": null,
+  "max_retries": 3,
+  "timeout_sec": 180.0,
+  "output_format": "png",
+  "send_reference": true,
+  "input_fidelity": "high",
+  "max_bytes": 2000000,
+  "extra_requirements": "只换面料底色（批次 2b）",
+  "pattern_mode": "preserve",
+  "pattern_brief": "",
+  "account": "token",
+  "estimate": {
+   "model": "gpt-image-2",
+   "count": 2,
+   "unit": 0.038,
+   "total": 0.076,
+   "currency": "CNY",
+   "priced": true,
+   "tier": "1K",
+   "size": "auto"
+  },
+  "feishu_rows": 2,
+  "feishu_table": "https://feishu.cn/base/Cg19bjnLJaAU7CsYPB5cO3qynrb?table=tblvrb2DVxO7s28c"
+ },
+ "batch_name": "23-sorona-tee-style-recolor-batch",
+ "zip": "/api/jobs/20261105-094105-a6f2/download",
+ "has_zip": true,
+ "error": null,
+ "created_at": 1793842865.2998314,
+ "updated_at": 1793842950.9322972,
+ "stats": {
+  "total": 2,
+  "pending": 0,
+  "running": 0,
+  "done": 2,
+  "failed": 0,
+  "skipped": 0,
+  "canceled": 0,
+  "finished": 2,
+  "rate_limited": 0
+ },
+ "progress": 100.0,
+ "tasks": [
+  {
+   "id": "item-01__blue",
+   "item": "item-01",
+   "view": "",
+   "color": "blue",
+   "color_hex": "#303DAE",
+   "color_name": "蓝色",
+   "status": "done",
+   "attempts": 1,
+   "error": null,
+   "out": "staging/item-01/item-01_blue.png",
+   "duration": 49.02,
+   "bytes": 2752614,
+   "prompt": "Transform only the visible garment into a a relaxed-fit short-sleeve t-shirt in Sorona polyester blend (soft drape, short sleeves, ribbed neckband) and recolor its fabric base to match the selected bundled color reference image, including hue, brightness, saturation, and temperature. Preserve every visible original print, text, number, logo, embroidery, sticker, graphic, decorative artwork, and label; keep it readable, recognizable, and naturally positioned on the new garment. Make the garment construction physically correct for a relaxed-fit short-sleeve t-shirt in Sorona polyester blend (soft drape, short sleeves, ribbed neckband). Keep the exact same person, face, hair, skin, hands, jewelry, watch, pose, body proportions, pants, background, props, camera angle, framing, lighting, and image quality. The color reference controls only garment color and must not introduce its own person, pose, background, composition, or garment design. The target fabric base colour is 蓝色 (blue), approximately #303DAE in sRGB; the attached colour reference image is authoritative for hue, brightness, saturation and temperature. OPERATOR REQUEST (authoritative — it outranks the default locks of this skill): \"只换面料底色（批次 2b）\" PRINT LOCK — treat the artwork already on the garment as an untouchable asset and reproduce it as an exact copy of the source: identical letterforms and typeface, identical stroke weights, identical letter widths, kerning, spacing and alignment, identical size, position and rotation on the garment, identical colour, and identical material relief (same raised 3D bevel depth, same gloss, same thin edge highlight, same drop shadow, same stitch or embroidery structure). Do not retype, re-letter, re-draw, regenerate, restyle, re-space, re-scale, straighten, warp, crop, smooth, sharpen or clean up any letter, word, number, logo, patch or stitch. The artwork must occupy the same bounding box relative to the garment as in the source image. If the source artwork is a flat print, keep it flat; if it is a raised or 3D appliqué, keep it raised and 3D with the same relief. PHOTOGRAPHIC MATERIAL — this is a photograph of a real garment, so the artwork must keep the source's physical material and photographic look: the same surface finish (matte rubber, foam, embossed, embroidered or flocked, whichever the source shows), the same micro-texture and film grain inside the letters, the same slight edge softness, the same specular highlight shape and light direction, the same contact shadow and thickness where the artwork meets the fabric, and the garment's folds, wrinkles and lighting must continue across the artwork. The artwork must never look cleaner, sharper, glossier, flatter, more saturated or more 'designed' than the photo around it: no vector-clean logo, no chrome or metallic gradient, no sticker or decal look, no synthetic 3D render, no uniform flat fill, no crisp digital edges, no pasted-on artwork. KEEP UNCHANGED — the same person, face, hair, skin and hands; the same pose and body proportions; the same garment type, cut, seams, ribbing, cuffs, hem, collar, hood and pockets; the printed / embroidered artwork with the same letterforms, spacing, scale, position and material relief; the same background, props and bedding; the same camera angle, framing and crop; the same light direction, contrast and shadow; the same photographic look, grain and resolution.",
+   "source": "inputs/item-01/item-01.jpg",
+   "started_at": 1793842865.3117537,
+   "finished_at": 1793842914.3308792,
+   "version": 1793842914330,
+   "error_kind": "",
+   "garment": "23-sorona-tee",
+   "garment_name": "23 索罗娜短袖",
+   "thumb": "/api/jobs/20261105-094105-a6f2/image/item-01__blue",
+   "thumb_small": "/api/jobs/20261105-094105-a6f2/thumb/item-01__blue?w=520&v=1793842914330",
+   "preview": "/api/jobs/20261105-094105-a6f2/thumb/item-01__blue?w=1600&v=1793842914330"
+  },
+  {
+   "id": "item-01__brown",
+   "item": "item-01",
+   "view": "",
+   "color": "brown",
+   "color_hex": "#896743",
+   "color_name": "棕色",
+   "status": "done",
+   "attempts": 1,
+   "error": null,
+   "out": "staging/item-01/item-01_brown.png",
+   "duration": 77.19,
+   "bytes": 2619051,
+   "prompt": "Transform only the visible garment into a a relaxed-fit short-sleeve t-shirt in Sorona polyester blend (soft drape, short sleeves, ribbed neckband) and recolor its fabric base to match the selected bundled color reference image, including hue, brightness, saturation, and temperature. Preserve every visible original print, text, number, logo, embroidery, sticker, graphic, decorative artwork, and label; keep it readable, recognizable, and naturally positioned on the new garment. Make the garment construction physically correct for a relaxed-fit short-sleeve t-shirt in Sorona polyester blend (soft drape, short sleeves, ribbed neckband). Keep the exact same person, face, hair, skin, hands, jewelry, watch, pose, body proportions, pants, background, props, camera angle, framing, lighting, and image quality. The color reference controls only garment color and must not introduce its own person, pose, background, composition, or garment design. The target fabric base colour is 棕色 (brown), approximately #896743 in sRGB; the attached colour reference image is authoritative for hue, brightness, saturation and temperature. OPERATOR REQUEST (authoritative — it outranks the default locks of this skill): \"只换面料底色（批次 2b）\" PRINT LOCK — treat the artwork already on the garment as an untouchable asset and reproduce it as an exact copy of the source: identical letterforms and typeface, identical stroke weights, identical letter widths, kerning, spacing and alignment, identical size, position and rotation on the garment, identical colour, and identical material relief (same raised 3D bevel depth, same gloss, same thin edge highlight, same drop shadow, same stitch or embroidery structure). Do not retype, re-letter, re-draw, regenerate, restyle, re-space, re-scale, straighten, warp, crop, smooth, sharpen or clean up any letter, word, number, logo, patch or stitch. The artwork must occupy the same bounding box relative to the garment as in the source image. If the source artwork is a flat print, keep it flat; if it is a raised or 3D appliqué, keep it raised and 3D with the same relief. PHOTOGRAPHIC MATERIAL — this is a photograph of a real garment, so the artwork must keep the source's physical material and photographic look: the same surface finish (matte rubber, foam, embossed, embroidered or flocked, whichever the source shows), the same micro-texture and film grain inside the letters, the same slight edge softness, the same specular highlight shape and light direction, the same contact shadow and thickness where the artwork meets the fabric, and the garment's folds, wrinkles and lighting must continue across the artwork. The artwork must never look cleaner, sharper, glossier, flatter, more saturated or more 'designed' than the photo around it: no vector-clean logo, no chrome or metallic gradient, no sticker or decal look, no synthetic 3D render, no uniform flat fill, no crisp digital edges, no pasted-on artwork. KEEP UNCHANGED — the same person, face, hair, skin and hands; the same pose and body proportions; the same garment type, cut, seams, ribbing, cuffs, hem, collar, hood and pockets; the printed / embroidered artwork with the same letterforms, spacing, scale, position and material relief; the same background, props and bedding; the same camera angle, framing and crop; the same light direction, contrast and shadow; the same photographic look, grain and resolution.",
+   "source": "inputs/item-01/item-01.jpg",
+   "started_at": 1793842865.3130963,
+   "finished_at": 1793842942.49913,
+   "version": 1793842942499,
+   "error_kind": "",
+   "garment": "23-sorona-tee",
+   "garment_name": "23 索罗娜短袖",
+   "thumb": "/api/jobs/20261105-094105-a6f2/image/item-01__brown",
+   "thumb_small": "/api/jobs/20261105-094105-a6f2/thumb/item-01__brown?w=520&v=1793842942499",
+   "preview": "/api/jobs/20261105-094105-a6f2/thumb/item-01__brown?w=1600&v=1793842942499"
+  }
+ ],
+ "log": [
+  {
+   "t": 1793842865.3,
+   "level": "info",
+   "msg": "任务创建：23 索罗娜短袖，2 色，1 张原图，接口 terra"
+  },
+  {
+   "t": 1793842865.302,
+   "level": "info",
+   "msg": "并发自动设为 2（= 预计调用次数）"
+  },
+  {
+   "t": 1793842865.304,
+   "level": "info",
+   "msg": "开始处理：2 个任务，并发 2，模式 single_pass，接口 terra"
+  },
+  {
+   "t": 1793842945.31,
+   "level": "info",
+   "msg": "打包完成：5 项校验输出"
+  },
+  {
+   "t": 1793842945.31,
+   "level": "info",
+   "msg": "完成：2 张成功"
+  },
+  {
+   "t": 1793842945.312,
+   "level": "info",
+   "msg": "用量记录：2 张 × 0.038 = 0.076 CNY"
+  },
+  {
+   "t": 1793842950.93,
+   "level": "info",
+   "msg": "已写入飞书多维表格 2 行（含图片附件）"
+  },
+  {
+   "t": 1793842950.932,
+   "level": "info",
+   "msg": "飞书同步完成：2 行"
+  }
+ ],
+ "zip_rel": "outputs/23-sorona-tee-style-recolor-batch.zip",
+ "dir_rel": "outputs/23-sorona-tee-style-recolor-batch"
+}
