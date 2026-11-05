@@ -18,10 +18,12 @@ from pathlib import Path
 from .skill import (
     CUFF_PLAIN,
     CUFF_VALUES,
+    SLEEVE_VALUES,
     ColorRef,
     GarmentType,
     Skill,
     infer_cuff,
+    infer_sleeve,
     style_key_from,
 )
 
@@ -132,6 +134,10 @@ def load_library(
         cuff = str(item.get("cuff") or "").strip().lower()
         if cuff not in CUFF_VALUES:
             cuff = infer_cuff(slug, aliases, phrase)
+        # 袖长：短袖 / 长袖（画错就「不是这件衣服」，跟着款式走）
+        sleeve = str(item.get("sleeve") or "").strip().lower()
+        if sleeve not in SLEEVE_VALUES:
+            sleeve = infer_sleeve(slug, aliases, phrase)
         fixed = phrase_for_cuff(phrase, cuff)
         if fixed != " ".join(phrase.split()) and warnings is not None:
             warnings.append(
@@ -150,6 +156,7 @@ def load_library(
                 phrase=phrase,
                 colors=colors,
                 cuff=cuff,
+                sleeve=sleeve,
                 name_en=name_en,
             )
         )

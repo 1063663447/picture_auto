@@ -98,7 +98,8 @@
       "input_fidelity": "high",
       "show_in_ui": true,
       "max_concurrency": 20,
-      "global_concurrency": 20
+      "global_concurrency": 20,
+      "model_prices": {}
     },
     "terra-nano": {
       "type": "openai_compat",
@@ -120,7 +121,8 @@
       "input_fidelity": "high",
       "show_in_ui": false,
       "max_concurrency": 20,
-      "global_concurrency": 20
+      "global_concurrency": 20,
+      "model_prices": {}
     },
     "terra-eco": {
       "type": "openai_compat",
@@ -142,7 +144,8 @@
       "input_fidelity": "high",
       "show_in_ui": false,
       "max_concurrency": 20,
-      "global_concurrency": 20
+      "global_concurrency": 20,
+      "model_prices": {}
     },
     "gateway": {
       "type": "openai_compat",
@@ -163,7 +166,8 @@
       "rpm": 0,
       "show_in_ui": false,
       "max_concurrency": 8,
-      "global_concurrency": 8
+      "global_concurrency": 8,
+      "model_prices": {}
     },
     "ark": {
       "type": "ark",
@@ -178,7 +182,8 @@
       "rpm": 0,
       "show_in_ui": false,
       "max_concurrency": 8,
-      "global_concurrency": 8
+      "global_concurrency": 8,
+      "model_prices": {}
     },
     "gemini": {
       "type": "gemini",
@@ -192,7 +197,8 @@
       "rpm": 0,
       "show_in_ui": false,
       "max_concurrency": 8,
-      "global_concurrency": 8
+      "global_concurrency": 8,
+      "model_prices": {}
     },
     "local": {
       "type": "local_recolor",
@@ -204,7 +210,8 @@
       "concurrency": 4,
       "show_in_ui": false,
       "max_concurrency": 8,
-      "global_concurrency": 8
+      "global_concurrency": 8,
+      "model_prices": {}
     },
     "mock": {
       "type": "mock",
@@ -213,7 +220,8 @@
       "concurrency": 8,
       "max_concurrency": 20,
       "global_concurrency": 20,
-      "show_in_ui": false
+      "show_in_ui": false,
+      "model_prices": {}
     },
     "a6api": {
       "type": "openai_compat",
@@ -237,10 +245,8 @@
       "max_concurrency": 100,
       "global_concurrency": 100,
       "gate_limit": 100,
-      "note": "实测 50 并发 50/50 成功、0 限流；100 任务跑满 64 并发 100/100 成功、0 限流；真实计费 $0.088/张（/v1/dashboard/billing/usage 增量 ×2 次核对），定价表按 ¥0.65/张折算",
-      "model_prices": {
-        "gpt-image-2.5-sunburst": 0.65
-      }
+      "note": "网关定价接口可读：GET /api/pricing（按次 model_price）、GET /v1/dashboard/billing/usage（累计 USD）；真实单价请在 pricing.json 或本接口的 model_prices 里自己填，例如 {\"gpt-image-2.5-sunburst\": 0.65}",
+      "model_prices": {}
     }
   },
   "feishu": {

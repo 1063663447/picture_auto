@@ -13,6 +13,7 @@
   ],
   "phrase": "a relaxed-fit short-sleeve t-shirt in Sorona polyester blend (soft drape, short sleeves, ribbed neckband)",
   "cuff": "plain",
+  "sleeve": "short",
   "source": "23索罗娜短袖 / 23#SLNDX&#10;宽松款短袖索罗娜材质",
   "colors": [
    {
@@ -101,6 +102,7 @@
   ],
   "phrase": "an oversized washed / vintage-finish t-shirt (garment-dyed, slightly faded cotton surface, dropped shoulders, ribbed neckband)",
   "cuff": "plain",
+  "sleeve": "short",
   "source": "07水洗T恤 / 07#SXT&#10;宽松T恤水洗款",
   "colors": [
    {
@@ -126,6 +128,7 @@
   ],
   "phrase": "a long-sleeve cotton-jersey T-shirt for adults (flat plain cuffs and a straight flat hem, ribbed neckband only, no sweatshirt ribbing)",
   "cuff": "plain",
+  "sleeve": "long",
   "source": "24长袖成人 / 24#CXCR&#10;长袖成人",
   "colors": [
    {
@@ -179,6 +182,7 @@
   ],
   "phrase": "a kids short-sleeve t-shirt in Sorona polyester blend (small child fit, short sleeves, ribbed neckband)",
   "cuff": "plain",
+  "sleeve": "short",
   "source": "21童装索罗娜 / 21#TZSLN&#10;童装,索罗娜材质",
   "colors": [
    {
@@ -260,6 +264,7 @@
   ],
   "phrase": "a stretch short-sleeve t-shirt (polyester-spandex jersey, fitted body, short sleeves, ribbed neckband)",
   "cuff": "plain",
+  "sleeve": "short",
   "source": "10弹力短袖 / 10#TLDX&#10;弹力短袖",
   "colors": [
    {
@@ -327,6 +332,7 @@
   ],
   "phrase": "a crewneck sweatshirt (no hood, ribbed collar, ribbed cuffs and ribbed hem, mid-weight brushed fleece body)",
   "cuff": "ribbed",
+  "sleeve": "long",
   "source": "03圆领卫衣 / 03#YLWY&#10;圆领卫衣",
   "colors": [
    {
@@ -380,6 +386,7 @@
   ],
   "phrase": "a pullover hoodie (attached hood with drawstrings, kangaroo pocket, ribbed cuffs and ribbed hem, mid-weight brushed fleece body)",
   "cuff": "ribbed",
+  "sleeve": "long",
   "source": "06连帽卫衣 / 06#LMWY&#10;连帽卫衣",
   "colors": [
    {
@@ -418,6 +425,7 @@
   ],
   "phrase": "a kids long-sleeve cotton-jersey T-shirt (small child fit, flat plain cuffs and a straight flat hem, ribbed neckband only, no sweatshirt ribbing)",
   "cuff": "plain",
+  "sleeve": "long",
   "source": "25长袖童装 / 25#CXTZ&#10;长袖童装",
   "colors": [
    {
@@ -470,6 +478,7 @@
   ],
   "phrase": "a kids sweatshirt (small child fit, crewneck, ribbed cuffs and ribbed hem, brushed fleece body)",
   "cuff": "ribbed",
+  "sleeve": "long",
   "source": "28卫衣童装 / 28#WYTZ&#10;卫衣童装",
   "colors": [
    {
@@ -508,6 +517,7 @@
   ],
   "phrase": "a kids washed / vintage-finish t-shirt (garment-dyed cotton, slightly faded surface, ribbed neckband)",
   "cuff": "plain",
+  "sleeve": "short",
   "source": "29水洗童装 / 29#SXTZ&#10;水洗童装",
   "colors": [
    {

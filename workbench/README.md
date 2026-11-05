@@ -524,51 +524,46 @@ GEMINI_API_KEY=...
 | `a6api` | `gpt-image-2.5-sunburst` | **备用接口**（`https://api.a6api.vip/v1`），实测 50 并发 50/50 成功、0 限流，见下 |
 | `local` | 本地算法 | 不调接口，只换颜色、图案零失真，秒出图（见 §7.5） |
 
-### 备用接口 a6api：价格与 50 / 100 并发实测（2026-11-05）
+### 备用接口 a6api：并发实测（2026-11-05）
 
-**价格能从接口读到**，而且真实单价不是定价表里的 ¥0.038：
+**价格按你自己的口径来**：网关能读到价格，但「真实单价」由运营决定填在哪，所以工作台只提供入口，
+不替你猜——
 
-| 途径 | 返回 | 说明 |
+| 途径 | 返回 | 用途 |
 |---|---|---|
-| `GET /api/pricing`（不用鉴权） | `{"model_name":"gpt-image-2.5-sunburst","quota_type":1,"model_price":1,...}` | 网关自己标的是「按次计费」，但 `model_price: 1` 不能直接当单价用 |
-| `GET /v1/dashboard/billing/usage`（带 sk-key） | `{"total_usage": 14.37}` | **累计用量（USD）**，用它算增量最准 |
+| `GET /api/pricing`（免鉴权） | `{"model_name":"gpt-image-2.5-sunburst","quota_type":1,"model_price":1,...}` | 网关自己标的价（按次），仅供对账参考 |
+| `GET /v1/dashboard/billing/usage`（带 sk-key） | `{"total_usage": 14.37}` | 累计用量（USD），可用增量自己核单价 |
 
-实测两次核对：2 张 → 增量 0.1792；102 张（100 张并发测试 + 2 张测价）→ 增量 **8.96**，
-即 **$0.0878/张 ≈ ¥0.63/张**（旧的 ¥0.038 差 16~17 倍）。
-
-所以工作台加了「按接口覆盖价」：`config.json` 里给 provider 写 `model_prices`，
-预计花费 / 账本 / 飞书「金额元」都按它算（界面也优先用它，而不是定价表的同名价格）：
+**网关分开**：每个 provider 都有独立的 `model_prices` 覆盖位，同名模型在不同网关可以填不同价；
+不填就退回 `pricing.json` 的口径（当前 `gpt-image-2.5-sunburst` = ¥0.038/张）。
 
 ```json
-"a6api": { "model_prices": { "gpt-image-2.5-sunburst": 0.65 } }
+"terra":  { "model_prices": {} },
+"a6api":  { "model_prices": { "gpt-image-2.5-sunburst": 0.65 } }   // 自己按实际对账填
 ```
 
-并发实测（真接口）：
+并发实测（真接口，一轮 100 张）：
 
 | 场景 | 结果 |
 |---|---|
-| 50 并发（`tools/check_backup_50.py`，绕过队列） | 50/50 成功、**0 个 429**、峰值在飞 50、56.2s、p50 44.3s |
-| 100 任务全推（`tools/check_a6api_100.py`，5 张老图 × 20 组款式/颜色） | **100/100 成功、0 个 429**、峰值 64（旧代码把并发放大到 64，已改 200）、245.9s、p50 45.7s、p95 83.3s |
-| 100 并发边界（mock，免费） | 并发上限改成 200 后实测**峰值 100**、100/100 完成 |
+| 100 任务全推（`tools/run_100_concurrency.py`：2 张新图 × 49 组 + 1 张补 2 组） | **100/100 成功、0 个 429、峰值并发 100**、246.2s（24.4 张/分钟）、p50 51.0s、p95 84.0s、max 130.4s |
+| 50 并发（`tools/check_backup_50.py`，绕过队列） | 50/50 成功、0 个 429、56.2s、p50 44.3s |
 
-- 修复：`service.create_job` 里「自动并发」的 `min(64, …)` → `min(200, …)`，`runner` 的两处 clamp 64 → 128。
-- 100 张成品（0.22GB，按款式分文件夹）：`data/test/a6api-100/a6api-100.zip` + `contact-sheet.png` + `report.json`。
+- 修复：`service.create_job` 里「自动并发」硬编码 `min(64, …)` → `min(200, …)`，`runner` 两处 clamp 64 → 128。
+- 交付：`data/test/a6api-100-v2/a6api-100.zip`（100 张，按 `24CXCR/03YLWY/23SLNDX/…` 分文件夹）
+  + `contact-sheet.png`（10×10 总览）+ `style-check.png`（每个款式抽 2 张，核对袖长）+ `report.json`。
 
-```json
-"a6api": {
-  "type": "openai_compat",
-  "base_url": "https://api.a6api.vip/v1",
-  "model": "gpt-image-2.5-sunburst",
-  "api_key_env": "A6API_API_KEY",
-  "image_field": "image[]",
-  "max_images": 4,
-  "response_format": "b64_json",
-  "max_concurrency": 100,
-  "global_concurrency": 100,
-  "gate_limit": 100,
-  "model_prices": { "gpt-image-2.5-sunburst": 0.65 }
-}
-```
+### 袖长也要按款式钉死（7.6.7）
+
+上一轮 100 张里出现过「长袖款跑出短袖」，所以袖长和袖口一样做成了款式属性：
+
+| 归属 | 款式 | `sleeve` |
+|---|---|---|
+| 长袖 | 24 / 25 长袖、03 卫衣、06 帽衫、28 卫衣童装 | `long`（必须到手腕、盖住小臂） |
+| 短袖 | 23 / 21 索罗娜、07 水洗、10 弹力、29 水洗童装 | `short`（必须止于肘上、露小臂） |
+
+提示词插入 `SLEEVE LENGTH — …` 段，否定词也跟着换（长袖款禁止短袖/挽袖/七分袖，
+短袖款禁止长袖/挽袖）。`tools/check_cuff.py` 里同时断言袖长，`styles.json` 每款一个 `"sleeve"`。
 
 网关上还有 `gemini-3-pro-image`、`gpt-image-2.5*`、`grok-imagine-image*` 等，界面「拉取」后随手换一个模型即可对比效果（`grok-imagine-video` / `veo-*` / `seedance-*` 是视频模型，不能用于改图）。
 

@@ -109,6 +109,45 @@ def cuff_negative(garment: GarmentType) -> str:
     )
 
 
+#: 袖长 —— 上一轮 100 张实测里出现过「长袖款跑出短袖」，所以单独钉死
+SLEEVE_LONG_CLAUSE = (
+    "SLEEVE LENGTH — FULL-LENGTH LONG SLEEVES: each sleeve must run unbroken from the shoulder "
+    "down to the wrist and cover the forearm completely. If the source photo shows a short-sleeve "
+    "tee, lengthen the sleeves so they reach the wrist and end there. Do not leave short sleeves, "
+    "do not roll or push the sleeves up, do not create three-quarter or elbow-length sleeves, and "
+    "do not leave a bare forearm where the garment should be covering it."
+)
+
+SLEEVE_SHORT_CLAUSE = (
+    "SLEEVE LENGTH — GENUINE SHORT SLEEVES: each sleeve must end above the elbow, mid-upper-arm, "
+    "with a clean hem, exactly like a short-sleeve T-shirt. If the source photo shows long "
+    "sleeves or a sweatshirt, shorten them. Do not keep long sleeves, do not leave three-quarter "
+    "or wrist-length sleeves, do not push or roll the sleeves up, and do not cover the forearm."
+)
+
+
+def sleeve_clause(garment: GarmentType) -> str:
+    """按款式的袖长给出构造约束。"""
+    sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    if sleeve == "long":
+        return SLEEVE_LONG_CLAUSE
+    return SLEEVE_SHORT_CLAUSE
+
+
+def sleeve_negative(garment: GarmentType) -> str:
+    """袖长否定词（跟 cuff 那组分开写，模型更容易守）。"""
+    sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    if sleeve == "long":
+        return (
+            "Do not produce short sleeves, half sleeves, three-quarter sleeves, rolled-up sleeves "
+            "or an exposed forearm; the sleeves must reach the wrists."
+        )
+    return (
+        "Do not produce long sleeves, three-quarter sleeves, wrist-length sleeves or pushed-up "
+        "sleeves; the sleeves must end above the elbow."
+    )
+
+
 STYLE_ONLY_TEMPLATE = (
     "Transform only the visible garment in this photo into a {phrase}. "
     "Change nothing but the garment's silhouette and construction: the shoulder line, armhole, "
@@ -429,7 +468,7 @@ def build_single_pass(
         prompt = f"{template}\n\nTarget garment type: {garment.phrase}."
     prompt = " ".join(prompt.split())
 
-    parts = [prompt, cuff_clause(garment), color_hint(color).strip()]
+    parts = [prompt, sleeve_clause(garment), cuff_clause(garment), color_hint(color).strip()]
     requirement = requirement_block(extra or "", intents, mode)
     if requirement:
         parts.append(requirement)
@@ -452,7 +491,9 @@ def build_single_pass(
 
 def build_style_only(garment: GarmentType) -> str:
     return tidy_articles(
-        STYLE_ONLY_TEMPLATE.format(phrase=garment.phrase) + " " + cuff_clause(garment)
+        STYLE_ONLY_TEMPLATE.format(phrase=garment.phrase)
+        + " " + sleeve_clause(garment)
+        + " " + cuff_clause(garment)
     )
 
 
@@ -475,8 +516,8 @@ def build_recolor_only(
             color_name=color.name_zh, color_label=color.label, color_hex=color.hex
         )
     if garment is not None:
-        # 换色不该改工艺，但模型会"顺手"补罗纹：把袖口这条再钉一次
-        base = base + " " + cuff_clause(garment)
+        # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长：把这两条再钉一次
+        base = base + " " + sleeve_clause(garment) + " " + cuff_clause(garment)
     return base
 
 
@@ -491,7 +532,7 @@ def full_negative(
     mode = (pattern_mode or "preserve").strip().lower()
     extra = NEGATIVE_EXTRA if mode == "preserve" else NEGATIVE_VARIANT
     if garment is not None:
-        extra = extra + " " + cuff_negative(garment)
+        extra = extra + " " + sleeve_negative(garment) + " " + cuff_negative(garment)
     return (base + " " + extra).strip()
 
 

@@ -26,6 +26,12 @@ EXPECTED_RIBBED = {
     "crewneck-sweatshirt",
     "hoodie",
 }
+EXPECTED_LONG_SLEEVE = {
+    "24-long-sleeve", "25-kids-long-sleeve",
+    "03-crewneck-sweatshirt", "06-hoodie", "28-kids-sweatshirt",
+    "crewneck-sweatshirt", "hoodie",
+}
+
 EXPECTED_PLAIN = {
     "23-sorona-tee",
     "07-washed-tee",
@@ -36,6 +42,11 @@ EXPECTED_PLAIN = {
     "29-kids-washed-tee",
     "short-sleeve",
 }
+
+LONG_MARK = "FULL-LENGTH LONG SLEEVES"
+SHORT_MARK = "GENUINE SHORT SLEEVES"
+LONG_NEG = "the sleeves must reach the wrists"
+SHORT_NEG = "the sleeves must end above the elbow"
 
 PLAIN_MARK = "PLAIN, FLAT"
 PLAIN_NEG = "Do not add ribbed cuffs"
@@ -93,6 +104,22 @@ def main() -> int:
                 f"{slug}：recolor_only 不再提 ribbing",
                 show,
             )
+
+        # 袖长：长袖款必须写长袖、短袖款必须写短袖，否则「短袖跑进长袖分类」
+        sleeve = getattr(garment, "sleeve", "")
+        check(sleeve in ("long", "short"), f"{slug}：sleeve 取值合法（{sleeve}）", show)
+        if slug in EXPECTED_LONG_SLEEVE:
+            check(sleeve == "long", f"{slug}：按长袖处理", show)
+        elif slug in EXPECTED_PLAIN:
+            check(sleeve == "short", f"{slug}：按短袖处理", show)
+        if sleeve == "long":
+            check(LONG_MARK in p["single_pass"], f"{slug}：single_pass 有长袖子句", show)
+            check(LONG_MARK in p["style_only"], f"{slug}：style_only 有长袖子句", show)
+            check(LONG_NEG in p["negative"], f"{slug}：否定词禁止短袖", show)
+        else:
+            check(SHORT_MARK in p["single_pass"], f"{slug}：single_pass 有短袖子句", show)
+            check(SHORT_MARK in p["style_only"], f"{slug}：style_only 有短袖子句", show)
+            check(SHORT_NEG in p["negative"], f"{slug}：否定词禁止长袖", show)
 
         # 版型描述自带冠词，模板又写了 a/an → 会出现 "a a long-sleeve"
         for key in ("single_pass", "style_only", "recolor_only"):

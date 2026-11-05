@@ -86,6 +86,21 @@ def pick_sources(limit: int = 5) -> list[Path]:
     return picked
 
 
+def all_pairs() -> list[tuple[str, str]]:
+    """库里所有款式 × 各自颜色（49 组）。"""
+    from skillbridge.service import Workbench
+
+    wb = Workbench(ROOT / "config.json")
+    pairs: list[tuple[str, str]] = []
+    for slug in sorted(wb.skill.types):
+        garment = wb.skill.types[slug]
+        if not slug[0].isdigit():      # 只用款式表里的款式（隐藏的原生 3 款不参与）
+            continue
+        for ref in garment.colors:
+            pairs.append((slug, ref.label))
+    return pairs
+
+
 def write_config(sources: list[Path]) -> Path:
     cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     cfg["data_dir"] = "data-test-100"
@@ -219,9 +234,25 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="备用接口 100 并发实测")
     parser.add_argument("--dry", action="store_true", help="只规划，不调接口")
     parser.add_argument("--sources", type=int, default=5)
+    parser.add_argument("--images", default="", help="指定原图，逗号分隔（相对 workbench 目录或绝对路径）")
+    parser.add_argument("--tasks", type=int, default=0, help="目标任务数（默认 = 全部组合）")
     args = parser.parse_args(argv)
 
-    sources = pick_sources(args.sources)
+    if args.images:
+        sources = []
+        for raw in args.images.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            candidate = Path(raw)
+            if not candidate.is_absolute():
+                candidate = ROOT / raw
+            if not candidate.is_file():
+                print(f"[x] 找不到原图：{candidate}")
+                return 2
+            sources.append(candidate)
+    else:
+        sources = pick_sources(args.sources)
     if not sources:
         print("[x] data/jobs 里找不到可用的原图")
         return 2

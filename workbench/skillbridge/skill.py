@@ -98,6 +98,22 @@ COLOR_CODES: dict[str, str] = {
 }
 
 
+#: 袖长：short（短袖 T 恤）/ long（长袖 T 恤、卫衣、帽衫）
+SLEEVE_SHORT = "short"
+SLEEVE_LONG = "long"
+SLEEVE_VALUES = (SLEEVE_SHORT, SLEEVE_LONG)
+SLEEVE_ZH = {SLEEVE_SHORT: "短袖", SLEEVE_LONG: "长袖"}
+LONG_SLEEVE_HINTS = ("long-sleeve", "long sleeve", "sweatshirt", "hoodie", "卫衣", "帽衫", "长袖")
+
+
+def infer_sleeve(slug: str, aliases: Iterable[str] | None = None, phrase: str = "") -> str:
+    """推断袖长：描述/款式名里有长袖、卫衣、帽衫 → 长袖；其余按短袖。"""
+    text = " ".join([str(slug or ""), *(str(a) for a in (aliases or [])), str(phrase or "")]).lower()
+    if any(hint in text for hint in LONG_SLEEVE_HINTS):
+        return SLEEVE_LONG
+    return SLEEVE_SHORT
+
+
 def style_key_from(style_code: str, aliases: Iterable[str] | None = None) -> str:
     """从款式代号表里的 `24#CXCR` 拿到英文键 `24CXCR`（成品文件名/打包文件夹用）。"""
     for alias in aliases or ():
@@ -164,8 +180,14 @@ class GarmentType:
     colors: list[ColorRef] = field(default_factory=list)
     #: "plain"（平口折边，T 恤）/ "ribbed"（罗纹，卫衣）
     cuff: str = CUFF_PLAIN
+    #: "short"（短袖 T 恤）/ "long"（长袖 T 恤、卫衣、帽衫）
+    sleeve: str = SLEEVE_SHORT
     #: 款式英文代号，形如 `24CXCR`（= 代号 24 + 字母 CXCR，来自款式表），成品文件名/文件夹用它
     name_en: str = ""
+
+    @property
+    def sleeve_zh(self) -> str:
+        return SLEEVE_ZH.get(self.sleeve, SLEEVE_ZH[SLEEVE_SHORT])
 
     @property
     def file_key(self) -> str:
@@ -224,6 +246,8 @@ class GarmentType:
             "phrase": self.phrase,
             "cuff": self.cuff,
             "cuff_zh": self.cuff_zh,
+            "sleeve": self.sleeve,
+            "sleeve_zh": self.sleeve_zh,
             "batch_name": self.batch_name,
             "colors": [c.as_dict() for c in self.colors],
         }
@@ -438,6 +462,7 @@ def load_skill(root: Path | str) -> Skill:
             phrase=phrase,
             colors=colors,
             cuff=infer_cuff(slug, aliases, phrase),
+            sleeve=infer_sleeve(slug, aliases, phrase),
         )
 
     prompt_template = _blockquote_after(lines, "改款换色提示词")
