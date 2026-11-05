@@ -130,6 +130,9 @@ class JobRunner:
             )
         self.pattern_brief = str(params.get("pattern_brief") or "").strip()
         self.negative = prompts.full_negative(self.skill, self.pattern_mode)
+        # 多款式时每个款式有各自的袖口工艺（平口/螺纹），否定词必须按款取，
+        # 不能共用第一款的：否则长袖 T 恤会拿到卫衣的否定、或者反过来
+        self._negatives: dict[str, str] = {}
         self.limiter = RateLimiter(int(params.get("rpm") or 0))
         # 本机并发不能超过接口实测能吃的并发（terra 实测 20），超出的排队等
         self.max_concurrency = max(1, int(provider.setting("max_concurrency", 20) or 20))
@@ -242,7 +245,9 @@ class JobRunner:
                         else f"{base}__{color.label}"
                     )
                     if self.mode in {"two_phase", "recolor_only"}:
-                        prompt = prompts.build_recolor_only(color, pattern_mode=self.pattern_mode)
+                        prompt = prompts.build_recolor_only(
+                            color, pattern_mode=self.pattern_mode, garment=garment
+                        )
                     else:
                         prompt = prompts.build_single_pass(
                             self.skill,
@@ -378,7 +383,7 @@ class JobRunner:
         request = EditRequest(
             images=[source],
             prompt=task.prompt,
-            negative=self.negative,
+            negative=self.negative_for(self.garment_for_task(task)),
             size=self._resolve_size(source),
             quality=str(self.job.params.get("quality") or "high"),
             seed=None,
@@ -410,7 +415,7 @@ class JobRunner:
             request = EditRequest(
                 images=[path],
                 prompt=prompts.build_style_only(self.garment),
-                negative=self.negative,
+                negative=self.negative_for(self.garment),
                 size=self._resolve_size(path),
                 quality=str(self.job.params.get("quality") or "high"),
                 seed=self.job.params.get("seed"),
@@ -521,6 +526,16 @@ class JobRunner:
         except KeyError:
             return self.garment
 
+    def negative_for(self, garment: GarmentType | None) -> str:
+        """按款式取否定词（袖口工艺可能不同），结果缓存。"""
+        if garment is None:
+            return self.negative
+        cached = self._negatives.get(garment.slug)
+        if cached is None:
+            cached = prompts.full_negative(self.skill, self.pattern_mode, garment)
+            self._negatives[garment.slug] = cached
+        return cached
+
     async def _execute_color_task(self, task: Task, *, source_override: Path | None = None) -> None:
         garment = self.garment_for_task(task)
         color = garment.color(task.color)
@@ -546,7 +561,7 @@ class JobRunner:
         request = EditRequest(
             images=images,
             prompt=task.prompt,
-            negative=self.negative,
+            negative=self.negative_for(garment),
             size=self._resolve_size(source),
             quality=str(self.job.params.get("quality") or "high"),
             seed=self.job.params.get("seed"),

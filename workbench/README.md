@@ -267,14 +267,29 @@ Data-Dense Dashboard 布局、语义 token、深浅色自适应、内联 SVG 图
 | 10 | 10 弹力短袖 | 7 | stretch short-sleeve t-shirt (poly-spandex jersey) |
 | 21 | 21 童装索罗娜 | 9 | kids short-sleeve tee in Sorona blend |
 | 23 | 23 索罗娜短袖 | 10 | relaxed-fit short-sleeve tee in Sorona blend |
-| 24 | 24 长袖成人 | 5 | long-sleeve t-shirt (adult) |
-| 25 | 25 长袖童装 | 5 | kids long-sleeve t-shirt |
+| 24 | 24 长袖成人 | 5 | long-sleeve t-shirt (adult), **平口** |
+| 25 | 25 长袖童装 | 5 | kids long-sleeve t-shirt, **平口** |
 | 28 | 28 卫衣童装 | 3 | kids sweatshirt, crewneck, brushed fleece |
 | 29 | 29 水洗童装 | 1 | kids washed / vintage-finish tee |
 
 - 颜色按色号取名字（`BK[0]` 黑色 / `FGY[0]` 花灰色 …），HEX 是从效果图中间区域剔除背景后算出的主色，界面上的色点、提示词里的色值都用它。
 - 中文名、代号（`23#SLNDX`）、英文名都能被 `type_by_alias` 识别；命令行 `--garment-type "23 索罗娜短袖"` 同样可用。
 - 换新的 xlsx 重新生成：`python tools/build_library_from_xlsx.py <新表.xlsx>`（幂等，会重建 `library/refs` 与清单）；`python tools/show_library.py` 核对清单，`python tools/check_library.py` 检查线上/本机接口。
+
+#### 袖口工艺：T 恤平口 / 卫衣螺纹（7.6 起强制区分）
+
+生图模型最容易犯的错：把长袖 T 恤画成卫衣的**罗纹袖口**——客户一眼就看出不是这件衣服。
+
+| 归属 | 款式 | `cuff` | 工艺 |
+|---|---|---|---|
+| T 恤系 | 07 / 10 / 21 / 23 / 24 长袖 / 25 长袖童装 / 29 | `plain` | 袖口、下摆都是**同布平车折边**，袖筒到边保持原宽度；罗纹只在领口 |
+| 卫衣系 | 03 圆领卫衣 / 06 连帽卫衣 / 28 卫衣童装 | `ribbed` | 袖口、下摆是**真实 1x1 罗纹带**（可见竖向罗纹），比袖身略窄 |
+
+- 数据：`styles.json` 每款一个 `"cuff": "plain" | "ribbed"`；没写的按版型描述/款式名推断（`skill.infer_cuff`，宁可默认平口）。
+- 提示词：`prompts.cuff_clause()` 注入 `CUFF & HEM CONSTRUCTION —` 段；否定词按款追加（平口款：`Do not add ribbed cuffs…`，卫衣款：`Do not replace the ribbed cuffs…`）。
+- 自相矛盾会被自动纠正：平口款式若在描述里残留 `ribbed cuffs`，`library.phrase_for_cuff()` 改成平口并在 `skill.warnings` 里记一条。
+- 界面：款式下拉和卡片标题上直接标 `平口 / 螺纹`，删图前不用再猜。
+- 回归：`python tools/check_cuff.py`（离线，秒级）；真接口对照 `python tools/check_cuff_real.py --yes`（约 0.08 元，出 `data/test/cuff/real-cuffs.png` 拼图，一眼看袖口）。
 
 ### 视觉层 5.0（`web/glass.css`，独立于 style.css 便于回退）
 
@@ -865,6 +880,8 @@ python tools/check_thumb_package.py       # 端到端：临时端口 mock 跑一
 python tools/repair_job.py --dry-run      # 列出需要修复的历史任务（打包失败/缓存目录错位）
 python tools/repair_job.py --all          # 搬回缓存目录 + 重新打包，能救回没 ZIP 的旧任务
 python tools/check_price_table.py    # 打印飞书定价表现状（三位小数 / 分档）
+python tools/check_cuff.py           # 袖口工艺回归：T 恤平口 / 卫衣螺纹（离线）
+python tools/check_cuff_real.py --yes # 同上但真接口出 2 张对照图（约 ¥0.08，看 data/test/cuff/real-cuffs.png）
 python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表维护
 ```
 
@@ -890,6 +907,7 @@ python tools/feishu_account_admin.py list|add|passwd|del      # 飞书账号表�
 | 401 / 403 | Key 或 `base_url` 不对；中转站务必确认 `/v1` 前缀与模型名 |
 | 出图比例变了 | 用 `size=auto`，让接口跟随原图；固定 `1024x1024` 会裁掉比例 |
 | 图案像"贴上去"、没有布料质感 | 模型把 logo 重画成了干净矢量图：用「改图」针对那几张返工（写清材质/颗粒要求）；只换颜色的单子直接用 local 本地换色；并确认喂的是高清原图 |
+| 长袖 T 恤的袖口画成了卫衣罗纹（或卫衣丢了罗纹） | 7.6 起按款式强制区分：T 恤系 `plain`、卫衣系 `ribbed`，提示词与否定词都按款注入，界面也标 `平口/螺纹`。自检 `python tools/check_cuff.py`；真接口对照 `python tools/check_cuff_real.py --yes`。新款式记得在 `styles.json` 写 `"cuff"` |
 | 图案被改了（字形/字距/立体感变了） | 这是模型在“重画”logo：改用「仅换色」模式 + `input_fidelity=high`，喂原始分辨率原图；只换颜色的单子直接用 `local` 本地换色 |
 | 出图被压得很小 | 这是 skill 的 2MB 硬规则（`max_bytes` 可在 `config.json` 里调 `defaults`，或改 skill 的数值） |
 | 端口占用 | `python serve.py --port 8899`（或改 `config.json → server.port`） |

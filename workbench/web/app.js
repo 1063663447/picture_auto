@@ -494,6 +494,15 @@
   function styleType(slug) {
     return (state.skill && state.skill.types[slug]) || null;
   }
+  // 袖口工艺标：平口 = T 恤折边，螺纹 = 卫衣罗纹（画错是硬伤，所以摆在款式标题上）
+  function cuffTag(type) {
+    if (!type || !type.cuff_zh) return "";
+    const plain = type.cuff === "plain";
+    const tip = plain
+      ? "袖口/下摆为平口折边（T 恤工艺），不是卫衣罗纹"
+      : "袖口/下摆为罗纹带（卫衣工艺）";
+    return ` <span class="cuff-tag ${plain ? "plain" : "ribbed"}" title="${esc(tip)}">${esc(type.cuff_zh)}</span>`;
+  }
 
   // 恢复上次的选择；没有就用第一个款式、全色
   function restoreStyles() {
@@ -543,7 +552,8 @@
       const colors = type ? type.colors : [];
       const options = slugs.map((slug) => {
         const t = state.skill.types[slug];
-        return `<option value="${esc(slug)}"${slug === item.slug ? " selected" : ""}>${esc(t.display_name)} · ${t.colors.length} 色</option>`;
+        const cuff = t.cuff_zh ? ` · ${t.cuff_zh}` : "";
+        return `<option value="${esc(slug)}"${slug === item.slug ? " selected" : ""}>${esc(t.display_name)} · ${t.colors.length} 色${esc(cuff)}</option>`;
       }).join("");
       const chips = colors.map((color) => {
         const on = item.colors.has(color.label);
@@ -555,7 +565,7 @@
         <div class="style-top">
           <label class="field style-field">
             <span class="lbl">款式 ${state.styles.length > 1 ? `#${index + 1}` : ""}
-              <span class="count">${colors.length} 色</span></span>
+              <span class="count">${colors.length} 色</span>${cuffTag(type)}</span>
             <select class="style-select" data-slug="${esc(item.slug)}" aria-label="款式 ${index + 1}">${options}</select>
           </label>
           <button class="style-drop" type="button" data-drop="${index}" title="移除这个款式"

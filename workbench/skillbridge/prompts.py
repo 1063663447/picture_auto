@@ -19,6 +19,8 @@ logos when they are asked to "regenerate" a garment.
 
 from __future__ import annotations
 
+import re
+
 from .skill import ColorRef, GarmentType, Skill
 
 PRESERVE_CLAUSE = (
@@ -63,6 +65,50 @@ MATERIAL_CLAUSE = (
     "edges, no pasted-on artwork."
 )
 
+#: 袖口/下摆工艺 —— 图片模型最爱的错：把长袖 T 恤画成卫衣的罗纹袖口。
+#: 平口（T 恤系）：袖口和下摆都是**同布平车折边**，没有罗纹/松紧/收口；
+#: 螺纹（卫衣系）：袖口下摆必须是真实的 1x1 罗纹带。选错就是「不是这件衣服」。
+CUFF_PLAIN_CLAUSE = (
+    "CUFF & HEM CONSTRUCTION — the sleeve openings and the bottom hem are PLAIN, FLAT, "
+    "self-fabric turned-and-stitched edges, exactly like a cotton jersey T-shirt: the sleeve stays "
+    "at full width all the way to its edge and simply folds under with a single narrow hem, and the "
+    "body ends in a straight flat hem line. There is NO rib-knit band, NO elastic band, NO gathered "
+    "or shirred cuff, NO elasticated waistband, NO contrast trim on the sleeve or hem, and NO "
+    "sweatshirt-style ribbing anywhere on this garment — the only ribbed part is the neckband. "
+    "Keep the cuffs and hem plain even where the wrist or hip is in shadow or partly covered."
+)
+
+CUFF_RIBBED_CLAUSE = (
+    "CUFF & HEM CONSTRUCTION — this is a sweatshirt / fleece top, so the sleeve ends and the bottom "
+    "hem are real rib-knit (1x1 rib) bands with clearly visible vertical ribs, slightly narrower "
+    "than the sleeve and body, joined to the garment with a seam, exactly as on a sweatshirt. The "
+    "neckline is a ribbed crew neckband. Do not replace them with plain raw folded edges."
+)
+
+
+def cuff_clause(garment: GarmentType) -> str:
+    """按款式的袖口工艺给出构造约束；没有 cuff 信息时默认平口（T 恤更多、更怕画错）。"""
+    cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
+    if cuff == "ribbed":
+        return CUFF_RIBBED_CLAUSE
+    return CUFF_PLAIN_CLAUSE
+
+
+def cuff_negative(garment: GarmentType) -> str:
+    """袖口相关的否定词（只加跟该款式匹配的那一组）。"""
+    cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
+    if cuff == "ribbed":
+        return (
+            "Do not replace the ribbed cuffs or ribbed hem with plain folded raw edges, do not add an "
+            "elastic or gathered cuff, do not turn the ribbed hem into a straight cut hem."
+        )
+    return (
+        "Do not add ribbed cuffs, do not add a ribbed or elastic hem band, do not add gathered or "
+        "elasticated sleeve openings, do not turn this T-shirt into a sweatshirt or hoodie, do not "
+        "add sweatshirt fleece ribbing anywhere."
+    )
+
+
 STYLE_ONLY_TEMPLATE = (
     "Transform only the visible garment in this photo into a {phrase}. "
     "Change nothing but the garment's silhouette and construction: the shoulder line, armhole, "
@@ -83,9 +129,11 @@ STYLE_ONLY_TEMPLATE = (
 RECOLOR_ONLY_TEMPLATE = (
     "This is a fabric colour replacement, not a redraw. Change ONLY the base colour of the "
     "existing garment fabric to {color_name} ({color_label}), approximately {color_hex} in sRGB. "
-    "Keep the garment's silhouette, cut, seams, ribbing, cuffs, hem, neckline, folds, wrinkles, "
-    "fabric texture and every existing pattern exactly as they are in the source image; only the "
-    "fabric's base colour may change. "
+    "Keep the garment's silhouette, cut, seams, cuffs, hem, neckline, folds, wrinkles, "
+    "fabric texture and every existing pattern exactly as they are in the source image — "
+    "including whether the cuffs and hem are plain folded edges or ribbed bands; do not add "
+    "ribbing that is not there and do not remove ribbing that is. On a plain-hemmed T-shirt the "
+    "cuffs and hem must stay plain. Only the fabric's base colour may change. "
     "Match the new colour's hue, brightness, saturation and warm/cool balance precisely, and let "
     "it follow the garment's existing highlights, shadows, folds and weave instead of becoming a "
     "flat colour block: keep visible fabric layering on dark and desaturated colours, and never "
@@ -227,6 +275,23 @@ def color_hint(color: ColorRef) -> str:
     )
 
 
+#: 版型描述自带冠词（"a long-sleeve t-shirt …"），模板里又写了 a/an →
+#: "into a a long-sleeve …"。这种别扭句子会分散模型注意力，顺手压掉。
+_DOUBLE_ARTICLE = re.compile(r"\b(a|an)\s+(a|an)\s+", re.IGNORECASE)
+
+
+def tidy_articles(text: str) -> str:
+    def _fix(match: "re.Match[str]") -> str:
+        return "an " if match.group(2).lower() == "an" else "a "
+
+    previous = None
+    out = text or ""
+    while previous != out:
+        previous = out
+        out = _DOUBLE_ARTICLE.sub(_fix, out)
+    return " ".join(out.split())
+
+
 def operator_clause(extra: str | None) -> str:
     """兜底：没有识别出具体类别时，把原话作为权威要求附上。"""
     extra = " ".join((extra or "").split())
@@ -364,7 +429,7 @@ def build_single_pass(
         prompt = f"{template}\n\nTarget garment type: {garment.phrase}."
     prompt = " ".join(prompt.split())
 
-    parts = [prompt, color_hint(color).strip()]
+    parts = [prompt, cuff_clause(garment), color_hint(color).strip()]
     requirement = requirement_block(extra or "", intents, mode)
     if requirement:
         parts.append(requirement)
@@ -382,16 +447,20 @@ def build_single_pass(
         parts.append(keep)
     elif mode == "preserve":
         parts.append(PRESERVE_CLAUSE)
-    return " ".join(part for part in parts if part).strip()
+    return tidy_articles(" ".join(part for part in parts if part).strip())
 
 
 def build_style_only(garment: GarmentType) -> str:
-    return STYLE_ONLY_TEMPLATE.format(phrase=garment.phrase)
+    return tidy_articles(
+        STYLE_ONLY_TEMPLATE.format(phrase=garment.phrase) + " " + cuff_clause(garment)
+    )
 
 
-def build_recolor_only(color: ColorRef, *, pattern_mode: str = "preserve") -> str:
+def build_recolor_only(
+    color: ColorRef, *, pattern_mode: str = "preserve", garment: GarmentType | None = None
+) -> str:
     if (pattern_mode or "preserve") != "preserve":
-        return (
+        base = (
             f"This is a colour + artwork task, not a redraw of the photo. Change the garment's base "
             f"fabric colour to {color.name_zh} ({color.label}), approximately {color.hex} in sRGB, "
             f"and give this colourway its own artwork. "
@@ -401,16 +470,28 @@ def build_recolor_only(color: ColorRef, *, pattern_mode: str = "preserve") -> st
             + " "
             + keep_clause([], pattern_mode=pattern_mode)
         )
-    return RECOLOR_ONLY_TEMPLATE.format(
-        color_name=color.name_zh, color_label=color.label, color_hex=color.hex
-    )
+    else:
+        base = RECOLOR_ONLY_TEMPLATE.format(
+            color_name=color.name_zh, color_label=color.label, color_hex=color.hex
+        )
+    if garment is not None:
+        # 换色不该改工艺，但模型会"顺手"补罗纹：把袖口这条再钉一次
+        base = base + " " + cuff_clause(garment)
+    return base
 
 
-def full_negative(skill: Skill, pattern_mode: str = "preserve") -> str:
-    """Skill negative prompt + workbench negatives（图案允许重画时换一套否定词）。"""
+def full_negative(
+    skill: Skill, pattern_mode: str = "preserve", garment: GarmentType | None = None
+) -> str:
+    """Skill negative prompt + workbench negatives（图案允许重画时换一套否定词）。
+
+    传了 garment 就再按它的袖口工艺追加一组否定（平口/螺纹互相排斥的那几条）。
+    """
     base = " ".join((skill.negative_prompt or "").split())
     mode = (pattern_mode or "preserve").strip().lower()
     extra = NEGATIVE_EXTRA if mode == "preserve" else NEGATIVE_VARIANT
+    if garment is not None:
+        extra = extra + " " + cuff_negative(garment)
     return (base + " " + extra).strip()
 
 
@@ -484,10 +565,12 @@ def preview(
             skill, garment, color, requirement, pattern_mode=mode
         ),
         "style_only": build_style_only(garment),
-        "recolor_only": build_recolor_only(color, pattern_mode=mode),
-        "negative": full_negative(skill, mode),
+        "recolor_only": build_recolor_only(color, pattern_mode=mode, garment=garment),
+        "negative": full_negative(skill, mode, garment),
         "pattern_mode": mode,
         "pattern_modes": PATTERN_MODES,
+        "cuff": garment.cuff,
+        "cuff_zh": garment.cuff_zh,
         "color": color.as_dict(),
     }
 

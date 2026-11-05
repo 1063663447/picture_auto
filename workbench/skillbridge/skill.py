@@ -24,7 +24,10 @@ FALLBACK_PHRASES: dict[str, str] = {
         "crewneck sweatshirt with a ribbed crew neckline, long sleeves, ribbed cuffs, "
         "and ribbed hem, with no hood, drawstrings, or zipper"
     ),
-    "hoodie": "hoodie with a natural hood, drawstrings, long sleeves, and sweatshirt fabric",
+    "hoodie": (
+        "hoodie with a natural hood, drawstrings, long sleeves, ribbed cuffs and a ribbed hem, "
+        "and sweatshirt fabric"
+    ),
     "short-sleeve": (
         "short-sleeve T-shirt with a natural short sleeve length, T-shirt collar, "
         "and lightweight knit fabric"
@@ -36,6 +39,16 @@ FALLBACK_LABELS: dict[str, list[str]] = {
     "hoodie": ["连帽卫衣", "帽衫", "hoodie"],
     "short-sleeve": ["短袖", "短袖T恤", "T恤", "short-sleeve"],
 }
+
+#: 袖口/下摆工艺。T 恤是**平口**（平车折边），只有卫衣/帽衫才有**螺纹**。
+#: 图片模型最容易在这里犯错：把 T 恤画成卫衣的罗纹袖口。
+CUFF_PLAIN = "plain"
+CUFF_RIBBED = "ribbed"
+CUFF_VALUES = (CUFF_PLAIN, CUFF_RIBBED)
+CUFF_ZH = {CUFF_PLAIN: "平口", CUFF_RIBBED: "螺纹"}
+
+#: 这些词说明是卫衣系（螺纹袖口/下摆），出现在 slug / 别名 / 版型描述里都算。
+RIBBED_HINTS = ("卫衣", "帽衫", "sweatshirt", "hoodie", "sweat shirt")
 
 ZH_COLOR_NAMES: dict[str, str] = {
     "black": "黑色",
@@ -60,6 +73,20 @@ TYPE_LINE = re.compile(r"^-\s*(?P<aliases>[^>]*?)\s*->\s*`(?P<dir>[^`]+?)`\s*$")
 ALIAS_RE = re.compile(r"`([^`]+)`")
 PHRASE_LINE = re.compile(r"^-\s*(?P<label>[^：:`]+?)\s*[：:]\s*`(?P<phrase>.+?)`\s*$")
 MAX_BYTES_RE = re.compile(r"(\d[\d,]*)\s*字节")
+
+
+def infer_cuff(slug: str, aliases: Iterable[str] | None = None, phrase: str = "") -> str:
+    """推断袖口工艺：描述里写了 ribbed cuff，或款式名是卫衣 → 螺纹；其余一律平口。
+
+    宁可默认平口：把 T 恤错画成罗纹袖口是硬伤（客户一眼看出不是自己那件衣服），
+    而卫衣少了螺纹相对好补。
+    """
+    text = " ".join([str(slug or ""), *(str(a) for a in (aliases or [])), str(phrase or "")]).lower()
+    if "ribbed cuff" in text or "ribbed cuffs" in text:
+        return CUFF_RIBBED
+    if any(hint in text for hint in RIBBED_HINTS):
+        return CUFF_RIBBED
+    return CUFF_PLAIN
 
 
 @dataclass
@@ -91,6 +118,16 @@ class GarmentType:
     ref_dir: Path
     phrase: str
     colors: list[ColorRef] = field(default_factory=list)
+    #: "plain"（平口折边，T 恤）/ "ribbed"（罗纹，卫衣）
+    cuff: str = CUFF_PLAIN
+
+    @property
+    def cuff_zh(self) -> str:
+        return CUFF_ZH.get(self.cuff, CUFF_ZH[CUFF_PLAIN])
+
+    @property
+    def is_ribbed(self) -> bool:
+        return self.cuff == CUFF_RIBBED
 
     @property
     def display_name(self) -> str:
@@ -127,6 +164,8 @@ class GarmentType:
             "display_name": self.display_name,
             "aliases": self.aliases,
             "phrase": self.phrase,
+            "cuff": self.cuff,
+            "cuff_zh": self.cuff_zh,
             "batch_name": self.batch_name,
             "colors": [c.as_dict() for c in self.colors],
         }
@@ -340,6 +379,7 @@ def load_skill(root: Path | str) -> Skill:
             ref_dir=ref_dir,
             phrase=phrase,
             colors=colors,
+            cuff=infer_cuff(slug, aliases, phrase),
         )
 
     prompt_template = _blockquote_after(lines, "改款换色提示词")

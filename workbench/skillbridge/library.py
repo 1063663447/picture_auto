@@ -15,7 +15,14 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from .skill import ColorRef, GarmentType, Skill
+from .skill import (
+    CUFF_PLAIN,
+    CUFF_VALUES,
+    ColorRef,
+    GarmentType,
+    Skill,
+    infer_cuff,
+)
 
 LIBRARY_DIR = Path(__file__).resolve().parent.parent / "library"
 MANIFEST_NAME = "styles.json"
@@ -37,7 +44,43 @@ def _hex_to_rgb(value: str) -> tuple[int, int, int]:
         return (128, 128, 128)
 
 
-def load_library(base: Path | None = None) -> list[GarmentType]:
+#: 平口款式里不该出现的螺纹措辞 → 改成平口（否则提示词自相矛盾：
+#: 一句说「ribbed cuffs」、另一句说「no ribbed band」，模型只会挑一个照做）
+_RIBBED_CUFF_MENTIONS = (
+    "ribbed cuffs and neckband",
+    "ribbed cuffs and ribbed neckband",
+    "ribbed cuffs and hem",
+    "ribbed cuffs",
+    "ribbed cuff",
+    "ribbed hem",
+)
+
+
+def phrase_for_cuff(phrase: str, cuff: str) -> str:
+    """按袖口工艺校正版型描述，去掉跟平口冲突的螺纹措辞。"""
+    text = " ".join(str(phrase or "").split())
+    if cuff != CUFF_PLAIN or "rib" not in text.lower():
+        return text
+    for mention in _RIBBED_CUFF_MENTIONS:
+        if mention not in text.lower():
+            continue
+        start = text.lower().index(mention)
+        head, tail = text[:start], text[start + len(mention) :]
+        if "neckband" in mention:
+            fixed = "plain flat cuffs and hem, ribbed neckband only"
+        elif "cuff" in mention and "hem" in mention:
+            fixed = "plain flat cuffs and hem"
+        elif "cuff" in mention:
+            fixed = "plain flat cuffs"
+        else:
+            fixed = "plain flat hem"
+        text = " ".join(f"{head}{fixed}{tail}".split())
+    return text
+
+
+def load_library(
+    base: Path | None = None, warnings: list[str] | None = None
+) -> list[GarmentType]:
     """读 styles.json，返回 GarmentType 列表（按代号排序）。"""
     root = Path(base or LIBRARY_DIR)
     manifest_path = root / MANIFEST_NAME
@@ -81,13 +124,25 @@ def load_library(base: Path | None = None) -> list[GarmentType]:
         display = str(item.get("display_name") or slug)
         if display and display not in aliases:
             aliases.insert(0, display)
+        phrase = str(item.get("phrase") or "")
+        # 袖口工艺：JSON 里显式写就以它为准（并容错），没写才按描述推断
+        cuff = str(item.get("cuff") or "").strip().lower()
+        if cuff not in CUFF_VALUES:
+            cuff = infer_cuff(slug, aliases, phrase)
+        fixed = phrase_for_cuff(phrase, cuff)
+        if fixed != " ".join(phrase.split()) and warnings is not None:
+            warnings.append(
+                f"款式 {slug} 标为平口，版型描述里的螺纹措辞已改正：{fixed}"
+            )
+        phrase = fixed
         types.append(
             GarmentType(
                 slug=slug,
                 aliases=aliases or [slug],
                 ref_dir=root / "refs" / slug,
-                phrase=str(item.get("phrase") or ""),
+                phrase=phrase,
                 colors=colors,
+                cuff=cuff,
             )
         )
     types.sort(key=lambda g: g.slug)
@@ -97,7 +152,7 @@ def load_library(base: Path | None = None) -> list[GarmentType]:
 def merge_into_skill(skill: Skill, base: Path | None = None) -> int:
     """把款式库并进 skill.types（不覆盖已有 slug），返回新增数量。"""
     added = 0
-    for garment in load_library(base):
+    for garment in load_library(base, warnings=skill.warnings):
         if garment.slug in skill.types:
             skill.warnings.append(f"款式库跳过 {garment.slug}：skill 里已有同名款式")
             continue

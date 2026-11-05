@@ -837,6 +837,15 @@ html { scroll-behavior: smooth; }
 }
 .style-select { width: 100%; }
 
+/* 袖口工艺标：平口（T 恤折边）/ 螺纹（卫衣罗纹）——画错就是「不是这件衣服」 */
+.cuff-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 6px;
+  font-size: 9px; line-height: 1.5; border-radius: 5px;
+  border: 1px solid transparent; letter-spacing: 0.02em;
+}
+.cuff-tag.plain { color: #9fd8c4; background: #4fd6a312; border-color: #4fd6a333; }
+.cuff-tag.ribbed { color: #cbbcf5; background: #b5a0ff14; border-color: #b5a0ff33; }
+
 .style-drop {
   flex: 0 0 auto; width: 28px; height: 28px; margin-bottom: 8px;
   display: grid; place-items: center; border-radius: 9px;

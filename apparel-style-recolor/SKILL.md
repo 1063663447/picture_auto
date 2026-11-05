@@ -36,8 +36,9 @@ description: "将一张或多张服装图片改为指定的圆领卫衣、连帽
 以每张原图为基础，将可见服装改成用户指定的目标类型。改款必须真实、完整地发生，不只是改变颜色或在原衣服上添加局部特征。
 
 - 目标为圆领卫衣时：生成圆领、无帽、长袖、卫衣面料和自然的罗纹领口、袖口及下摆；不能残留帽子、抽绳、拉链或短袖结构。
-- 目标为连帽卫衣时：生成完整连帽、自然帽檐、抽绳和长袖卫衣结构；帽子应与人物头部、头发、肩部和姿势自然衔接，不能遮挡脸部或产生多余帽子。
+- 目标为连帽卫衣时：生成完整连帽、自然帽檐、抽绳、长袖卫衣结构和罗纹袖口及下摆；帽子应与人物头部、头发、肩部和姿势自然衔接，不能遮挡脸部或产生多余帽子。
 - 目标为短袖时：生成自然短袖袖长、T 恤领口和轻薄针织面料；不能残留长袖、连帽、抽绳、卫衣罗纹袖口或厚重卫衣材质。
+- 目标为长袖 T 恤时：生成自然长袖、T 恤领口和针织面料；**袖口与下摆为同布平车折边（平口）**，袖筒到边保持原宽度、只把布边折进去一道窄边；不能出现卫衣罗纹袖口、罗纹下摆、松紧收口或拼接袖口——罗纹只属于卫衣，长袖 T 恤上只有领口是罗纹。
 - 保留原服装上可见的图案、文字、数字、logo、刺绣、贴花、印花和装饰元素。改款后将这些内容自然放置在新服装对应的可见区域，保持原有文字可读、图案主体和相对布局，不删除、不新增、不用其它内容替换。
 - 若原图图案跨越会在目标款式中消失的部位，例如长袖变短袖后被裁掉的袖段，只保留目标服装可见区域内合理的原始内容；不要为补齐图案而凭空扩展或重绘新图案。
 - 保留人物身份、脸部、发型、皮肤、手部、饰品、手表、裤子、鞋子、背景、床品、墙面、道具、镜头角度、裁切、景深、分辨率和整体光线。
@@ -63,14 +64,15 @@ description: "将一张或多张服装图片改为指定的圆领卫衣、连帽
 替换 `[TARGET_GARMENT_TYPE]`：
 
 - 圆领卫衣：`crewneck sweatshirt with a ribbed crew neckline, long sleeves, ribbed cuffs, and ribbed hem, with no hood, drawstrings, or zipper`
-- 连帽卫衣：`hoodie with a natural hood, drawstrings, long sleeves, and sweatshirt fabric`
+- 连帽卫衣：`hoodie with a natural hood, drawstrings, long sleeves, ribbed cuffs and a ribbed hem, and sweatshirt fabric`
 - 短袖：`short-sleeve T-shirt with a natural short sleeve length, T-shirt collar, and lightweight knit fabric`
+- 长袖 T 恤：`long-sleeve cotton-jersey T-shirt with flat plain cuffs and a straight flat hem, ribbed neckband only, and no sweatshirt ribbing`
 
 ## 负面约束
 
 将以下内容作为负面提示词或编辑限制；若模型不支持负面提示词，将其合并到主提示词末尾：
 
-> Do not change the person, face, hair, skin tone, hands, fingers, jewelry, watch, pants, shoes, furniture, bedding, wall, background, lighting direction, camera angle, crop, pose, body shape, image composition, or non-garment pixels. Do not remove, erase, cover, blur, simplify, replace, or add any print, text, number, logo, embroidery, sticker, label, pattern, or decorative artwork. Do not leave the original garment type features when converting to the selected type: no hood, drawstrings, zipper, or short sleeves on a crewneck sweatshirt; no original long sleeves, hood, drawstrings, or sweatshirt cuffs on a short-sleeve T-shirt. Do not add extra limbs, altered fingers, warped anatomy, extra hoods, new objects, background replacement, beauty retouching, or color spill outside the garment.
+> Do not change the person, face, hair, skin tone, hands, fingers, jewelry, watch, pants, shoes, furniture, bedding, wall, background, lighting direction, camera angle, crop, pose, body shape, image composition, or non-garment pixels. Do not remove, erase, cover, blur, simplify, replace, or add any print, text, number, logo, embroidery, sticker, label, pattern, or decorative artwork. Do not leave the original garment type features when converting to the selected type: no hood, drawstrings, zipper, or short sleeves on a crewneck sweatshirt; no original long sleeves, hood, drawstrings, or sweatshirt cuffs on a short-sleeve T-shirt. Do not get the cuff and hem construction wrong either: a T-shirt (short or long sleeve) must keep plain, flat, self-fabric folded cuffs and hem — never a rib-knit band, elastic band, gathered cuff, or sweatshirt ribbing — while a sweatshirt or hoodie must keep real rib-knit cuffs and a rib-knit hem. Do not add extra limbs, altered fingers, warped anatomy, extra hoods, new objects, background replacement, beauty retouching, or color spill outside the garment.
 
 ## 输出要求
 
