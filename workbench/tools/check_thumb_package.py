@@ -215,8 +215,8 @@ def main() -> int:
         staging = job_root / "staging"
         junk = [p.name for p in staging.iterdir() if p.is_dir() and p.name in {"thumbs", "derived"}]
         check("staging 里没有缓存目录", not junk, ",".join(junk))
-        check("staging 只有 item 目录",
-              [p.name for p in staging.iterdir() if p.is_dir()] == ["item-01"],
+        check("staging 只有款式目录",
+              [p.name for p in staging.iterdir() if p.is_dir()] == ["06LMWY"],
               ",".join(p.name for p in staging.iterdir() if p.is_dir()))
 
         zip_path = job.get("zip")
@@ -227,10 +227,14 @@ def main() -> int:
             with zipfile.ZipFile(zips[0]) as archive:
                 names = [n for n in archive.namelist() if not n.endswith("/")]
             check("ZIP 里 3 张成品", len(names) == 3, str(len(names)))
+            # 打包按款式分层，文件名 = 款式代号_色号_批次号（英文，能对回款式表）
             check(
-                "成品名是「款式_颜色」",
-                all("/" in n and n.rsplit("/", 1)[-1].count("_") >= 1 for n in names)
-                and not any(n.rsplit("/", 1)[-1].startswith("item-01") for n in names),
+                "成品名是「款式代号_色号_批次号」",
+                all("/06LMWY/" in n for n in names)
+                and all(
+                    __import__("re").search(r"/06LMWY_([A-Z]+\[\d+\])_\d{8}[0-9a-z]{4}\.\w+$", n)
+                    for n in names
+                ),
                 str(names),
             )
             check("ZIP 里没有缓存图",

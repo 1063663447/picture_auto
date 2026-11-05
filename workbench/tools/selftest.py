@@ -161,6 +161,26 @@ def main() -> int:
         lib_bench.skill.type_by_alias("23 索罗娜短袖").slug == "23-sorona-tee",
     )
 
+    print("\n[1.6] 文件名编码：款式表代号 + 色号")
+    from skillbridge.job import Task  # noqa: E402
+
+    long_sleeve = lib_bench.skill.types["24-long-sleeve"]
+    white = long_sleeve.color("white")
+    check("24 长袖成人 → 24CXCR", long_sleeve.file_key == "24CXCR", long_sleeve.file_key)
+    check("白色 → WH[0]", white is not None and white.file_code == "WH[0]",
+          white.file_code if white else "None")
+    sample = Task(
+        id="item-01__white", item="item-01", view="", color="white", color_hex="#fff",
+        color_name="白色", garment="24-long-sleeve", garment_name=long_sleeve.display_name,
+    )
+    stem = sample.file_stem(style_key=long_sleeve.file_key, color_key=white.file_code,
+                            stamp="20261105abcd")
+    check("成品名 = 24CXCR_WH[0]_20261105abcd", stem == "24CXCR_WH[0]_20261105abcd", stem)
+    check("批次号 = 日期 + job 尾号",
+          __import__("skillbridge.job", fromlist=["job_stamp"]).job_stamp("20261105-102305-2219")
+          == "202611052219",
+          "20261105-102305-2219")
+
     inputs = SANDBOX / "inputs"
     inputs.mkdir()
     make_photo(inputs / "item-01.png")
@@ -177,16 +197,21 @@ def main() -> int:
     check("6 张全部成功", job.counts()["done"] == 6, str(job.counts()))
     entries = zip_entries(job)
     check("ZIP 6 个文件", len(entries) == 6, str(entries))
-    check("ZIP 保留 item 层级",
-          all(e.startswith("crewneck-sweatshirt-style-recolor-batch/item-0") for e in entries),
+    check("ZIP 按款式分层（同款式同文件夹）",
+          all(e.startswith("crewneck-sweatshirt-style-recolor-batch/03YLWY/") for e in entries),
           str(entries[:3]))
-    # 7.6 起文件名 = 款式_颜色（客户拿到散图，光看名字就要知道是哪款哪个色）
-    check("命名含款式+颜色", any(e.endswith("圆领卫衣_黑色.png") for e in entries), str(entries))
-    check(
-        "命名不再用 item-01_颜色",
-        not any(e.endswith("item-01_black.png") for e in entries),
-        str(entries[:2]),
-    )
+    # 7.6.3 起文件名 = 款式英文代号_色号编码_批次号（客户要英文编码，能对回款式表）
+    import re as _re
+    name_re = _re.compile(r"^03YLWY_[A-Z]{1,5}\[\d+\](_[a-z0-9-]+)?_\d{8}[0-9a-z]{4}\.png$")
+    check("命名=款式代号_色号[_补充]_批次号",
+          all(name_re.match(e.rsplit("/", 1)[-1]) for e in entries), str(entries))
+    check("2 张原图时补 item 标签防撞名",
+          any("_item-01_" in e for e in entries) and any("_item-02_" in e for e in entries),
+          str(entries[:2]))
+    check("命名是英文编码（不再是中文）",
+          not any(_re.search(r"[\u4e00-\u9fff]", e) for e in entries), str(entries[:2]))
+    check("命名里带了批次号（同一天多单不撞名）",
+          all(_re.search(r"_\d{8}[0-9a-z]{4}\.png$", e) for e in entries), str(entries[:2]))
     check("没有中间文件进 ZIP",
           not any(("_base" in e or "_clean" in e or "/work/" in e) for e in entries))
 
@@ -203,7 +228,9 @@ def main() -> int:
     check("2 张都出图", jobv.counts()["done"] == 2, str(jobv.counts()))
     outs = sorted(str(t.out) for t in jobv.tasks if t.out)
     check("两张成品文件不同", len(set(outs)) == 2, str(outs))
-    check("文件名带视角", any("_view-02" in path for path in outs), str(outs))
+    check("撞名时补视角标签", any("view-02" in path for path in outs), str(outs))
+    check("两张都在同一款式文件夹",
+          len({path.rsplit("/", 2)[-2] for path in outs}) == 1, str(outs))
     check("任务 id 也区分视角",
           len({t.id for t in jobv.tasks}) == 2, str([t.id for t in jobv.tasks]))
     check("多视角 ZIP 2 个文件", len(zip_entries(jobv)) == 2, str(zip_entries(jobv)))

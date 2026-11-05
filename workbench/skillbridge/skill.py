@@ -73,6 +73,39 @@ TYPE_LINE = re.compile(r"^-\s*(?P<aliases>[^>]*?)\s*->\s*`(?P<dir>[^`]+?)`\s*$")
 ALIAS_RE = re.compile(r"`([^`]+)`")
 PHRASE_LINE = re.compile(r"^-\s*(?P<label>[^：:`]+?)\s*[：:]\s*`(?P<phrase>.+?)`\s*$")
 MAX_BYTES_RE = re.compile(r"(\d[\d,]*)\s*字节")
+#: 款式表里的代号写法：`24#CXCR` → 成品文件名用 `24CXCR`
+STYLE_CODE_RE = re.compile(r"^(\d{1,3})\s*#\s*([A-Za-z]{2,8})$")
+
+#: skill 自带的三个款式（不在款式表里）对应的英文代号，成品文件名不要长得像乱码
+SKILL_STYLE_KEYS: dict[str, str] = {
+    "crewneck-sweatshirt": "03YLWY",
+    "hoodie": "06LMWY",
+    "short-sleeve": "SHORT",
+}
+
+#: 没有色号编码时的兜底（skill 自带色卡没有 code）——按款式表的通用色号
+COLOR_CODES: dict[str, str] = {
+    "white": "WH[0]", "off-white": "WH[0]", "black": "BK[0]",
+    "heather-grey": "FGY[0]", "grey": "GY[0]", "gray": "GY[0]", "dark-grey": "DGY[0]",
+    "apricot": "APR[0]", "beige": "BE[0]", "oatmeal": "OT[0]", "khaki": "KH[0]",
+    "burgundy": "DRD[0]", "red": "RD[0]", "bright-red": "RD[0]", "rose-red": "RSD[0]",
+    "pink": "PK[0]", "light-pink": "LPK[0]",
+    "royal-blue": "BU[0]", "blue": "BU[0]", "navy": "NV[0]", "deep-blue": "DBU[0]",
+    "sky-blue": "SBU[0]", "light-blue": "LBU[0]",
+    "forest-green": "GN[0]", "green": "GN[0]", "army-green": "AGN[0]",
+    "brown": "BN[0]", "coffee": "CF[0]", "purple": "VT[0]", "lavender": "LV[0]",
+    "yellow": "YL[0]", "mustard": "MT[0]", "orange": "OR[0]",
+}
+
+
+def style_key_from(style_code: str, aliases: Iterable[str] | None = None) -> str:
+    """从款式代号表里的 `24#CXCR` 拿到英文键 `24CXCR`（成品文件名/打包文件夹用）。"""
+    for alias in aliases or ():
+        match = STYLE_CODE_RE.match(str(alias or "").strip())
+        if match:
+            return f"{match.group(1)}{match.group(2).upper()}"
+    code = str(style_code or "").strip()
+    return code
 
 
 def infer_cuff(slug: str, aliases: Iterable[str] | None = None, phrase: str = "") -> str:
@@ -98,10 +131,21 @@ class ColorRef:
     hex: str
     rgb: tuple[int, int, int]
     name_zh: str
+    #: 色号编码，形如 `WH[0]` / `BK[0]`（来自款式表），成品文件名用它
+    code: str = ""
+
+    @property
+    def file_code(self) -> str:
+        """成品文件名里的色号：优先款式表给的 `WH[0]`，没有就按通用色号兜底。"""
+        code = (self.code or "").strip()
+        if code:
+            return code
+        return COLOR_CODES.get(self.label.lower(), self.label.upper().replace("-", ""))
 
     def as_dict(self) -> dict:
         return {
             "label": self.label,
+            "code": self.code,
             "name_zh": self.name_zh,
             "hex": self.hex,
             "rgb": list(self.rgb),
@@ -120,6 +164,19 @@ class GarmentType:
     colors: list[ColorRef] = field(default_factory=list)
     #: "plain"（平口折边，T 恤）/ "ribbed"（罗纹，卫衣）
     cuff: str = CUFF_PLAIN
+    #: 款式英文代号，形如 `24CXCR`（= 代号 24 + 字母 CXCR，来自款式表），成品文件名/文件夹用它
+    name_en: str = ""
+
+    @property
+    def file_key(self) -> str:
+        """成品文件名和打包文件夹用的英文款式键（`24CXCR`）。"""
+        name = (self.name_en or "").strip()
+        if name:
+            return name
+        mapped = SKILL_STYLE_KEYS.get(self.slug)
+        if mapped:
+            return mapped
+        return self.slug.upper().replace("-", "_")
 
     @property
     def cuff_zh(self) -> str:
@@ -162,6 +219,7 @@ class GarmentType:
         return {
             "slug": self.slug,
             "display_name": self.display_name,
+            "name_en": self.file_key,
             "aliases": self.aliases,
             "phrase": self.phrase,
             "cuff": self.cuff,

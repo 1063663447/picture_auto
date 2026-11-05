@@ -22,6 +22,7 @@ from .skill import (
     GarmentType,
     Skill,
     infer_cuff,
+    style_key_from,
 )
 
 LIBRARY_DIR = Path(__file__).resolve().parent.parent / "library"
@@ -116,6 +117,8 @@ def load_library(
                     hex=hex_value,
                     rgb=_hex_to_rgb(hex_value),
                     name_zh=str(color.get("name_zh") or ""),
+                    # 色号编码（WH[0] / BK[0] …）：成品文件名用它
+                    code=str(color.get("color_code") or ""),
                 )
             )
         if not colors:
@@ -135,6 +138,10 @@ def load_library(
                 f"款式 {slug} 标为平口，版型描述里的螺纹措辞已改正：{fixed}"
             )
         phrase = fixed
+        # 英文款式代号（24CXCR）：JSON 里写了就用，没写从 `24#CXCR` 这类别名里取
+        name_en = str(item.get("name_en") or "").strip().upper()
+        if not name_en:
+            name_en = style_key_from(str(item.get("style_code") or ""), aliases)
         types.append(
             GarmentType(
                 slug=slug,
@@ -143,6 +150,7 @@ def load_library(
                 phrase=phrase,
                 colors=colors,
                 cuff=cuff,
+                name_en=name_en,
             )
         )
     types.sort(key=lambda g: g.slug)

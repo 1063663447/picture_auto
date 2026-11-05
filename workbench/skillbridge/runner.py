@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import prompts
-from .job import Job, Task, normalise_item, view_of
+from .job import Job, Task, job_stamp, normalise_item, view_of
 from .gate import GateBusy
 from .packaging import package_outputs
 from .providers.base import EditRequest, Provider, ProviderError, sniff_extension
@@ -136,6 +136,8 @@ class JobRunner:
         self._negatives: dict[str, str] = {}
         # 排队信息：任务 id → 最近一次「前方还有几张」（来自飞书闸门）
         self._queue_notes: dict[str, dict] = {}
+        # 成品文件名尾号（202611052219）与同款同色的补充标签
+        self.stamp = job_stamp(str(getattr(job, "id", "") or ""))
         self.limiter = RateLimiter(int(params.get("rpm") or 0))
         # 本机并发不能超过接口实测能吃的并发（terra 实测 20）；闸门额度不在这里收，
         # 因为「超过额度就排队」本来就该在飞书表里排，界面才看得见前方还有几张
@@ -728,16 +730,39 @@ class JobRunner:
             if suffix != wanted:
                 data = self._convert(data, wanted)
                 suffix = wanted
-        folder = task.item if not self.multi_style else f"{task.item}__{task.garment or 'style'}"
-        item_dir = self.staging_dir / folder
+        # 打包按**款式**分层：同款式的图放同一个文件夹（文件夹名 = 款式英文代号 24CXCR）
+        garment = self.garment_for_task(task)
+        item_dir = self.staging_dir / garment.file_key
         item_dir.mkdir(parents=True, exist_ok=True)
-        # 文件名 = 款式_颜色[_视角]（客户拿到的是散图，光看名字就得知道是哪款哪个色）
-        stem = task.file_stem(self.garment_for_task(task).display_name)
+        # 文件名 = 款式代号_色号编码[_补充]_批次号，例如 24CXCR_WH[0]_202611052219.png
+        color = garment.color(task.color)
+        stem = task.file_stem(
+            style_key=garment.file_key,
+            color_key=(color.file_code if color is not None else ""),
+            stamp=self.stamp,
+            tag=self._dup_tag(task),
+        )
         target = item_dir / f"{stem}{suffix}"
         tmp = target.with_suffix(target.suffix + ".part")
         tmp.write_bytes(data)
         tmp.replace(target)
         return str(target.relative_to(self.root)).replace("\\", "/")
+
+    def _dup_tag(self, task: Task) -> str:
+        """同款同色出现多张（多原图 / 多视角）时补一段，否则返回空。
+
+        文件名里没有 item 了（客户只要款式+色号+批次），所以撞名只能在中间补：
+        `24CXCR_WH[0]_item-02_202611052219.png`。
+        """
+        style = task.garment or self.garment.slug
+        same = [
+            other
+            for other in self.job.tasks
+            if (other.garment or self.garment.slug) == style and other.color == task.color
+        ]
+        if len(same) <= 1:
+            return ""
+        return f"{task.item}-{task.view}" if task.view else task.item
 
     @staticmethod
     def _convert(data: bytes, suffix: str) -> bytes:
@@ -768,13 +793,10 @@ class JobRunner:
             return
 
         stats = self.job.counts()
-        # 每个 item 目录里应该有「颜色数 × 该 item 的视角数」张；多视角上传时不能只按颜色数算
-        views_by_item: dict[str, set[str]] = {}
-        for task in self.job.tasks:
-            views_by_item.setdefault(task.item, set()).add(task.view)
-        views = max((len(v) for v in views_by_item.values()), default=1)
+        # staging 现在按**款式**分文件夹：每个文件夹里应该有「颜色数 × 原图数(含视角)」张
+        sources = len({(task.item, task.view) for task in self.job.tasks})
         expected = (
-            len(self.colors) * views
+            len(self.colors) * max(1, sources)
             if self.mode == "single_pass"
             and not self.multi_style
             and stats["failed"] == 0

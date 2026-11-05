@@ -3,6 +3,7 @@
   "slug": "23-sorona-tee",
   "style_code": "23",
   "display_name": "23 索罗娜短袖",
+  "name_en": "23SLNDX",
   "aliases": [
    "23 索罗娜短袖",
    "23 索罗娜",
@@ -90,6 +91,7 @@
   "slug": "07-washed-tee",
   "style_code": "07",
   "display_name": "07 水洗T恤",
+  "name_en": "07SXT",
   "aliases": [
    "07 水洗T恤",
    "水洗T恤",
@@ -114,6 +116,7 @@
   "slug": "24-long-sleeve",
   "style_code": "24",
   "display_name": "24 长袖成人",
+  "name_en": "24CXCR",
   "aliases": [
    "24 长袖成人",
    "24 长袖",
@@ -166,6 +169,7 @@
   "slug": "21-kids-sorona-tee",
   "style_code": "21",
   "display_name": "21 童装索罗娜",
+  "name_en": "21TZSLN",
   "aliases": [
    "21 童装索罗娜",
    "21 童装",
@@ -246,6 +250,7 @@
   "slug": "10-stretch-tee",
   "style_code": "10",
   "display_name": "10 弹力短袖",
+  "name_en": "10TLDX",
   "aliases": [
    "10 弹力短袖",
    "弹力短袖",
@@ -312,6 +317,7 @@
   "slug": "03-crewneck-sweatshirt",
   "style_code": "03",
   "display_name": "03 圆领卫衣",
+  "name_en": "03YLWY",
   "aliases": [
    "03 圆领卫衣",
    "圆领卫衣",
@@ -364,6 +370,7 @@
   "slug": "06-hoodie",
   "style_code": "06",
   "display_name": "06 连帽卫衣",
+  "name_en": "06LMWY",
   "aliases": [
    "06 连帽卫衣",
    "连帽卫衣",
@@ -402,6 +409,7 @@
   "slug": "25-kids-long-sleeve",
   "style_code": "25",
   "display_name": "25 长袖童装",
+  "name_en": "25CXTZ",
   "aliases": [
    "25 长袖童装",
    "25 童装长袖",
@@ -453,6 +461,7 @@
   "slug": "28-kids-sweatshirt",
   "style_code": "28",
   "display_name": "28 卫衣童装",
+  "name_en": "28WYTZ",
   "aliases": [
    "28 卫衣童装",
    "28 童装卫衣",
@@ -490,6 +499,7 @@
   "slug": "29-kids-washed-tee",
   "style_code": "29",
   "display_name": "29 水洗童装",
+  "name_en": "29SXTZ",
   "aliases": [
    "29 水洗童装",
    "29 童装水洗",

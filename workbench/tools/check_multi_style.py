@@ -137,15 +137,15 @@ def main() -> int:
     check("任务完成", job.status in {"done", "partial"}, job.status)
     check("5 张全部成功", job.counts()["done"] == 5, json.dumps(job.counts(), ensure_ascii=False))
     staging_dirs = sorted(p.name for p in (job.root / "staging").iterdir() if p.is_dir())
-    check("staging 按款式分目录", staging_dirs == ["item-01__06-hoodie", "item-01__23-sorona-tee"],
+    check("staging 按款式分目录（英文代号）", staging_dirs == ["06LMWY", "23SLNDX"],
           ",".join(staging_dirs))
     entries = zip_entries(job)
     check("ZIP 里 5 张", len(entries) == 5, str(len(entries)))
     check("ZIP 里两个款式目录",
-          all(any(f"__{slug}/" in e for e in entries) for slug in ("06-hoodie", "23-sorona-tee")),
+          all(any(f"/{key}/" in e for e in entries) for key in ("06LMWY", "23SLNDX")),
           "; ".join(entries[:2]))
     check("ZIP 没有串味（卫衣目录里没有短袖的颜色）",
-          not any(f"__06-hoodie" in e and any(c in e for c in tee_colors if c not in hoodie_colors)
+          not any("/06LMWY/" in e and any(c in e for c in tee_colors if c not in hoodie_colors)
                   for e in entries))
     check("打包没报错", not job.error, str(job.error)[:80])
 
@@ -154,10 +154,9 @@ def main() -> int:
         bench, uploads, None, garment_type="06-hoodie", colors=hoodie_colors
     ))
     check("任务数 = 3", len(job2.tasks) == 3, str(len(job2.tasks)))
-    check("单款式仍用 item 目录名", True)
     asyncio.run(run_job(bench, job2))
     dirs2 = sorted(p.name for p in (job2.root / "staging").iterdir() if p.is_dir())
-    check("staging 目录名保持 item-01", dirs2 == ["item-01"], ",".join(dirs2))
+    check("单款式也用款式代号命名目录", dirs2 == ["06LMWY"], ",".join(dirs2))
     check("ZIP 里 3 张", len(zip_entries(job2)) == 3, str(len(zip_entries(job2))))
 
     print("[3] 同款式加两次 → 合并颜色不重复排任务")

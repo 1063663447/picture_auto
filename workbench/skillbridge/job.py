@@ -26,20 +26,43 @@ def safe_name_part(text: str, fallback: str = "") -> str:
     return cleaned or fallback
 
 
-def output_stem(task: "Task", style_name: str = "") -> str:
-    """成品文件名（不含扩展名）：**款式_颜色**[_视角]。
+def job_stamp(job_id: str) -> str:
+    """成品文件名里的批次尾号：`20261105` + job id 最后 4 位（如 `2219`）。
 
-    客户拿到的是散图，文件名必须一眼看出是哪款哪个色：
-    `24长袖成人_红色.png`、`24长袖成人_红色_view-02.png`。
-    款式优先取任务自己的（多款式任务时 self.garment 只是第一个），
-    颜色优先取中文名，没有再退回英文 label。
+    job id 形如 `20261105-102305-2219` → `202611052219`，
+    和客户要求的 `24CXCR_WH[0]_20261105xxxx` 一致，同一天多单也不会撞名。
     """
-    style = safe_name_part(style_name or task.garment_name or task.garment, "款式")
-    color = safe_name_part(task.color_name or task.color, "颜色")
-    stem = f"{style}_{color}"
-    if task.view:
-        stem = f"{stem}_{safe_name_part(task.view, 'view')}"
-    return stem
+    parts = [part for part in str(job_id or "").replace("_", "-").split("-") if part]
+    today = time.strftime("%Y%m%d")
+    if not parts:
+        return today
+    date_part = parts[0] if len(parts[0]) == 8 and parts[0].isdigit() else today
+    tail = re.sub(r"[^0-9A-Za-z]", "", parts[-1])[-4:]
+    return f"{date_part}{tail}"
+
+
+def output_stem(
+    task: "Task",
+    *,
+    style_key: str = "",
+    color_key: str = "",
+    stamp: str = "",
+    tag: str = "",
+) -> str:
+    """成品文件名（不含扩展名）：**款式英文代号_色号编码[_补充]_批次号**。
+
+    客户要的是英文编码，且要能直接对回款式表：
+    `24CXCR_WH[0]_202611052219.png`（= 24 长袖成人 · 白色 · 2026-11-05 那单）。
+    同一款同色出现多张（多原图 / 多视角）时中间补一段 `item-02` / `view-02`，避免互相覆盖。
+    """
+    style = safe_name_part(style_key or task.garment_name or task.garment, "STYLE")
+    color = safe_name_part(color_key or task.color_name or task.color, "COLOR")
+    parts = [style, color]
+    if tag:
+        parts.append(safe_name_part(tag, "extra"))
+    if stamp:
+        parts.append(safe_name_part(stamp, ""))
+    return "_".join(part for part in parts if part)
 
 
 def new_job_id() -> str:
@@ -105,9 +128,13 @@ class Task:
             return round(self.finished_at - self.started_at, 2)
         return None
 
-    def file_stem(self, style_name: str = "") -> str:
-        """成品文件名（款式_颜色[_视角]），见 `output_stem`。"""
-        return output_stem(self, style_name)
+    def file_stem(
+        self, *, style_key: str = "", color_key: str = "", stamp: str = "", tag: str = ""
+    ) -> str:
+        """成品文件名（款式英文代号_色号编码[_补充]_批次号），见 `output_stem`。"""
+        return output_stem(
+            self, style_key=style_key, color_key=color_key, stamp=stamp, tag=tag
+        )
 
     def as_dict(self) -> dict:
         return {
