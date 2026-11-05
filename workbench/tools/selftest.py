@@ -180,9 +180,33 @@ def main() -> int:
     check("ZIP 保留 item 层级",
           all(e.startswith("crewneck-sweatshirt-style-recolor-batch/item-0") for e in entries),
           str(entries[:3]))
-    check("命名含颜色标签", any(e.endswith("item-01_black.png") for e in entries), str(entries))
+    # 7.6 起文件名 = 款式_颜色（客户拿到散图，光看名字就要知道是哪款哪个色）
+    check("命名含款式+颜色", any(e.endswith("圆领卫衣_黑色.png") for e in entries), str(entries))
+    check(
+        "命名不再用 item-01_颜色",
+        not any(e.endswith("item-01_black.png") for e in entries),
+        str(entries[:2]),
+    )
     check("没有中间文件进 ZIP",
           not any(("_base" in e or "_clean" in e or "/work/" in e) for e in entries))
+
+    print("\n[2.5] 多视角：同一款同色两张不能互相覆盖")
+    views_uploads = [
+        ("item-01.jpg", (inputs / "item-01.png").read_bytes()),
+        ("item-01_view-02.png", (inputs / "item-02.png").read_bytes()),
+    ]
+    jobv = bench.create_job(
+        views_uploads, garment_type="圆领卫衣", colors=["black"], provider="mock", concurrency=2,
+    )
+    asyncio.run(run_job(bench, jobv))
+    check("多视角完成", jobv.status == "done", jobv.stage)
+    check("2 张都出图", jobv.counts()["done"] == 2, str(jobv.counts()))
+    outs = sorted(str(t.out) for t in jobv.tasks if t.out)
+    check("两张成品文件不同", len(set(outs)) == 2, str(outs))
+    check("文件名带视角", any("_view-02" in path for path in outs), str(outs))
+    check("任务 id 也区分视角",
+          len({t.id for t in jobv.tasks}) == 2, str([t.id for t in jobv.tasks]))
+    check("多视角 ZIP 2 个文件", len(zip_entries(jobv)) == 2, str(zip_entries(jobv)))
 
     print("\n[3] 两段式：1 图 × 3 色")
     job2 = bench.create_job(

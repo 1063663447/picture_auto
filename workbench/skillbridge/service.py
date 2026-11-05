@@ -8,6 +8,7 @@ import re
 import shutil
 import time
 import zipfile
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -688,6 +689,8 @@ class Workbench:
             size=str(params.get("size") or "auto"),
             account=str(params.get("account") or ""),
             detail=detail,
+            garment=str(params.get("garment_name") or ""),
+            color="、".join(str(c) for c in (params.get("colors") or [])),
         )
 
     def _feishu_rows(self, max_pages: int = 6) -> list[dict] | None:
@@ -732,6 +735,7 @@ class Workbench:
                     "images": int(fields.get("张数") or 0),
                     "cost": cost,
                     "model": text(fields.get("模型")).strip(),
+                    "garment": text(fields.get("款式")).strip(),
                     "detail": text(fields.get("成品")).strip(),
                     "color": text(fields.get("颜色")).strip(),
                     "job_id": text(fields.get("任务ID")).strip(),
@@ -843,7 +847,9 @@ class Workbench:
                     "images": int(entry.get("images") or 0),
                     "cost": float(entry.get("cost") or 0),
                     "model": str(entry.get("model") or ""),
+                    "garment": str(entry.get("garment") or ""),
                     "detail": str(entry.get("detail") or ""),
+                    "color": str(entry.get("color") or ""),
                     "job_id": str(entry.get("job_id") or ""),
                     "status": "done",
                     "at": float(entry.get("at") or 0),
@@ -855,24 +861,57 @@ class Workbench:
         total_images = sum(int(r["images"] or 0) for r in rows)
         total_cost = round(sum(float(r["cost"] or 0) for r in rows), 4)
         today = time.strftime("%Y-%m-%d")
+        yesterday = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
 
         by_model: dict[str, dict] = {}
         by_day: dict[str, dict] = {}
+        by_style: dict[str, dict] = {}
+        by_color: dict[str, dict] = {}
+        by_hour = [
+            {"hour": hour, "images": 0, "cost": 0.0} for hour in range(24)
+        ]
         for row in rows:
-            model = row["model"] or "（未知）"
+            images = int(row["images"] or 0)
+            cost = float(row["cost"] or 0)
+            model = row.get("model") or "（未知）"
             bucket = by_model.setdefault(model, {"model": model, "images": 0, "cost": 0.0})
-            bucket["images"] += int(row["images"] or 0)
-            bucket["cost"] += float(row["cost"] or 0)
-            day = time.strftime("%Y-%m-%d", time.localtime(row["at"] or 0))
+            bucket["images"] += images
+            bucket["cost"] += cost
+            style = str(row.get("garment") or "").strip() or "（未标注款式）"
+            style_bucket = by_style.setdefault(
+                style, {"style": style, "images": 0, "cost": 0.0}
+            )
+            style_bucket["images"] += images
+            style_bucket["cost"] += cost
+            color = str(row.get("color") or "").strip() or "（未标注颜色）"
+            color_bucket = by_color.setdefault(
+                color, {"color": color, "images": 0, "cost": 0.0}
+            )
+            color_bucket["images"] += images
+            color_bucket["cost"] += cost
+            stamp = float(row["at"] or 0)
+            day = time.strftime("%Y-%m-%d", time.localtime(stamp))
             day_bucket = by_day.setdefault(day, {"day": day, "images": 0, "cost": 0.0})
-            day_bucket["images"] += int(row["images"] or 0)
-            day_bucket["cost"] += float(row["cost"] or 0)
+            day_bucket["images"] += images
+            day_bucket["cost"] += cost
+            if day == today:
+                hour = int(time.strftime("%H", time.localtime(stamp)) or 0)
+                by_hour[max(0, min(23, hour))]["images"] += images
+                by_hour[max(0, min(23, hour))]["cost"] += cost
 
-        for bucket in by_model.values():
-            bucket["cost"] = round(bucket["cost"], 4)
+        for group in (by_model, by_style, by_color):
+            for bucket in group.values():
+                bucket["cost"] = round(bucket["cost"], 4)
         for bucket in by_day.values():
             bucket["cost"] = round(bucket["cost"], 4)
-        days = sorted(by_day.values(), key=lambda item: item["day"])[-14:]
+        for bucket in by_hour:
+            bucket["cost"] = round(bucket["cost"], 4)
+        # 曲线图要连续的 X 轴：补齐最近 14 天（没出图的那天也要有 0，否则曲线会跳）
+        day_keys = [
+            (date.today() - timedelta(days=offset)).strftime("%Y-%m-%d")
+            for offset in range(13, -1, -1)
+        ]
+        days = [by_day.get(key) or {"day": key, "images": 0, "cost": 0.0} for key in day_keys]
 
         accounts = payload["accounts"]
         quotas = [row for row in accounts if float(row.get("quota") or 0) > 0]
@@ -887,6 +926,7 @@ class Workbench:
                 "accounts": len(accounts),
                 "models": len(by_model),
                 "today": by_day.get(today, {"images": 0, "cost": 0.0}),
+                "yesterday": by_day.get(yesterday, {"images": 0, "cost": 0.0}),
             },
             "quota": {
                 "accounts_with_quota": len(quotas),
@@ -895,7 +935,10 @@ class Workbench:
             },
             "accounts": accounts,
             "by_model": sorted(by_model.values(), key=lambda item: -item["images"]),
+            "by_style": sorted(by_style.values(), key=lambda item: -item["images"]),
+            "by_color": sorted(by_color.values(), key=lambda item: -item["images"]),
             "by_day": days,
+            "by_hour": by_hour,
             "recent": rows[:20],
             "providers": [
                 {"name": str(p.get("name")), "label": str(p.get("label"))}

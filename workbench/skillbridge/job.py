@@ -10,8 +10,36 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ITEM_PREFIX = re.compile(r"^(?P<item>item[-_]?\d+)(?:[-_](?P<view>view[-_]?\d+))?$", re.I)
+#: 上传进 inputs/<item>/ 之后，多视角文件的文件名就只剩 `view-02`（见 service.create_job）
+VIEW_ONLY = re.compile(r"^view[-_]?(\d+)$", re.I)
+
+#: 文件名里不能出现的字符（Windows 最严：`< > : " / \ | ? *` 与控制字符）
+UNSAFE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 TERMINAL = {"done", "failed", "skipped", "canceled"}
+
+
+def safe_name_part(text: str, fallback: str = "") -> str:
+    """把款式名/颜色名变成文件名片段：去掉非法字符和空白（`24 长袖成人` → `24长袖成人`）。"""
+    cleaned = UNSAFE_NAME.sub("", str(text or "")).strip()
+    cleaned = re.sub(r"\s+", "", cleaned)
+    return cleaned or fallback
+
+
+def output_stem(task: "Task", style_name: str = "") -> str:
+    """成品文件名（不含扩展名）：**款式_颜色**[_视角]。
+
+    客户拿到的是散图，文件名必须一眼看出是哪款哪个色：
+    `24长袖成人_红色.png`、`24长袖成人_红色_view-02.png`。
+    款式优先取任务自己的（多款式任务时 self.garment 只是第一个），
+    颜色优先取中文名，没有再退回英文 label。
+    """
+    style = safe_name_part(style_name or task.garment_name or task.garment, "款式")
+    color = safe_name_part(task.color_name or task.color, "颜色")
+    stem = f"{style}_{color}"
+    if task.view:
+        stem = f"{stem}_{safe_name_part(task.view, 'view')}"
+    return stem
 
 
 def new_job_id() -> str:
@@ -31,6 +59,23 @@ def normalise_item(file_stem: str) -> tuple[str, str]:
         view = (match.group("view") or "").lower().replace("_", "-") or ""
         return item, view
     return "", ""
+
+
+def view_of(file_stem: str) -> str:
+    """从文件名取视角号。
+
+    上传落盘后，同一 item 的多视角文件名只剩 `view-02.jpg`（父目录才是 item-01），
+    这时 `normalise_item` 认不出来 —— 少了这一步，两个视角会算出同一个任务 id，
+    成品文件也会互相覆盖（只剩最后一张）。
+    """
+    stem = str(file_stem or "").strip()
+    match = ITEM_PREFIX.match(stem)
+    if match:
+        return (match.group("view") or "").lower().replace("_", "-")
+    match = VIEW_ONLY.match(stem)
+    if match:
+        return f"view-{int(match.group(1)):02d}"
+    return ""
 
 
 @dataclass
@@ -59,6 +104,10 @@ class Task:
         if self.started_at and self.finished_at:
             return round(self.finished_at - self.started_at, 2)
         return None
+
+    def file_stem(self, style_name: str = "") -> str:
+        """成品文件名（款式_颜色[_视角]），见 `output_stem`。"""
+        return output_stem(self, style_name)
 
     def as_dict(self) -> dict:
         return {

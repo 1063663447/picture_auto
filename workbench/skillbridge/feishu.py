@@ -305,14 +305,19 @@ def build_rows(job, size: str, unit: float | None, currency: str, *, per: str = 
         return round(float(unit) * count, 4) if unit is not None else None
 
     if per == "job":
+        # 多款式时「款式」列写全部款式，别只写第一款
+        style_names = [str(s.get("garment_name") or "") for s in (params.get("selections") or [])]
+        style_text = "、".join([name for name in style_names if name]) or str(
+            params.get("garment_name") or ""
+        )
         return [
             {
                 "_task_id": "",
-                "成品": f"{params.get('garment_name', '')} · {done_total} 张",
+                "成品": f"{style_text} · {done_total} 张",
                 "任务ID": job.id,
                 "时间": finished,
                 "账号": str(params.get("account") or "anonymous"),
-                "款式": str(params.get("garment_name") or ""),
+                "款式": style_text,
                 "颜色": "、".join(params.get("colors") or []),
                 "模型": str(params.get("model") or ""),
                 "尺寸": str(size or ""),
@@ -332,11 +337,14 @@ def build_rows(job, size: str, unit: float | None, currency: str, *, per: str = 
         rows.append(
             {
                 "_task_id": task.id,
-                "成品": f"{task.item} / {task.color_name}",
+                # 成品字段用**真实文件名**（款式_颜色），飞书里看到的和客户拿到的是一回事
+                "成品": (Path(task.out).name if task.out else "")
+                or f"{task.item} / {task.color_name}",
                 "任务ID": job.id,
                 "时间": _ms(task.finished_at),
                 "账号": str(params.get("account") or "anonymous"),
-                "款式": str(params.get("garment_name") or ""),
+                # 多款式任务里 params.garment_name 只是第一款，必须用任务自己的
+                "款式": str(task.garment_name or params.get("garment_name") or ""),
                 "颜色": task.color_name,
                 "模型": str(params.get("model") or ""),
                 "尺寸": str(size or ""),

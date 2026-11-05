@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image
 
 from . import prompts
-from .job import Job, Task, normalise_item
+from .job import Job, Task, normalise_item, view_of
 from .gate import GateBusy
 from .packaging import package_outputs
 from .providers.base import EditRequest, Provider, ProviderError, sniff_extension
@@ -225,7 +225,7 @@ class JobRunner:
                 if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES
             )
             for path in files:
-                view = normalise_item(path.stem)[1] or ""
+                view = normalise_item(path.stem)[1] or view_of(path.stem)
                 entries.append((item_dir.name, view, path))
         return entries
 
@@ -694,8 +694,9 @@ class JobRunner:
         folder = task.item if not self.multi_style else f"{task.item}__{task.garment or 'style'}"
         item_dir = self.staging_dir / folder
         item_dir.mkdir(parents=True, exist_ok=True)
-        stem = f"{task.item}-{task.view}" if task.view else task.item
-        target = item_dir / f"{stem}_{task.color}{suffix}"
+        # 文件名 = 款式_颜色[_视角]（客户拿到的是散图，光看名字就得知道是哪款哪个色）
+        stem = task.file_stem(self.garment_for_task(task).display_name)
+        target = item_dir / f"{stem}{suffix}"
         tmp = target.with_suffix(target.suffix + ".part")
         tmp.write_bytes(data)
         tmp.replace(target)
@@ -730,8 +731,13 @@ class JobRunner:
             return
 
         stats = self.job.counts()
+        # 每个 item 目录里应该有「颜色数 × 该 item 的视角数」张；多视角上传时不能只按颜色数算
+        views_by_item: dict[str, set[str]] = {}
+        for task in self.job.tasks:
+            views_by_item.setdefault(task.item, set()).add(task.view)
+        views = max((len(v) for v in views_by_item.values()), default=1)
         expected = (
-            len(self.colors)
+            len(self.colors) * views
             if self.mode == "single_pass"
             and not self.multi_style
             and stats["failed"] == 0

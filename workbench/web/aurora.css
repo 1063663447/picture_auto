@@ -382,6 +382,13 @@ body::before {
 }
 .cardimg .meta .dot { box-shadow: none; border: 1px solid #ffffff1f; }
 .cardimg .meta .time { margin-left: auto; color: #827e99; font-size: 9.5px; font-variant-numeric: tabular-nums; }
+/* 成品名（款式_颜色）：贴着卡片右下角，一眼看出这张叫什么 */
+.cardimg .meta .file {
+  margin-left: auto; color: #9d94bd; font-size: 9.5px;
+  max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cardimg .meta .garment + .file { margin-left: auto; }
 .cardimg .err {
   margin: 7px 12px 0; padding: 0; border: 0; background: none;
   font-size: 9.5px; line-height: 1.5; color: #ffb3b3;
@@ -838,6 +845,8 @@ html { scroll-behavior: smooth; }
 .style-select { width: 100%; }
 
 /* 袖口工艺标：平口（T 恤折边）/ 螺纹（卫衣罗纹）——画错就是「不是这件衣服」 */
+.style-tags { display: flex; align-items: center; gap: 6px; margin-left: 6px; }
+.style-tags .count { margin-left: 0; }
 .cuff-tag {
   display: inline-block; margin-left: 6px; padding: 1px 6px;
   font-size: 9px; line-height: 1.5; border-radius: 5px;
@@ -885,7 +894,7 @@ html { scroll-behavior: smooth; }
 }
 .add-style:active { transform: scale(0.99); }
 
-/* 卡片上的款式小标签（多款式任务时用） */
+/* 卡片上的款式小标签（现在单款式也显示：和成品文件名对得上） */
 .cardimg .meta .garment {
   font-size: 9px; color: #9d94bd; background: #b5a0ff12;
   border: 1px solid #b5a0ff26; border-radius: 5px; padding: 1px 5px;

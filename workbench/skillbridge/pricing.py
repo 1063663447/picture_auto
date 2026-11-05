@@ -286,6 +286,8 @@ class UsageLedger:
         size: str | None = None,
         account: str = "",
         detail: str = "",
+        garment: str = "",
+        color: str = "",
     ) -> dict | None:
         if images <= 0:
             return None
@@ -304,6 +306,8 @@ class UsageLedger:
             "cost": (round(price.unit * images, 4) if price.unit is not None else None),
             "currency": price.currency,
             "detail": detail[:200],
+            "garment": garment[:200],
+            "color": color[:200],
             "at": time.time(),
         }
         self.entries.append(entry)

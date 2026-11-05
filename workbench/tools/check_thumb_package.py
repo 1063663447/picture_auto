@@ -227,6 +227,12 @@ def main() -> int:
             with zipfile.ZipFile(zips[0]) as archive:
                 names = [n for n in archive.namelist() if not n.endswith("/")]
             check("ZIP 里 3 张成品", len(names) == 3, str(len(names)))
+            check(
+                "成品名是「款式_颜色」",
+                all("/" in n and n.rsplit("/", 1)[-1].count("_") >= 1 for n in names)
+                and not any(n.rsplit("/", 1)[-1].startswith("item-01") for n in names),
+                str(names),
+            )
             check("ZIP 里没有缓存图",
                   not any("thumbs" in n or "derived" in n for n in names), str(names))
         check("任务没有报打包错误",

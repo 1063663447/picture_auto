@@ -565,7 +565,7 @@
         <div class="style-top">
           <label class="field style-field">
             <span class="lbl">款式 ${state.styles.length > 1 ? `#${index + 1}` : ""}
-              <span class="count">${colors.length} 色</span>${cuffTag(type)}</span>
+              <span class="style-tags"><span class="count">${colors.length} 色</span>${cuffTag(type)}</span></span>
             <select class="style-select" data-slug="${esc(item.slug)}" aria-label="款式 ${index + 1}">${options}</select>
           </label>
           <button class="style-drop" type="button" data-drop="${index}" title="移除这个款式"
@@ -1197,7 +1197,6 @@
   }
 
   function cardShell(task, job) {
-    const multi = ((job.params || {}).selections || []).length > 1;
     const el = document.createElement("div");
     el.className = "cardimg";
     el.dataset.task = task.id;
@@ -1208,8 +1207,8 @@
       <div class="meta">
         <span class="dot" style="background:${esc(task.color_hex || "#94a3b8")}"></span>
         <span class="name">${esc(task.color_name)}</span>
-        ${multi ? `<span class="garment" title="${esc(task.garment_name || "")}">${esc(shortName(task.garment_name))}</span>` : ""}
-        <span class="time">${esc(task.item)}</span>
+        <span class="garment" title="${esc(task.garment_name || "")}">${esc(shortName(task.garment_name))}</span>
+        <span class="file" title="${esc(task.out || task.item)}">${esc(fileLabel(task))}</span>
       </div>
       <div class="acts">
         <a class="btn btn-ghost btn-sm" data-dl>${icon("i-download", 13)}下载</a>
@@ -1223,6 +1222,7 @@
       dl: el.querySelector("[data-dl]"),
       rework: el.querySelector("[data-rework]"),
       acts: el.querySelector(".acts"),
+      file: el.querySelector(".meta .file"),
       err: null,
       retry: null,
       thumb: "",
@@ -1230,6 +1230,14 @@
       errorText: "",
       jobId: job.id,
     };
+  }
+
+  // 成品文件名（款式_颜色[_视角]）：下载前就能看到叫什么
+  function fileLabel(task) {
+    if (task.out) return String(task.out).split("/").pop();
+    const style = String(task.garment_name || "").replace(/\s+/g, "");
+    const color = String(task.color_name || "").replace(/\s+/g, "");
+    return style && color ? `${style}_${color}` : task.item;
   }
 
   // 图片版本：优先用任务自己的版本号（完成后不再变）→ 浏览器/本地缓存能长期命中
@@ -1345,6 +1353,15 @@
       entry.dl.setAttribute("aria-disabled", "true");
       entry.dl.style.pointerEvents = "none";
       entry.dl.style.opacity = "0.45";
+    }
+
+    // 出图后把文件名换成真实成品名（款式_颜色[_视角]）
+    if (entry.file) {
+      const label = fileLabel(task);
+      if (entry.file.textContent !== label) {
+        entry.file.textContent = label;
+        entry.file.title = task.out || label;
+      }
     }
 
     entry.rework.disabled = status !== "done";
