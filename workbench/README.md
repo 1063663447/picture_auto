@@ -903,20 +903,28 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
-- **同款版型锁定 `shape_lock`（7.9.0）**：同一个款式选多个颜色时，模型是**每个颜色各生成一次**，
-  每次都会轻微重画轮廓 —— 袖长、袖口角度、衣身宽度、下摆位置全在漂，客户一眼看出「这几张不是同一件衣服」
-  （实测同一单 3 色的轮廓相似度只有 0.3~0.6）。现在的做法：
-  1. 同款第一个颜色当**基准版型**（卡片角标「基准版型」），正常按原图生成；
-  2. 其余颜色（角标「跟随基准」）**以基准成品为参考图**，提示词换成「只改面料颜色」+ `SILHOUETTE_LOCK_CLAUSE`
-     （锁死轮廓/袖长/袖口/衣宽/下摆/领型/褶皱/印花位置/机位，禁止重画或重新裁切）；
-  3. 基准色失败（没出图）时自动退回原文原图生成，并写一条警告 —— 该色版型可能与其它颜色不同；
-  4. 关闭开关（`shape_lock=off`）就回到「每色独立生成」，更快但会漂。
-  代价：多一轮（基准色 40s + 其余并发 40s ≈ 80s），换来整单版型统一。
-  回归：`python tools/check_shape_lock.py`（离线）；真接口 A/B 对照 `python tools/check_shape_lock_real.py --yes`
-  （6 张 ≈ ¥0.04，出 `data/test/shape-lock/shape-lock-ab.png`）。
+- **原图 + 效果图（8.0.0）**：款式表《墨西哥-服装款式代号表.xlsx》里每个款式每个颜色都有一张
+  **效果图**（1500×1500 白底官方平铺产品图）。现在生图**必定带着效果图**：
+  1. 导入：`python tools/import_style_catalog.py`（读 `library/source/*.xlsx`，把每色效果图落到
+     `library/effects/<款式>/<色号>.jpg`，并在 `library/styles.json` 的每个颜色写 `effect` 字段；
+     已导入 10 款式 49 色，见 `library/effects/manifest.json` 记录的源文件 sha256）；
+  2. 角色分工 `prompts.EFFECT_CLAUSE`：**IMAGE 1 = 客户原图**（场景/机位/光线 + 印花、文字、logo、刺绣
+     是不可动的资产）；**IMAGE 2 = 该色效果图**（版型、肩线、衣宽、下摆、袖长袖型、领型、罗纹/平口工艺、
+     面料克重垂感、缝线、精确布色都以它为准）。明确禁止借用效果图的印花/logo/人物/白底；
+  3. 同款其余颜色 `prompts.MASTER_EFFECT_CLAUSE`：**IMAGE 1 = 基准成品**（版型+印花+场景），
+     **IMAGE 2 = 该色效果图**（只管颜色）—— 先出第一个颜色当基准，其余颜色只换布色，
+     同款各色版型天然一致，不再靠开关；
+  4. 界面**没有**「同款版型」这个选项了（一致性是内部固定行为）；要退回「每色独立生成」可传
+     `shape_lock=off`（接口/命令行）；
+  5. 接口只支持单图（`max_images<2`）或该色缺效果图时，自动退回「原图 + 颜色参考图」，提示词也不再提两张图。
+  回归：`python tools/check_effect_ref.py`（离线）；真链路 3 色 `python tools/check_effect_ref_real.py --yes`
+  （≈¥0.02，出 `data/test/effect-ref/effect-ref-real.png`）。
+- **同款版型兜底 `shape_lock`（7.9.0，界面已移除）**：没有效果图的款式仍可退到「先出基准色再改色」
+  （`SILHOUETTE_LOCK_CLAUSE`）；`python tools/check_shape_lock.py` 覆盖这条路径。
 - **改图返工（rework）**：见 §3 末尾——把不满意的成品挑出来，用「本次需求 + 原始提示词」合成新提示词，并以该成品为参考图重跑，只影响挑中的那几张。改图的主体**继承源任务**（平铺图返工不会被顺手补个人上去）。
 - **负面约束**：接口有 `negative` 字段就单独传（`supports_negative: true`），没有就合并到提示词末尾——和 skill 的要求一致。
-- **颜色参考图**：`max_images >= 2` 时自动把「原图 + 对应参考色图」一起发送；只支持单图的接口靠提示词里的色值 + 颜色名约束，仍然可用。
+- **颜色参考图 / 效果图**：`max_images >= 2` 时优先发「原图 + 该色效果图」，没有效果图才发「原图 + 参考色图」；
+  只支持单图的接口靠提示词里的色值 + 颜色名约束，仍然可用。
 - 每次任务实际发送的提示词可在界面点 **查看提示词**，或看 `job.json` 里每个 `task.prompt`。
 
 ### 印花失真的四层防线（实测总结）
@@ -1033,6 +1041,9 @@ python tools/check_price_table.py    # 打印飞书定价表现状（三位小�
 python tools/check_cuff.py           # 袖口工艺回归：T 恤平口 / 卫衣螺纹（离线）
 python tools/check_no_person.py      # 主体约束回归：平铺图禁止补模特 / 真人图保留同一个人（离线）
 python tools/check_no_person.py --live --source=library/refs/23-sorona-tee/white.jpg  # 真跑一张（≈¥0.006）看成品有没有人
+python tools/import_style_catalog.py  # 从《墨西哥-服装款式代号表》导入每色效果图（library/effects）
+python tools/check_effect_ref.py     # 原图+效果图回归：导入、图片顺序、提示词分工（离线）
+python tools/check_effect_ref_real.py --yes   # 真链路 3 色（≈¥0.02）
 python tools/check_shape_lock.py     # 版型锁定回归：同款多色 → 先出基准色、其余跟随（离线）
 python tools/check_shape_lock_real.py --yes   # 真接口 A/B：每色独立 vs 版型锁定（6 张 ≈ ¥0.04）
 python tools/check_cuff_real.py --yes # 同上但真接口出 2 张对照图（约 ¥0.08，看 data/test/cuff/real-cuffs.png）

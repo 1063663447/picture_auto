@@ -13,3 +13,9 @@ venv/
 # 临时
 config.test.json
 *.log
+
+# 款式表原始 xlsx（39MB，用 tools/import_style_catalog.py 重新导入即可）
+library/source/*.xlsx
+
+# 临时探测脚本
+tmp_*.py

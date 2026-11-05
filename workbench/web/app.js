@@ -566,9 +566,13 @@
       }).join("");
       const chips = colors.map((color) => {
         const on = item.colors.has(color.label);
+        // 有款式表效果图就显示效果图缩略（生图时会连同原图一起发出去），没有就退回落色块
+        const marker = color.effect
+          ? `<img class="chip-thumb" src="${esc(color.effect)}" alt="" loading="lazy"/>`
+          : `<span class="dot" style="background:${esc(color.hex)}"></span>`;
         return `<button class="chip${on ? " sel" : ""}" type="button" data-color="${esc(color.label)}"
-          title="${esc(color.name_zh)} ${esc(color.hex)}" aria-pressed="${on}">
-          <span class="dot" style="background:${esc(color.hex)}"></span>${esc(color.name_zh)}</button>`;
+          title="${esc(color.name_zh)} ${esc(color.hex)}${color.effect ? " · 带效果图" : ""}" aria-pressed="${on}">
+          ${marker}${esc(color.name_zh)}</button>`;
       }).join("");
       return `<div class="style-block" data-index="${index}">
         <div class="style-top">
@@ -974,7 +978,6 @@
     }
     setSelect("patternMode", restore("patternMode", state.defaults.pattern_mode || ""));
     setSelect("subject", restore("subject", state.defaults.subject || "auto"));
-    setSelect("shapeLock", restore("shapeLock", state.defaults.shape_lock || "master"));
     setSelect("quality", state.defaults.quality || restore("quality", "high"));
     setSelect("outputFormat", restore("outputFormat", state.defaults.output_format || "png"));
     setSelect("downloadFmt", "png");
@@ -991,7 +994,6 @@
     store("quality", $("quality").value);
     store("patternMode", currentPatternMode());
     store("subject", $("subject") ? $("subject").value : "auto");
-    store("shapeLock", $("shapeLock") ? $("shapeLock").value : "master");
     store("outputFormat", currentOutputFormat());
   }
 
@@ -1031,8 +1033,6 @@
       form.append("pattern_mode", currentPatternMode());
       // 画面主体：原图只有衣服时禁止模型补模特（提示词层+否定词层都生效）
       form.append("subject", $("subject") ? $("subject").value : "auto");
-      // 同款版型：锁定 → 先出基准色，其余颜色基于它只改色
-      form.append("shape_lock", $("shapeLock") ? $("shapeLock").value : "master");
       form.append("send_reference", "true");   // 默认总是带颜色参考图
       if (extraRequirements) form.append("extra_requirements", extraRequirements);
       form.append("start", "true");

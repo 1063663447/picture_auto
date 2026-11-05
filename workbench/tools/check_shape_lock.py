@@ -27,7 +27,9 @@ from skillbridge.runner import JobRunner  # noqa: E402
 from skillbridge.service import Workbench  # noqa: E402
 
 WORK = Path(__file__).resolve().parent.parent / "data" / "test" / "shape-lock"
+#: 跟随任务的约束：有作用果图时用 MASTER_EFFECT_CLAUSE，没有效果图才用 SILHOUETTE_LOCK_CLAUSE
 LOCK_MARK = "APPROVED MASTER"
+ROLES_MARK = "REFERENCE ROLES"
 FAILURES: list[str] = []
 
 
@@ -123,13 +125,28 @@ def main() -> int:
     check(tasks[0].master and not tasks[0].master_task, "第一个颜色标记为基准版型", show)
     check(all(t.master_task == tasks[0].id for t in tasks[1:]), "其余颜色的 master_task 指向基准", show)
     check(all(not t.master for t in tasks[1:]), "其余颜色不再是基准", show)
-    check(all(LOCK_MARK in t.prompt for t in tasks[1:]), "跟随任务的提示词含版型锁", show)
-    check(LOCK_MARK not in tasks[0].prompt, "基准任务不套版型锁（它要按原图改款/换色）", show)
     check(
-        prompts.SILHOUETTE_LOCK_CLAUSE in tasks[1].prompt,
-        "版型锁原文完整注入", show,
+        all(LOCK_MARK in t.prompt or ROLES_MARK in t.prompt for t in tasks[1:]),
+        "跟随任务的提示词含版型约束", show,
     )
-    check("do not move the print" in tasks[1].prompt, "版型锁钉住印花位置", show)
+    check(
+        prompts.MASTER_EFFECT_CLAUSE not in tasks[0].prompt,
+        "基准任务不套「照基准改色」的约束（它按原图+效果图生成）", show,
+    )
+    check(
+        prompts.EFFECT_CLAUSE in tasks[0].prompt,
+        "基准任务带「原图 + 该色效果图」的角色说明", show,
+    )
+    derived_prompt = tasks[1].prompt
+    check(
+        prompts.MASTER_EFFECT_CLAUSE in derived_prompt
+        or prompts.SILHOUETTE_LOCK_CLAUSE in derived_prompt,
+        "版型约束原文完整注入（效果图优先）", show,
+    )
+    check(
+        "print" in derived_prompt.lower(),
+        "版型约束钉住印花位置", show,
+    )
 
     print("② 锁定关闭：每色独立，谁也不是基准")
     job_off, runner_off, _, _ = make_runner(wb, ["red", "pink"], shape_lock="off")
@@ -160,7 +177,10 @@ def main() -> int:
             "第二次请求的参考图 = 基准成品", show,
         )
         check(len(second.images) >= 2, "参考图之外还带了颜色参考图", show)
-        check(LOCK_MARK in second.prompt, "请求里的提示词带版型锁", show)
+        check(
+            LOCK_MARK in second.prompt or ROLES_MARK in second.prompt,
+            "请求里的提示词带版型约束", show,
+        )
     print(f"  参考图顺序：{refs}")
 
     print("⑤ 基准失败时退回原图（并写警告）")

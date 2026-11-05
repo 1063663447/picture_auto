@@ -112,6 +112,13 @@ def load_library(
             hex_value = str(color.get("hex") or "").upper()
             if not hex_value.startswith("#"):
                 hex_value = f"#{hex_value}"
+            # 效果图（款式表里每色一张官方平铺图）：缺失就只发颜色参考图
+            effect_path = None
+            effect_rel = str(color.get("effect") or "").strip()
+            if effect_rel:
+                candidate = root / effect_rel
+                if candidate.is_file():
+                    effect_path = candidate
             colors.append(
                 ColorRef(
                     label=str(color.get("label") or path.stem),
@@ -121,6 +128,7 @@ def load_library(
                     name_zh=str(color.get("name_zh") or ""),
                     # 色号编码（WH[0] / BK[0] …）：成品文件名用它
                     code=str(color.get("color_code") or ""),
+                    effect=effect_path,
                 )
             )
         if not colors:

@@ -376,6 +376,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
             bench.skill.root / "assets" / "color-references" / safe_dir / safe_file,
             # 工作台自建款式库（library/refs/<slug>/<label>.jpg）
             WORKBENCH_DIR / "library" / "refs" / safe_dir / safe_file,
+            # 款式表导入的效果图（library/effects/<slug>/<色号>.jpg）
+            WORKBENCH_DIR / "library" / "effects" / safe_dir / safe_file,
         ]
         library_dir = (bench.config.get("library") or {}).get("dir")
         if library_dir:
@@ -386,6 +388,23 @@ def create_app(config_path: str | None = None) -> FastAPI:
             if path.is_file():
                 return FileResponse(path)
         return JSONResponse({"ok": False, "error": "参考图不存在"}, status_code=404)
+
+    @app.get("/api/effects/{slug}/{filename}")
+    async def effect_image(request: Request, slug: str, filename: str):
+        """效果图（款式表导入的官方平铺产品图）：library/effects/<slug>/<色号>.jpg"""
+        bench = wb(request)
+        safe_dir = Path(slug).name
+        safe_file = Path(filename).name
+        library_dir = (bench.config.get("library") or {}).get("dir")
+        bases = [WORKBENCH_DIR / "library"]
+        if library_dir:
+            base = Path(str(library_dir))
+            bases.insert(0, base if base.is_absolute() else WORKBENCH_DIR / base)
+        for base in bases:
+            path = base / "effects" / safe_dir / safe_file
+            if path.is_file():
+                return FileResponse(path)
+        return JSONResponse({"ok": False, "error": "效果图不存在"}, status_code=404)
 
     @app.post("/api/preview")
     async def preview_prompt(request: Request):

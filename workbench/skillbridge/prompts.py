@@ -260,6 +260,57 @@ COLOR_HINT_TEMPLATE = (
     "brightness, saturation and temperature."
 )
 
+#: **效果图**（款式表里每个颜色一张官方平铺产品图）随原图一起发送时的角色说明。
+#: 有了这张图，版型/工艺/颜色都有权威依据，同款各色天然一致，不再需要「先出基准色」那套流程。
+EFFECT_CLAUSE = (
+    "REFERENCE ROLES — two images are attached and they have different jobs. IMAGE 1 is the "
+    "customer's own photo: it defines the scene (person or flat lay, background, props, camera "
+    "angle, framing, lighting) and it owns the printed artwork — the lettering, numbers, logo, "
+    "embroidery, patches and their placement are an untouchable asset that must be carried over "
+    "onto the new garment exactly as they are. IMAGE 2 is the official product photo of the TARGET "
+    "garment in the target colour, and it is the authority for the garment itself: silhouette, "
+    "shoulder drop, body width, hem position, sleeve length and sleeve shape, sleeve opening, "
+    "neckline and neckband, cuff and hem construction (plain folded edge vs rib-knit band), fabric "
+    "weight, drape, seam lines and the exact fabric colour. Build the garment so that it matches "
+    "IMAGE 2 on every one of those points, put IMAGE 1's artwork on it, and keep IMAGE 1's scene "
+    "unchanged. Do not borrow anything else from IMAGE 2: no print, text, logo, patch or label of "
+    "its own, no person, no mannequin, no background, no props, no watermark, and do not replace "
+    "the customer's scene with IMAGE 2's white studio background."
+)
+
+
+def has_effect(color: "ColorRef | None") -> bool:
+    """这个颜色有没有效果图（款式表导入的官方产品图）。"""
+    return getattr(color, "effect", None) is not None
+
+
+def effect_clause(color: "ColorRef | None", override: bool | None = None) -> str:
+    """按是否带效果图给出角色说明；override 用于预览/测试强制开关。"""
+    enabled = has_effect(color) if override is None else bool(override)
+    return EFFECT_CLAUSE if enabled else ""
+
+
+#: 同款第 2..N 个颜色：参考图换成「上一版成品（=基准）」+「该色效果图」。
+#: 版型/印花/场景照基准，颜色照效果图 —— 同款各色既一致、颜色又准。
+MASTER_EFFECT_CLAUSE = (
+    "REFERENCE ROLES — two images are attached. IMAGE 1 is the approved master shot of this exact "
+    "style, produced from the customer's own photo: it carries the printed artwork, the scene, the "
+    "camera, the lighting and the approved garment shape, and nothing about it may move. IMAGE 2 is "
+    "the official product photo of this garment in the TARGET colour, and it is the authority for "
+    "colour only: match its exact fabric base colour (hue, brightness, saturation, warm/cool, and "
+    "how heathered or marled yarns read). Change only the fabric base colour and keep the master's "
+    "silhouette, shoulder drop, body width, sleeve length and sleeve shape, neckline, cuffs, hem, "
+    "seams, folds, wrinkles, print, print placement, camera, framing, background and lighting "
+    "exactly as they are. Do not borrow the print, text, logo, person, background or props of "
+    "IMAGE 2."
+)
+
+
+def master_effect_clause(color: "ColorRef | None", override: bool | None = None) -> str:
+    """基准色派生用（image 1 = 基准成品，image 2 = 该色效果图）。"""
+    enabled = has_effect(color) if override is None else bool(override)
+    return MASTER_EFFECT_CLAUSE if enabled else ""
+
 #: Extra negative constraints the workbench adds on top of the skill's own list,
 #: all aimed at the most common failure: the model re-draws the printed artwork.
 NEGATIVE_ART_LOCK = (
@@ -548,6 +599,7 @@ def build_single_pass(
     pattern_mode: str = "preserve",
     pattern_brief: str = "",
     subject: str = "",
+    effect: bool | None = None,
 ) -> str:
     mode = (pattern_mode or "preserve").strip().lower()
     if mode not in PATTERN_MODES:
@@ -565,6 +617,9 @@ def build_single_pass(
     prompt = " ".join(prompt.split())
 
     parts = [prompt, sleeve_clause(garment), cuff_clause(garment), color_hint(color).strip()]
+    effect_text = effect_clause(color, effect)
+    if effect_text:
+        parts.append(effect_text)
     requirement = requirement_block(extra or "", intents, mode)
     if requirement:
         parts.append(requirement)
@@ -593,12 +648,13 @@ def build_single_pass(
     return tidy_articles(" ".join(part for part in parts if part).strip())
 
 
-def build_style_only(garment: GarmentType, *, subject: str = "") -> str:
+def build_style_only(garment: GarmentType, *, subject: str = "", effect: bool = False) -> str:
     return tidy_articles(
         STYLE_ONLY_TEMPLATE.format(phrase=garment.phrase)
         + " " + sleeve_clause(garment)
         + " " + cuff_clause(garment)
         + " " + subject_clause(subject)
+        + (" " + EFFECT_CLAUSE if effect else "")
         + (" " + NO_PERSON_CLAUSE if str(subject or "").lower() == "garment" else "")
     )
 
@@ -609,6 +665,7 @@ def build_recolor_only(
     pattern_mode: str = "preserve",
     garment: GarmentType | None = None,
     subject: str = "",
+    effect: bool | None = None,
 ) -> str:
     garment_mode = str(subject or "").strip().lower() == "garment"
     if (pattern_mode or "preserve") != "preserve":
@@ -629,8 +686,37 @@ def build_recolor_only(
     if garment is not None:
         # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长：把这两条再钉一次
         base = base + " " + sleeve_clause(garment) + " " + cuff_clause(garment)
+    effect_text = effect_clause(color, effect)
+    if effect_text:
+        base = base + " " + effect_text
     base = base + " " + subject_clause(subject)
     if garment_mode:
+        base = base + " " + NO_PERSON_CLAUSE
+    return tidy_articles(base)
+
+
+def build_master_recolor(
+    color: ColorRef,
+    *,
+    garment: GarmentType | None = None,
+    subject: str = "",
+    effect: bool | None = None,
+) -> str:
+    """同款第 2..N 色的提示词：基准成品 + 该色效果图 → 只改颜色。
+
+    有作用果图（默认）时走 `MASTER_EFFECT_CLAUSE`（版型看基准、颜色看效果图）；
+    没有效果图时退回 `SILHOUETTE_LOCK_CLAUSE`（只锁版型，颜色靠色值）。
+    """
+    base = RECOLOR_ONLY_TEMPLATE.format(
+        color_name=color.name_zh, color_label=color.label, color_hex=color.hex
+    )
+    if garment is not None:
+        base = base + " " + sleeve_clause(garment) + " " + cuff_clause(garment)
+    roles = master_effect_clause(color, effect)
+    if not roles:
+        roles = SILHOUETTE_LOCK_CLAUSE
+    base = base + " " + roles + " " + subject_clause(subject)
+    if str(subject or "").strip().lower() == "garment":
         base = base + " " + NO_PERSON_CLAUSE
     return tidy_articles(base)
 
@@ -640,6 +726,7 @@ def full_negative(
     pattern_mode: str = "preserve",
     garment: GarmentType | None = None,
     subject: str = "",
+    effect: bool | None = None,
 ) -> str:
     """Skill negative prompt + workbench negatives（图案允许重画时换一套否定词）。
 

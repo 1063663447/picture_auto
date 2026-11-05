@@ -140,7 +140,8 @@ class JobRunner:
         self.subject_override = subject_mod.normalise(params.get("subject"))
         # 出图后发现「又画了个人」要不要自动重画一次（默认只警告，不偷偷多花钱）
         self.retry_on_person = bool(params.get("retry_on_person", False))
-        # 版型锁定：master（先出基准色再改色，默认）/ off（每色独立生成）
+        # 版型一致性（内部固定行为，界面上没有开关）：先出基准色，其余颜色基于它改色；
+        # params 里显式写 shape_lock=off 才退回「每色独立生成」
         self.shape_lock = str(params.get("shape_lock") or "master").strip().lower() != "off"
         if str(params.get("mode") or "") == "two_phase":
             self.shape_lock = False      # 两段式本身就是「先改款再换色」，不再套第二层
@@ -323,21 +324,23 @@ class JobRunner:
                     if lock and index == 0:
                         master_id = task_id
                     derive = lock and index > 0
+                    # 效果图是否真的会随请求发出去（接口要多图、该色有图）
+                    want_effect = self.use_effect(color)
                     if derive:
-                        # 只改色的提示词 + 版型锁，参考图在跑的时候换成基准成品
-                        prompt = prompts.build_recolor_only(
+                        # 只改色：参考图 = 基准成品（版型/印花/场景）+ 该色效果图（颜色）
+                        prompt = prompts.build_master_recolor(
                             color,
-                            pattern_mode=self.pattern_mode,
                             garment=garment,
                             subject=subject,
+                            effect=want_effect,
                         )
-                        prompt = f"{prompt} {prompts.SILHOUETTE_LOCK_CLAUSE}"
                     elif self.mode in {"two_phase", "recolor_only"}:
                         prompt = prompts.build_recolor_only(
                             color,
                             pattern_mode=self.pattern_mode,
                             garment=garment,
                             subject=subject,
+                            effect=want_effect,
                         )
                     else:
                         prompt = prompts.build_single_pass(
@@ -348,6 +351,7 @@ class JobRunner:
                             pattern_mode=self.pattern_mode,
                             pattern_brief=self.pattern_brief,
                             subject=subject,
+                            effect=want_effect,
                         )
                     tasks.append(
                         Task(
@@ -665,6 +669,15 @@ class JobRunner:
         except KeyError:
             return self.garment
 
+    def use_effect(self, color: ColorRef | None) -> bool:
+        """这一单能不能真的把效果图发出去（接口支持多图 + 该色有图 + 用户没关参考图）。"""
+        return bool(
+            color is not None
+            and color.effect is not None
+            and self.send_reference
+            and int(getattr(self.provider, "max_images", 1) or 1) >= 2
+        )
+
     def negative_for(self, garment: GarmentType | None, subject: str = "") -> str:
         """按款式+主体取否定词（袖口工艺、是否禁人都可能不同），结果缓存。"""
         kind = subject_mod.normalise(subject) if subject else ""
@@ -694,7 +707,11 @@ class JobRunner:
                 else task.source
             )
         images = [source]
-        if self.send_reference:
+        if self.use_effect(color) and color.effect is not None:
+            # 效果图优先：版型/工艺/颜色都以它为准（提示词里的角色说明讲清了两张图的分工）。
+            # 版型锁定时 source 是基准成品，于是 = 【基准成品, 该色效果图】。
+            images.append(color.effect)
+        elif self.send_reference:
             if color.path.is_file():
                 images.append(color.path)
             else:

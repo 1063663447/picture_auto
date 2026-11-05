@@ -149,6 +149,9 @@ class ColorRef:
     name_zh: str
     #: 色号编码，形如 `WH[0]` / `BK[0]`（来自款式表），成品文件名用它
     code: str = ""
+    #: 该颜色的**效果图**（款式表里每色一张官方平铺产品图）：生图时与原图一起发给模型，
+    #: 版型/工艺/颜色以它为准（见 `prompts.EFFECT_CLAUSE`）
+    effect: Path | None = None
 
     @property
     def file_code(self) -> str:
@@ -166,6 +169,11 @@ class ColorRef:
             "hex": self.hex,
             "rgb": list(self.rgb),
             "url": f"/api/refs/{self.path.parent.name}/{self.path.name}",
+            "effect": (
+                f"/api/effects/{self.effect.parent.name}/{self.effect.name}"
+                if self.effect is not None
+                else ""
+            ),
         }
 
 

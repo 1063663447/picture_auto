@@ -1,0 +1,39 @@
+feat(effect): 生图改为「原图 + 效果图」双参考，版型一致性内置（去掉界面上的版型锁定选项）
+
+需求：款式表《墨西哥-服装款式代号表.xlsx》里每个款式每个颜色都有官方效果图，
+以后生图都带着 原图 + 效果图 来生成，并把提示词补完整；有了效果图，版型锁定那个开关就可以去掉。
+
+一、效果图导入（tools/import_style_catalog.py）
+- 直接读 xlsx（openpyxl 会被该文件的 stylesheet 顶掉，所以用 zipfile + ElementTree 解析 XML）
+- 每个款式一个 sheet：第 1 行 `23#SLNDX 宽松款短袖索罗娜材质`，表头有「颜色名称/颜色编码/效果图」，
+  数据行的 F 列锚定该颜色的效果图 → 落到 `library/effects/<款式>/<色号>.jpg`
+- 写回 `library/styles.json` 每个颜色的 `effect` 字段；`library/effects/manifest.json` 记源文件 sha256
+- 实测：10 款式 49 色全部匹配，无缺失；xlsx 本身 39MB 已加入 .gitignore（重新导入即可）
+
+二、提示词角色分工（prompts.EFFECT_CLAUSE）
+- IMAGE 1 = 客户原图：场景/机位/光线 + 印花、文字、logo、刺绣是不可动资产
+- IMAGE 2 = 该色效果图：版型、肩线、衣宽、下摆、袖长袖型、领型、罗纹/平口工艺、面料垂感、
+  缝线、精确布色都以它为准；明确禁止借用效果图的印花/logo/人物/白底/道具
+- skill 的 SKILL.md 也补了同样的「第一张原图、第二张效果图」约定和同款多色做法
+
+三、同款各色一致性（内部行为，界面无开关）
+- 第一个颜色 = 基准（原图 + 该色效果图 生成）
+- 其余颜色 = 基准成品 + 该色效果图（prompts.MASTER_EFFECT_CLAUSE：版型/印花/场景照基准，颜色照效果图）
+- 因此 web 上的「同款版型」下拉整体移除（app.js 不再提交 shape_lock，index.html 删掉该字段）；
+  仍可用 shape_lock=off 走回「每色独立生成」（接口/命令行），无效果图的款式退到 SILHOUETTE_LOCK
+- 接口只支持单图（max_images<2）或该色缺效果图时，自动退回「原图 + 颜色参考图」，提示词也不再提两张图
+
+四、顺手改的小地方
+- /api/effects/<款式>/<色号>.jpg 路由（效果图可直接预览）
+- 颜色 chip 显示效果图缩略（有就显示，没有退回落色块）
+- styles.json 颜色新增 effect / effect_source 字段
+
+验证
+- tools/check_effect_ref.py：34 条断言全绿（导入完整性、两张图分工文案、请求里图片顺序=原图+效果图、
+  单图接口降级、缺效果图退回色卡、界面无 shapeLock、同款派生请求=基准+效果图）
+- 真链路（HTTP → service → runner → a6api）用客户那张 06 印花红 T 跑 3 色：
+  data/test/effect-ref/effect-ref-real.png —— 三色轮廓/袖型/褶皱/印花位置完全一致，只有颜色不同
+- tools/check_shape_lock.py 同步更新断言（跟随任务现在带 MASTER_EFFECT_CLAUSE）
+- 全套 9 个离线脚本全绿：selftest / check_cuff / check_multi_style / check_thumb_package /
+  check_no_person / check_shape_lock / check_effect_ref / check_gate / check_feishu_gate
+- 界面 v8.0.0（需硬刷新）

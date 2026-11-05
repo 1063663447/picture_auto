@@ -577,6 +577,8 @@ class Workbench:
             "subject": subject_module.normalise(subject),
             "retry_on_person": bool(retry_on_person),
             # 版型锁定：master（先出基准色再改色，同款各色版型一致）/ off（每色独立生成）
+            # 版型一致性（内部行为，界面无开关）：先出基准色，其余颜色以它为参考图只改色。
+            # 传 shape_lock=off 可退回「每色独立生成」（命令行/接口用）。
             "shape_lock": (
                 "off"
                 if str(shape_lock or defaults.get("shape_lock") or "master").strip().lower()
