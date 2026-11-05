@@ -67,6 +67,7 @@ class GateConfig:
     provider: str = "http"       # http=Cloudflare 阀门 | feishu=飞书表当队列
     table_id: str = ""
     settle_ms: int = 1200        # 写占位后等多久再数一遍（防飞书索引延迟）
+    confirmations: int = 2       # 连续确认几次才放行（飞书索引延迟时靠它兜底）
     stale_sec: float = 600.0     # 占位超过这么久视为崩溃遗留
 
     @classmethod
@@ -96,6 +97,7 @@ class GateConfig:
                 provider="feishu",
                 table_id=table_id,
                 settle_ms=max(0, int(raw.get("settle_ms") or 1200)),
+                confirmations=max(1, int(raw.get("confirmations") or 2)),
                 stale_sec=max(60.0, float(raw.get("stale_sec") or 600)),
             )
         enabled = bool(raw.get("enabled")) or bool(env.get("GATE_URL"))
@@ -119,6 +121,7 @@ class GateConfig:
             "url": self.url,
             "table_id": self.table_id,
             "settle_ms": self.settle_ms,
+            "confirmations": self.confirmations,
             "limit": self.limit,
             "holder": self.holder,
             "wait_timeout_sec": self.wait_timeout_sec,

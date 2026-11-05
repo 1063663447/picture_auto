@@ -24,7 +24,7 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 RATE_LIMIT_HINTS = (
     "429", "rate limit", "rate_limit", "ratelimit", "too many requests", "too many",
     "concurren", "并发", "限流", "频率", "qps", "tpm", "rpm", "overloaded", "busy",
-    "capacity", "请求过多",
+    "capacity", "请求过多", "排队", "闸门",
 )
 
 
@@ -133,6 +133,15 @@ class JobRunner:
         self.limiter = RateLimiter(int(params.get("rpm") or 0))
         # 本机并发不能超过接口实测能吃的并发（terra 实测 20），超出的排队等
         self.max_concurrency = max(1, int(provider.setting("max_concurrency", 20) or 20))
+        if gate is not None and getattr(gate, "limit", 0):
+            gate_limit = max(1, int(gate.limit))
+            if self.concurrency > gate_limit:
+                job.add_log(
+                    f"并发从 {self.concurrency} 收到闸门额度 {gate_limit}（其余排队等空位）",
+                    level="warn",
+                )
+                self.concurrency = gate_limit
+                self.job.params["concurrency"] = self.concurrency
         if self.concurrency > self.max_concurrency:
             job.add_log(
                 f"并发从 {self.concurrency} 收到接口上限 {self.max_concurrency}（其余排队）",

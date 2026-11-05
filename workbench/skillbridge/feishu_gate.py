@@ -1,21 +1,27 @@
-"""飞书多维表格当「全局并发闸门 + 队列」。
+"""飞书多维表格当「全局并发闸门 + 队列」（槽位抢占版）。
 
-思路（用户提的方案，比 Cloudflare 更省事：用他们已经在用的飞书表）：
+为什么不是「一行一个任务、数行数」：
 
-    每要发一张图 → 往「闸门表」写一条占位记录
-    占位记录数 < limit（默认 15）→ 直接调接口；出图成功/失败后**删掉这条记录**
-    占位记录数 ≥ limit      → 轮询等待（别人删了就能进）
+    真机实测（2 台机器、12 张图、额度 6）——数行数的做法**会超发到 12**。
+    原因是飞书 `records/search` 是最终一致的：刚写的行 1~2 秒内可能查不到，
+    多个客户端同时读 → 都以为「还有空位」→ 一起写 → 一起放行。
 
-为什么这样能挡住并发：所有电脑都读写同一张表，表的行数就是「当前在跑的张数」。
-飞书的读写对所有人是同一个真相源，所以不需要额外的服务。
+所以改成**固定槽位 + 原子抢占**：
 
-两个必须处理的坑：
-1. **飞书索引有延迟**：刚写的记录可能不会立刻出现在搜索结果里。所以写完之后要
-   等 `settle_ms`（默认 1.2s）再**数一遍**，超过 limit 就把自己这条删掉重排 —— 这就是「二次检测 + 缓冲」。
-2. **进程崩了会留下僵尸占位**：每条记录带 `开始时间`，超过 `stale_sec`（默认 10 分钟）
-   的记录视为崩溃遗留，任何客户端发现就顺手删掉。
+    表里预置 N 行（N = 并发额度，默认 15），每行就是一个「坑」，字段：
+        占位（槽位名 01..15） / 租约（谁占的，空=空闲） / 主机 / 开始 / 说明
 
-对比 `gate.py` 里的 HTTP 阀门：接口一致（acquire/release/status），runner 不用改。
+    抢坑 = 「按槽位顺序找一个空闲行 → 写我的租约 → 回读这一行确认还是我的」
+    同一行上只能留一个人的租约（Feishu 单行更新是原子的），
+    所以**同时在跑的数量在结构上不可能超过 N**，跟搜索索引延迟无关。
+
+    - 抢不到（没有空行）→ 进队列轮询，别人还了就能抢到；
+    - 写完 `settle_ms`（默认 1.2s）再回读确认（缓冲，防索引延迟误判），
+      `confirmations`（默认 2）次都一致才算拿到；
+    - 行里的 `开始` 超过 `stale_sec`（默认 10 分钟）视为崩溃遗留，可以直接抢；
+    - `release` = 把行里的租约清空（**不删行**），表永远是 N 行。
+
+这样每张图的闸门开销是「读 + 改 + 回读」，没有增删行带来的索引风暴。
 """
 
 from __future__ import annotations
@@ -35,17 +41,17 @@ STALE_SEC = 600.0
 SETTLE_MS = 1200
 POLL_MS = 2500
 
-# 闸门表的字段（都是最简单的类型：文本 + 数字）
+# 闸门表的字段（槽位表：一行一个坑）
 GATE_FIELDS = [
-    ("占位", 1),        # 主字段：job/task
-    ("主机", 1),        # 哪台电脑占的
-    ("说明", 1),        # 款式/颜色等，方便人肉看
-    ("开始", 2),        # 毫秒时间戳，用来判断僵尸占位
-    ("租约", 1),        # 客户端自己的 lease 串，防止误删别人的行
+    ("占位", 1),        # 主字段：槽位名 01 / 02 / ...
+    ("租约", 1),        # 空 = 空闲；非空 = 谁占着（也用来做抢占确认）
+    ("主机", 1),
+    ("开始", 2),        # 毫秒时间戳（判断僵尸占位）
+    ("说明", 1),
 ]
 
 
-def _field_text(item: dict, name: str) -> str:
+def _text(item: dict, name: str) -> str:
     value = (item.get("fields") or {}).get(name)
     if isinstance(value, list):
         parts = []
@@ -60,7 +66,7 @@ def _field_text(item: dict, name: str) -> str:
     return "" if value is None else str(value)
 
 
-def _field_num(item: dict, name: str) -> float:
+def _num(item: dict, name: str) -> float:
     value = (item.get("fields") or {}).get(name)
     try:
         return float(value or 0)
@@ -69,27 +75,45 @@ def _field_num(item: dict, name: str) -> float:
 
 
 @dataclass
-class GateRow:
+class Slot:
     record_id: str
+    name: str = ""
+    lease: str = ""
     holder: str = ""
     started: float = 0.0
-    lease: str = ""
-    label: str = ""
+    note: str = ""
+    created: float = 0.0        # 服务端创建的毫秒时间戳（排序用，取不到就退回 开始）
 
     @classmethod
-    def from_item(cls, item: dict) -> "GateRow":
-        started_ms = _field_num(item, "开始")
+    def from_item(cls, item: dict) -> "Slot":
+        started = _num(item, "开始")
+        created = _num(item, "created_time")
         return cls(
             record_id=str(item.get("record_id") or ""),
-            holder=_field_text(item, "主机"),
-            started=started_ms / 1000.0 if started_ms > 1e11 else started_ms,
-            lease=_field_text(item, "租约"),
-            label=_field_text(item, "占位"),
+            name=_text(item, "占位").strip(),
+            lease=_text(item, "租约").strip(),
+            holder=_text(item, "主机").strip(),
+            started=started / 1000.0 if started > 1e11 else started,
+            note=_text(item, "说明"),
+            created=created / 1000.0 if created > 1e11 else created,
         )
+
+    def order_key(self) -> float:
+        """排队先后：优先用服务端 created_time，取不到用 开始。"""
+        return self.created or self.started or 0.0
+
+    def index(self) -> int:
+        digits = "".join(ch for ch in self.name if ch.isdigit())
+        return int(digits) if digits else 0
+
+    def busy(self, now: float, stale_sec: float) -> bool:
+        if not self.lease:
+            return False
+        return now - (self.started or now) <= stale_sec
 
 
 class FeishuGate:
-    """用一张飞书表格当并发闸门。client 需实现 search_table/create_records/delete_record。"""
+    """一张飞书表当并发闸门（槽位抢占）。client 需实现 search/update/create。"""
 
     def __init__(self, cfg: GateConfig, client, label: str = "") -> None:
         self.cfg = cfg
@@ -100,156 +124,279 @@ class FeishuGate:
         self.settle_ms = max(0, int(cfg.settle_ms or SETTLE_MS))
         self.stale_sec = max(60.0, float(cfg.stale_sec or STALE_SEC))
         self.poll_ms = max(300, int(cfg.poll_ms or POLL_MS))
+        self.confirmations = max(1, int(getattr(cfg, "confirmations", 2) or 2))
         self.last_error = ""
-        self._cleaned: set[str] = set()
+        # 同一台机器内串行「读→抢」，减少自己人内耗
+        self._lock = asyncio.Lock()
+        self._slots_ready = False
+        self.stats = {
+            "acquired": 0, "released": 0, "queue_rounds": 0,
+            "waited_total": 0.0, "waited_max": 0.0,
+            "lost_race": 0, "reclaimed_stale": 0,
+            "tickets": 0, "ticket_waits": 0,
+            "reads": 0, "writes": 0,
+        }
+
 
     # ------------------------------------------------------------- 基础读写 #
-    def _rows(self) -> list[GateRow]:
+    def _rows(self) -> list[Slot]:
         if not self.table_id:
-            raise RuntimeError("没配闸门表 table_id（feishu.gate_table_id 或 defaults.gate.table_id）")
-        items = self.client.search_table(self.table_id, page_size=500, max_pages=4)
-        rows = [GateRow.from_item(item) for item in items]
-        return [row for row in rows if row.record_id]
+            raise RuntimeError(
+                "没配闸门表 table_id（跑 python -m skillbridge.feishu_gate --init 建表）"
+            )
+        self.stats["reads"] += 1
+        try:
+            items = self.client.search_table(
+                self.table_id, page_size=500, max_pages=4, automatic=True
+            )
+        except TypeError:  # 老客户端不支持 automatic 参数
+            items = self.client.search_table(self.table_id, page_size=500, max_pages=4)
+        slots = [Slot.from_item(item) for item in items]
+        return [slot for slot in slots if slot.record_id]
 
-    def _active(self, rows: list[GateRow], *, now: float | None = None) -> list[GateRow]:
-        now = now or time.time()
-        return [row for row in rows if now - (row.started or now) <= self.stale_sec]
+    def _ensure_slots(self, rows: list[Slot]) -> list[Slot]:
+        """表里必须有 01..limit 这些槽位行；缺了就补（每个进程只补一次）。"""
+        if self._slots_ready:
+            return rows
+        have = {slot.index() for slot in rows}
+        missing = [i for i in range(1, self.limit + 1) if i not in have]
+        if missing:
+            self.client.create_records(
+                [{"占位": f"{i:02d}", "租约": "", "主机": "", "开始": 0,
+                  "说明": "槽位（占位行，别手动删）"} for i in missing],
+                self.table_id,
+            )
+            self.stats["writes"] += len(missing)
+            rows = self._rows()
+        self._slots_ready = True
+        return rows
 
-    def _stale(self, rows: list[GateRow], *, now: float | None = None) -> list[GateRow]:
-        now = now or time.time()
-        return [row for row in rows if row.started and now - row.started > self.stale_sec]
-
-    def _create(self, lease: str, job: str, task: str, note: str) -> str:
-        rows = [
+    def _claim(self, slot: Slot, lease: str, job: str, task: str, note: str) -> None:
+        self.client.update_record(
+            self.table_id,
+            slot.record_id,
             {
-                "占位": f"{job}/{task}"[:200] or "task",
-                "主机": self.cfg.holder[:60],
-                "说明": (note or self.label or "")[:200],
-                "开始": int(time.time() * 1000),
                 "租约": lease,
-            }
-        ]
-        ids = self.client.create_records(rows, self.table_id)
-        return str(ids[0]) if ids else ""
-
-    def _delete(self, record_ids: list[str]) -> None:
-        for record_id in record_ids:
-            if not record_id:
-                continue
-            try:
-                self.client.delete_record(self.table_id, record_id)
-            except Exception:  # noqa: BLE001 - 删不掉就等它过期
-                pass
-
-    def _cleanup_stale(self, rows: list[GateRow]) -> int:
-        stale = [row for row in self._stale(rows) if row.record_id not in self._cleaned]
-        if not stale:
-            return 0
-        for row in stale:
-            self._cleaned.add(row.record_id)
-        asyncio.get_event_loop().run_in_executor(
-            None, self._delete, [row.record_id for row in stale]
+                "主机": self.cfg.holder[:60],
+                "开始": int(time.time() * 1000),
+                "说明": (note or f"{job}/{task}")[:200],
+            },
         )
-        return len(stale)
+        self.stats["writes"] += 1
+
+    # ------------------------------------------------------------ 排队号 --
+    TICKET_PREFIX = "Q"
+
+    def _tickets(self, rows: list[Slot]) -> list[Slot]:
+        return [row for row in rows if row.name.startswith(self.TICKET_PREFIX)]
+
+    def _make_ticket(self, job: str, task: str) -> str:
+        """没空位时先取个号（一行），谁先取号谁先进。"""
+        try:
+            ids = self.client.create_records(
+                [{
+                    "占位": f"{self.TICKET_PREFIX}{int(time.time() * 1000)}-{random.randrange(100, 999)}",
+                    "租约": f"wait|{self.cfg.holder}|{random.randrange(100000, 999999)}",
+                    "主机": self.cfg.holder[:60],
+                    "开始": int(time.time() * 1000),
+                    "说明": f"排队 {job}/{task}"[:200],
+                }],
+                self.table_id,
+            )
+            self.stats["writes"] += 1
+            self.stats["tickets"] += 1
+            return str(ids[0]) if ids else ""
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"取号失败：{exc}"
+            return ""
+
+    def _drop_ticket(self, record_id: str) -> None:
+        if not record_id:
+            return
+        try:
+            self.client.delete_record(self.table_id, record_id)
+            self.stats["writes"] += 1
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _my_turn(self, rows: list[Slot], ticket_id: str) -> bool:
+        """我是不是排队最前面的那个（先到先得）。"""
+        if not ticket_id:
+            return True
+        tickets = sorted(self._tickets(rows), key=lambda slot: (slot.order_key(), slot.record_id))
+        if not tickets:
+            return True
+        return tickets[0].record_id == ticket_id
+
+    def _read_one(self, record_id: str) -> Slot | None:
+        """读一条槽位。优先单条 GET（便宜），客户端不支持时退回整表搜索。"""
+        if not record_id:
+            return None
+        getter = getattr(self.client, "get_record", None)
+        if callable(getter):
+            try:
+                return Slot.from_item(getter(self.table_id, record_id))
+            except Exception:  # noqa: BLE001 - 退回整表
+                pass
+        for slot in self._rows():
+            if slot.record_id == record_id:
+                return slot
+        return None
+
+    async def _verify(self, record_id: str, lease: str, tries: int = 3) -> Slot | None:
+        """回读确认这一行还是我的。
+
+        飞书搜索是最终一致的：刚写完可能还读到旧值。所以这里**重试几次**（每次间隔
+        一小段 + 等索引），而不是读一次不一致就判失败（那会变成互相让位的活锁）。
+        """
+        gap = max(150, self.settle_ms // 2) / 1000.0
+        for attempt in range(max(1, tries)):
+            try:
+                slot = await asyncio.to_thread(self._read_one, record_id)
+            except Exception:  # noqa: BLE001
+                slot = None
+            if slot is not None and slot.lease == lease:
+                return slot
+            if attempt + 1 < tries:
+                await asyncio.sleep(gap)
+        return None
 
     # ------------------------------------------------------------- acquire #
-    async def acquire(self, *, job: str = "", task: str = "", note: str = "", on_wait=None) -> Lease | None:
-        """占一个坑。返回 Lease(record_id)；阀门不可用且 fail_open 时返回 None。"""
+    async def acquire(
+        self, *, job: str = "", task: str = "", note: str = "", on_wait=None
+    ) -> Lease | None:
+        """占一个槽位。没有空位就取号排队（先到先得）。"""
         if not self.cfg.enabled:
             return None
         started = time.monotonic()
         deadline = started + max(5.0, float(self.cfg.wait_timeout_sec or 1800))
+        # 排队号是「这一次 acquire」的状态，放局部变量（同一个 gate 会被多个任务共用）
+        ticket = ""
         attempt = 0
         last_note = 0.0
-        while True:
-            attempt += 1
-            try:
-                rows = await asyncio.to_thread(self._rows)
-            except Exception as exc:  # noqa: BLE001
-                self.last_error = f"读闸门表失败：{exc}"
-                if self.cfg.fail_open:
-                    return None
-                raise
-            try:
-                cleaned = self._cleanup_stale(rows)
-            except Exception:  # noqa: BLE001
-                cleaned = 0
-            if cleaned:
-                rows = [row for row in rows if row.record_id not in self._cleaned]
+        try:
+            while True:
+                attempt += 1
+                try:
+                    rows = await asyncio.to_thread(self._rows)
+                    rows = await asyncio.to_thread(self._ensure_slots, rows)
+                except Exception as exc:  # noqa: BLE001
+                    self.last_error = f"读闸门表失败：{exc}"
+                    if self.cfg.fail_open:
+                        return None
+                    raise
 
-            active = self._active(rows)
-            in_use = len(active)
-            if in_use >= self.limit:
-                now = time.monotonic()
-                if now >= deadline:
-                    self.last_error = "排队超时"
-                    raise GateBusy(
-                        f"飞书闸门排队超过 {int(self.cfg.wait_timeout_sec)}s"
-                        f"（{self.limit} 个并发占位全被占满）"
-                    )
-                if on_wait and (now - last_note > 8 or attempt == 1):
-                    last_note = now
-                    try:
-                        on_wait(in_use, self.limit, now - started)
-                    except Exception:  # noqa: BLE001
-                        pass
-                await asyncio.sleep(
-                    (self.poll_ms / 1000.0) * random.uniform(0.75, 1.25)
+                now = time.time()
+                usables = sorted(
+                    (slot for slot in rows if 1 <= slot.index() <= self.limit),
+                    key=lambda slot: slot.index(),
                 )
-                continue
+                free = [slot for slot in usables if not slot.busy(now, self.stale_sec)]
+                my_turn = self._my_turn(rows, ticket)
 
-            # 有位 → 先占坑
-            lease = f"{int(time.time() * 1000)}-{random.randrange(100000, 999999)}"
-            try:
-                record_id = await asyncio.to_thread(self._create, lease, job, task, note)
-            except Exception as exc:  # noqa: BLE001
-                self.last_error = f"写闸门表失败：{exc}"
-                if self.cfg.fail_open:
-                    return None
-                raise
-            if not record_id:
-                self.last_error = "写闸门表没有返回 record_id"
-                if self.cfg.fail_open:
-                    return None
-                raise RuntimeError("写闸门表失败")
-
-            # ---- 缓冲 + 二次检测：等飞书索引把这条记录同步出来，再数一遍 ----
-            if self.settle_ms:
-                await asyncio.sleep(self.settle_ms / 1000.0)
-            try:
-                rows2 = await asyncio.to_thread(self._rows)
-            except Exception:  # noqa: BLE001 - 数不清就按「能进」处理（宁可多等一次）
-                rows2 = []
-            if rows2:
-                active2 = self._active(rows2)
-                mine = next((row for row in active2 if row.record_id == record_id), None)
-                if len(active2) > self.limit or (mine is None and len(active2) >= self.limit):
-                    # 别人也在同一瞬间抢到了 → 让出来重新排队，别把并发顶破
-                    await asyncio.to_thread(self._delete, [record_id])
-                    await asyncio.sleep((self.poll_ms / 1000.0) * random.uniform(0.6, 1.0))
+                if not free or not my_turn:
+                    # 没空位、或者有空位但前面还有人排队 → 取号/继续等
+                    if not ticket:
+                        ticket = await asyncio.to_thread(self._make_ticket, job, task)
+                    wait_now = time.monotonic()
+                    if wait_now >= deadline:
+                        self.last_error = "排队超时"
+                        raise GateBusy(
+                            f"飞书闸门排队超过 {int(self.cfg.wait_timeout_sec)}s"
+                            f"（{self.limit} 个槽位全被占满）"
+                        )
+                    self.stats["queue_rounds"] += 1
+                    if free:
+                        self.stats["ticket_waits"] += 1
+                    if on_wait and (wait_now - last_note > 8 or attempt == 1):
+                        last_note = wait_now
+                        in_use = sum(1 for slot in usables if slot.busy(now, self.stale_sec))
+                        try:
+                            on_wait(in_use, self.limit, wait_now - started)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    await asyncio.sleep((self.poll_ms / 1000.0) * random.uniform(0.75, 1.25))
                     continue
-                in_use = len(active2)
-            else:
-                in_use = in_use + 1
 
-            self.last_error = ""
-            return Lease(
-                id=record_id,
-                limit=self.limit,
-                in_use=in_use,
-                waited=time.monotonic() - started,
-                holder=self.cfg.holder,
-                lease_token=lease,
-            )
+                # 有空位 + 轮到我 → 抢
+                lease = (
+                    f"{self.cfg.holder}|{int(time.time() * 1000)}|"
+                    f"{random.randrange(100000, 999999)}"
+                )
+                claimed: Slot | None = None
+                candidates = list(free)
+                random.shuffle(candidates)      # 打散：别都去抢 01 号坑
+                wrote_id = ""
+                async with self._lock:
+                    # 锁里只做「写占位」（很短），等索引 + 回读放到锁外
+                    for slot in candidates:
+                        try:
+                            await asyncio.to_thread(self._claim, slot, lease, job, task, note)
+                            wrote_id = slot.record_id
+                            break
+                        except Exception as exc:  # noqa: BLE001
+                            self.last_error = f"写闸门表失败：{exc}"
+                if wrote_id:
+                    if self.settle_ms:
+                        await asyncio.sleep(self.settle_ms / 1000.0)
+                    claimed = await self._verify(wrote_id, lease)
+                    if claimed is None:
+                        # 被别的机器抢走了（后写覆盖）→ 下一轮换坑
+                        self.stats["lost_race"] += 1
+
+                if claimed is None:
+                    await asyncio.sleep((self.poll_ms / 1000.0) * random.uniform(0.5, 0.9))
+                    continue
+
+                # 二次确认（confirmations>1 时）
+                for _ in range(max(0, self.confirmations - 1)):
+                    again = await self._verify(claimed.record_id, lease, tries=2)
+                    if again is None:
+                        claimed = None
+                        break
+                if claimed is None:
+                    self.stats["lost_race"] += 1
+                    await asyncio.sleep((self.poll_ms / 1000.0) * random.uniform(0.5, 0.9))
+                    continue
+
+                if ticket:
+                    mine = ticket
+                    ticket = ""
+                    await asyncio.to_thread(self._drop_ticket, mine)
+                waited = time.monotonic() - started
+                self.stats["acquired"] += 1
+                self.stats["waited_total"] += waited
+                self.stats["waited_max"] = max(self.stats["waited_max"], waited)
+                self.last_error = ""
+                busy_now = sum(1 for slot in usables if slot.busy(now, self.stale_sec)) + 1
+                return Lease(
+                    id=claimed.record_id,
+                    limit=self.limit,
+                    in_use=min(busy_now, self.limit),
+                    waited=waited,
+                    holder=self.cfg.holder,
+                    lease_token=lease,
+                )
+        finally:
+            # 没抢到 / 超时 / 异常 → 把号还回去，别堵住后面的人
+            if ticket:
+                await asyncio.to_thread(self._drop_ticket, ticket)
 
     # ------------------------------------------------------------- release #
     async def release(self, lease: Lease | None) -> None:
         if not lease or not lease.id:
             return
         try:
-            await asyncio.to_thread(self._delete, [lease.id])
+            await asyncio.to_thread(
+                self.client.update_record,
+                self.table_id,
+                lease.id,
+                {"租约": "", "主机": "", "开始": 0, "说明": ""},
+            )
+            self.stats["released"] += 1
+            self.stats["writes"] += 1
         except Exception as exc:  # noqa: BLE001
-            self.last_error = f"删占位记录失败：{exc}"
+            self.last_error = f"释放槽位失败：{exc}"
 
     # -------------------------------------------------------------- status #
     async def status(self) -> GateStatus:
@@ -262,18 +409,23 @@ class FeishuGate:
             return GateStatus(ok=False, enabled=True, limit=self.limit,
                               error=str(exc)[:160], checked_at=time.time(),
                               extra={"provider": "feishu", "table_id": self.table_id})
-        active = self._active(rows)
+        now = time.time()
+        usables = [slot for slot in rows if 1 <= slot.index() <= self.limit]
+        busy = [slot for slot in usables if slot.busy(now, self.stale_sec)]
         return GateStatus(
             ok=True,
             enabled=True,
-            in_use=len(active),
+            in_use=len(busy),
             limit=self.limit,
-            checked_at=time.time(),
+            checked_at=now,
             extra={
                 "provider": "feishu",
                 "table_id": self.table_id,
-                "stale": len(self._stale(rows)),
+                "slots": len(usables),
+                "holders": [slot.holder for slot in busy][:20],
                 "holder": self.cfg.holder,
+                "stats": {k: (round(v, 2) if isinstance(v, float) else v)
+                          for k, v in self.stats.items()},
             },
         )
 
@@ -282,35 +434,45 @@ class FeishuGate:
 
 
 # ------------------------------------------------------------------ 建表工具 #
-def ensure_gate_table(app, table_id: str = "") -> str:
-    """建好闸门表（字段：占位/主机/说明/开始/租约）。已存在就直接用。"""
+def ensure_gate_table(app, table_id: str = "", limit: int = DEFAULT_LIMIT) -> str:
+    """建好闸门表并预置 limit 个槽位行；已存在就补字段 / 补槽位。"""
     app_token = app.cfg.app_token
     if not table_id:
         data = app._api(
             "POST",
             f"/bitable/v1/apps/{app_token}/tables",
-            {"table": {"name": "并发闸门", "default_view_name": "占位", "fields": [
-                {"field_name": name, "type": ftype} for name, ftype in GATE_FIELDS
-            ]}},
+            {"table": {"name": "并发闸门", "default_view_name": "槽位",
+                       "fields": [{"field_name": name, "type": ftype}
+                                  for name, ftype in GATE_FIELDS]}},
         )
         table_id = str(data.get("table_id") or "")
         if not table_id:
             raise RuntimeError("建表失败：飞书没返回 table_id")
-        return table_id
-    have = {
-        str(item.get("field_name")): int(item.get("type") or 0)
-        for item in app._api(
-            "GET",
-            f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields?page_size=100",
-        ).get("items") or []
-    }
-    for name, ftype in GATE_FIELDS:
-        if name in have:
-            continue
-        app._api(
-            "POST",
-            f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
-            {"field_name": name, "type": ftype},
+    else:
+        have = {
+            str(item.get("field_name")): int(item.get("type") or 0)
+            for item in app._api(
+                "GET",
+                f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields?page_size=100",
+            ).get("items") or []
+        }
+        for name, ftype in GATE_FIELDS:
+            if name in have:
+                continue
+            app._api(
+                "POST",
+                f"/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
+                {"field_name": name, "type": ftype},
+            )
+
+    existing = {Slot.from_item(item).index()
+                for item in app.search_table(table_id, page_size=500)}
+    missing = [i for i in range(1, max(1, limit) + 1) if i not in existing]
+    if missing:
+        app.create_records(
+            [{"占位": f"{i:02d}", "租约": "", "主机": "", "开始": 0,
+              "说明": "槽位（占位行，别手动删）"} for i in missing],
+            table_id,
         )
     return table_id
 
@@ -319,29 +481,31 @@ def main(argv: list[str] | None = None) -> int:
     """python -m skillbridge.feishu_gate --init / --check"""
     import argparse
 
-    from .config import load_config, load_env
     from . import feishu as feishu_mod
+    from .config import load_config, load_env
 
-    parser = argparse.ArgumentParser(description="飞书并发闸门表（并发队列）")
+    parser = argparse.ArgumentParser(description="飞书并发闸门表（槽位队列）")
     parser.add_argument("--config", default="config.json")
-    parser.add_argument("--init", action="store_true", help="建表 / 补字段，并打印 table_id")
+    parser.add_argument("--init", action="store_true", help="建表 / 补字段 / 补槽位")
+    parser.add_argument("--limit", type=int, default=0, help="槽位数（默认读 config 或 15）")
     parser.add_argument("--check", action="store_true", help="看当前占位情况")
     args = parser.parse_args(argv)
 
-    root = Path.cwd()
     env = load_env()
-    config = load_config(root / args.config, env)
-    cfg = feishu_mod.load_config(config, env)
-    if not cfg.ready()[0]:
-        print("飞书未配置：", cfg.ready()[1])
+    config = load_config(Path(args.config), env)
+    fc = feishu_mod.load_config(config, env)
+    ready, reason = fc.ready()
+    if not ready:
+        print("飞书未配置：", reason)
         return 2
-    app = feishu_mod.FeishuBitable(cfg)
+    app = feishu_mod.FeishuBitable(fc)
     gate_cfg = (config.get("defaults") or {}).get("gate") or {}
     table_id = str(gate_cfg.get("table_id") or (config.get("feishu") or {}).get("gate_table_id") or "")
+    limit = args.limit or int(gate_cfg.get("limit") or DEFAULT_LIMIT)
 
     if args.init:
-        table_id = ensure_gate_table(app, table_id)
-        print("闸门表 table_id =", table_id)
+        table_id = ensure_gate_table(app, table_id, limit)
+        print("闸门表 table_id =", table_id, f"（{limit} 个槽位）")
         print("把这一行加进 config.json：")
         print(json.dumps({"feishu": {"gate_table_id": table_id}}, ensure_ascii=False))
         return 0
@@ -349,17 +513,18 @@ def main(argv: list[str] | None = None) -> int:
     if not table_id:
         print("还没建表：先跑 python -m skillbridge.feishu_gate --init")
         return 1
-    rows = [GateRow.from_item(item) for item in app.search_table(table_id, page_size=500)]
+    rows = [Slot.from_item(item) for item in app.search_table(table_id, page_size=500)]
     now = time.time()
-    active = [r for r in rows if now - (r.started or now) <= STALE_SEC]
-    stale = [r for r in rows if r.started and now - r.started > STALE_SEC]
-    print(f"闸门表 {table_id}")
-    print(f"  占位：{len(active)} 条（上限 {gate_cfg.get('limit') or DEFAULT_LIMIT}）")
-    for row in active[:20]:
-        print(f"   - {row.label or row.record_id}  主机={row.holder or '?'}"
-              f"  已占 {int(now - row.started)}s")
-    if stale:
-        print(f"  僵尸占位：{len(stale)} 条（> {int(STALE_SEC)}s，下次抢位时自动清掉）")
+    usables = sorted((s for s in rows if 1 <= s.index() <= limit), key=lambda s: s.index())
+    busy = [s for s in usables if s.busy(now, STALE_SEC)]
+    stale = [s for s in usables if s.lease and not s.busy(now, STALE_SEC)]
+    print(f"闸门表 {table_id}（{len(usables)} 个槽位，上限 {limit}）")
+    print(f"  占用：{len(busy)} · 空闲：{len(usables) - len(busy)} · 僵尸：{len(stale)}")
+    for slot in usables:
+        if slot.lease:
+            age = int(now - (slot.started or now))
+            flag = "僵尸" if age > STALE_SEC else ""
+            print(f"   [{slot.name}] {slot.holder or '?'}  已占 {age}s  {slot.note[:40]} {flag}")
     return 0
 
 

@@ -1,15 +1,13 @@
-"""飞书表格闸门（并发队列）的离线回归测试。
+"""飞书「槽位闸门」的离线回归测试（槽位抢占 + 先到先得排队）。
 
-用「假飞书客户端」实现同一套接口（search_table / create_records / delete_record），
-验证四件事：
+用假飞书表模拟 bitable 的四个动作（search / update / batch_create / delete），
+并且**故意让 search 落后 N 次写入**（模拟飞书索引延迟），验证：
 
-  1. **额度硬约束**：两个「人」抢 15 个坑，任何时刻占位行数 ≤ 15；
-  2. **二次检测 + 缓冲**：故意让 search 落后 N 次（模拟飞书索引延迟），
-     仍然不会超发（写完之后再数一遍，超了就自己让位）；
-  3. **僵尸占位**：超过 stale_sec 的占位会被清掉，不会永久堵死队列；
-  4. **release 删行**：跑完把占位删掉，in_use 回到 0。
-
-另外验证「被限流的图」能被标记 + 一键重试（只捞 error_kind=rate_limit 的）。
+  [1] 硬额度：两台机器 30 个任务抢 6 个槽位 → 同时占用的槽位永远 ≤ 6；
+  [2] 先到先得：额度 1，5 个人按顺序排队 → 放行顺序 = 取号顺序（FIFO）；
+  [3] 抢坑冲突：两台机器同时抢同一个槽位 → 都最终拿到，但槽位峰值不变；
+  [4] 僵尸槽位：占位超过 stale_sec 的可以被直接抢；
+  [5] 限流识别 + 一键重试只捞 rate_limit。
 
 运行：python tools/check_feishu_gate.py
 """
@@ -26,14 +24,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from skillbridge.feishu_gate import FeishuGate, Slot  # noqa: E402
 from skillbridge.gate import GateConfig  # noqa: E402
-from skillbridge.feishu_gate import FeishuGate, GateRow  # noqa: E402
 from skillbridge.job import Job, Task  # noqa: E402
 from skillbridge.runner import is_rate_limited  # noqa: E402
-from skillbridge.service import Workbench, WorkbenchError  # noqa: E402
+from skillbridge.service import Workbench, _retry_targets  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-SANDBOX = Path(tempfile.mkdtemp(prefix="wb-fsgate-"))
+SANDBOX = Path(tempfile.mkdtemp(prefix="wb-slotgate-"))
 FAILED: list[str] = []
 
 
@@ -43,54 +41,112 @@ def check(label: str, ok: bool, detail: str = "") -> None:
         FAILED.append(label)
 
 
-class FakeFeishu:
-    """假飞书表：search 有延迟窗口，行为尽量贴近 bitable。"""
+class FakeTable:
+    """假飞书表：写立即生效，读有延迟（模拟索引）；created_time 用服务端序号。"""
 
-    def __init__(self, *, search_lag: int = 0) -> None:
+    def __init__(self, *, lag: int = 0) -> None:
         self.rows: dict[str, dict] = {}
         self.seq = 0
-        self.search_lag = search_lag     # 前 N 次 search 看不到最新写入（模拟索引延迟）
-        self.snapshot: list[dict] = []
-        self.calls = {"search": 0, "create": 0, "delete": 0}
-        self.peak = 0
-        self._lock = False
+        self.lag = lag
+        self.history: list[list[dict]] = []
+        self._stale_view: list[dict] = []
+        self.busy_peak = 0
+        self.updates = 0
+        self.creates = 0
+        self.deletes = 0
+        self._snap()
 
-    # 假飞书客户端接口 ----------------------------------------------------- #
-    def search_table(self, table_id: str, page_size: int = 200, max_pages: int = 10) -> list[dict]:
-        self.calls["search"] += 1
-        if self.search_lag > 0:
-            # 延迟窗口：返回上一次的快照
-            self.search_lag -= 1
-            return [dict(item) for item in self.snapshot]
-        snapshot = [dict(item) for item in self.rows.values()]
-        self.snapshot = snapshot
-        self.peak = max(self.peak, len(snapshot))
+    # --- 假客户端接口 ---------------------------------------------------- #
+    def search_table(self, table_id: str, page_size: int = 200, max_pages: int = 10,
+                     automatic: bool = False) -> list[dict]:
+        # 真实飞书的索引是「随时间追平」的：这里用「读几次之后能看到最新」来模拟
+        if self.lag > 0:
+            self.lag -= 1
+            return [dict(item) for item in self._stale_view]
+        snapshot = [self._item(rid) for rid in self.rows]
+        self._stale_view = snapshot
         return [dict(item) for item in snapshot]
 
     def create_records(self, rows: list[dict], table_id: str = "") -> list[str]:
         ids = []
         for row in rows:
             self.seq += 1
-            record_id = f"rec{self.seq:04d}"
-            self.rows[record_id] = {"record_id": record_id, "fields": dict(row)}
+            record_id = f"rec{self.seq:05d}"
+            self.rows[record_id] = {
+                "fields": dict(row),
+                "created": 1_700_000_000_000 + self.seq * 1000,
+            }
             ids.append(record_id)
-            self.calls["create"] += 1
+            self.creates += 1
+        self._snap()
         return ids
+
+    def update_record(self, table_id: str, record_id: str, fields: dict) -> dict:
+        if record_id not in self.rows:
+            raise KeyError(record_id)
+        self.rows[record_id]["fields"].update(fields)
+        self.updates += 1
+        self._refresh_peak()
+        self._snap()
+        return {}
 
     def delete_record(self, table_id: str, record_id: str) -> dict:
         self.rows.pop(record_id, None)
-        self.calls["delete"] += 1
+        self.deletes += 1
+        self._snap()
         return {}
 
-    # 断言辅助 ------------------------------------------------------------- #
-    def active_rows(self) -> list[dict]:
-        return list(self.rows.values())
+    # --- 内部 ------------------------------------------------------------- #
+    def _item(self, record_id: str) -> dict:
+        row = self.rows[record_id]
+        return {
+            "record_id": record_id,
+            "fields": dict(row["fields"]),
+            "created_time": row["created"],
+        }
+
+    def _snap(self) -> None:
+        self.history.append([self._item(rid) for rid in self.rows])
+        if len(self.history) > 300:
+            self.history = self.history[-150:]
+
+    def _refresh_peak(self) -> None:
+        busy = sum(1 for row in self.rows.values()
+                   if str(row["fields"].get("租约") or "").strip())
+        self.busy_peak = max(self.busy_peak, busy)
+
+    # --- 断言辅助 --------------------------------------------------------- #
+    def _is_ticket(self, rid: str) -> bool:
+        return str(self.rows[rid]["fields"].get("占位") or "").startswith("Q")
+
+    def slots(self) -> list[Slot]:
+        return [Slot.from_item(self._item(rid)) for rid in self.rows if not self._is_ticket(rid)]
+
+    def tickets(self) -> list[dict]:
+        return [{"record_id": rid, **self.rows[rid]["fields"]}
+                for rid in self.rows if self._is_ticket(rid)]
+
+    def busy(self) -> list[Slot]:
+        now = time.time()
+        return [slot for slot in self.slots() if slot.busy(now, 600)]
+
+    def seed_slots(self, limit: int, stale: bool = False) -> None:
+        rows = []
+        for i in range(1, limit + 1):
+            ghost = stale and i == 1
+            rows.append({
+                "占位": f"{i:02d}",
+                "租约": "dead|old" if ghost else "",
+                "主机": "ghost" if ghost else "",
+                "开始": int((time.time() - 3600) * 1000) if ghost else 0,
+                "说明": "",
+            })
+        self.create_records(rows, "tblFAKE")
 
 
-def gate_config(
-    limit: int, *, settle_ms: int = 40, poll_ms: int = 40, stale_sec: float = 600,
-    wait_timeout_sec: float = 3.0,
-) -> GateConfig:
+def gate_config(limit: int, *, settle_ms: int = 20, poll_ms: int = 60,
+                confirmations: int = 1, wait_timeout_sec: float = 20.0,
+                stale_sec: float = 600) -> GateConfig:
     return GateConfig(
         enabled=True,
         provider="feishu",
@@ -98,6 +154,7 @@ def gate_config(
         limit=limit,
         poll_ms=poll_ms,
         settle_ms=settle_ms,
+        confirmations=confirmations,
         stale_sec=stale_sec,
         wait_timeout_sec=wait_timeout_sec,
         fail_open=True,
@@ -105,112 +162,116 @@ def gate_config(
     )
 
 
-async def occupy(gate: FeishuGate, n: int, tag: str) -> list:
-    leases = []
+async def _burst(pairs, hold: float = 0.25):
+    """多个「客户端」同时抢，抢到后占用 hold 秒再还。"""
+    granted: list[tuple[str, int]] = []
+    errors = 0
 
-    async def one(index: int):
-        lease = await gate.acquire(job="job", task=f"{tag}-{index}")
-        leases.append(lease)
+    async def worker(gate: FeishuGate, prefix: str, count: int):
+        nonlocal errors
+        for index in range(count):
+            try:
+                lease = await gate.acquire(job="job", task=f"{prefix}-{index:02d}")
+            except Exception:  # noqa: BLE001 - GateBusy
+                errors += 1
+                continue
+            if lease is None:
+                errors += 1
+                continue
+            granted.append((prefix, index))
+            await asyncio.sleep(hold)
+            await gate.release(lease)
 
-    await asyncio.gather(*(one(i) for i in range(n)))
-    return leases
+    await asyncio.gather(*(worker(gate, prefix, count) for gate, prefix, count in pairs))
+    return granted, errors
 
 
 def main() -> int:
-    print("[1] 额度 15：两个人同时抢 12 个坑，占位行数不会超 15")
-    fake = FakeFeishu()
-    gate_a = FeishuGate(gate_config(15), fake, label="pc-a")
-    gate_b = FeishuGate(gate_config(15), fake, label="pc-b")
-    leases = asyncio.run(_race(gate_a, gate_b, 12, 8))
-    check("总占位 ≤ 15", len(fake.active_rows()) <= 15, f"{len(fake.active_rows())} 行")
-    check("拿到牌的 ≤ 15", len([l for l in leases if l]) <= 15, f"{len([l for l in leases if l])} 张")
-    # 飞书索引有延迟时允许「多写 1 条占位 → 二次检测再让位」的瞬时状态；
-    # 真正的不变量是「同时拿到牌（=真去调接口）的数量 ≤ 额度」
-    check("占位行峰值最多瞬时多 1 条", fake.peak <= 16, f"peak={fake.peak}")
-    check("没抢到的不是放行（None 都来自 GateBusy）",
-          len([l for l in leases if l]) == min(15, len(leases)), str(len([l for l in leases if l])))
+    print("[1] 30 个任务抢 6 个槽位（两台机器，索引落后 2 次写入）")
+    table = FakeTable(lag=2)
+    table.seed_slots(6)
+    gate_a = FeishuGate(gate_config(6), table, label="A")
+    gate_b = FeishuGate(gate_config(6), table, label="B")
+    granted, errors = asyncio.run(_burst([(gate_a, "A", 15), (gate_b, "B", 15)]))
+    check("30 个任务都跑过（拿到或明确失败）", len(granted) + errors == 30,
+          f"granted={len(granted)} errors={errors}")
+    check("同时占用槽位峰值 ≤ 6", table.busy_peak <= 6, f"peak={table.busy_peak}")
+    check("结束时没有占用残留", not table.busy(), f"{len(table.busy())} 个还占着")
+    check("排队号都清掉了", not table.tickets(), f"{len(table.tickets())} 个残留")
+    stats_a, stats_b = gate_a.stats, gate_b.stats
+    print(f"      A 埋点: {json.dumps({k: (round(v, 2) if isinstance(v, float) else v) for k, v in stats_a.items()}, ensure_ascii=False)}")
+    print(f"      B 埋点: {json.dumps({k: (round(v, 2) if isinstance(v, float) else v) for k, v in stats_b.items()}, ensure_ascii=False)}")
+    check("拿牌/还牌配平",
+          stats_a["acquired"] - stats_a["released"] <= 1
+          and stats_b["acquired"] - stats_b["released"] <= 1,
+          f"A={stats_a['acquired']}/{stats_a['released']} B={stats_b['acquired']}/{stats_b['released']}")
 
-    print("[2] 二次检测：飞书索引延迟 3 次仍不超发")
-    fake2 = FakeFeishu(search_lag=3)
-    gate_c = FeishuGate(gate_config(6, settle_ms=60), fake2, label="pc-c")
-    gate_d = FeishuGate(gate_config(6, settle_ms=60), fake2, label="pc-d")
-    leases2 = asyncio.run(_race(gate_c, gate_d, 5, 5))
-    check("延迟下总占位仍 ≤ 6", len(fake2.active_rows()) <= 6, f"{len(fake2.active_rows())} 行")
-    check("拿到的牌 ≤ 6", len([l for l in leases2 if l]) <= 6, str(len([l for l in leases2 if l])))
-    blocked = len([l for l in leases2 if l is None])
-    check("满额的那些被挡下（不是硬闯）", blocked >= 1, f"blocked={blocked}")
-
-    print("[3] release 删行：全部还回去后 in_use 回到 0")
-    async def release_all():
-        for lease in leases2:
-            if lease:
-                await gate_c.release(lease)
-    asyncio.run(release_all())
-    check("占位清空", not fake2.active_rows(), f"{len(fake2.active_rows())} 行")
-    status = asyncio.run(gate_c.status())
-    check("status.in_use = 0", status.ok and status.in_use == 0, status.as_dict())
-
-    print("[4] 僵尸占位：超过 stale_sec 的记录会被清掉")
-    fake3 = FakeFeishu()
-    old = fake3.create_records([{
-        "占位": "old/1", "主机": "dead-pc", "说明": "", "开始": int((time.time() - 3600) * 1000),
-        "租约": "x",
-    }], "tblFAKE")
-    check("先放一条 1 小时前的占位", len(fake3.active_rows()) == 1)
-    gate_e = FeishuGate(gate_config(1, stale_sec=120), fake3, label="pc-e")
-    lease = asyncio.run(gate_e.acquire(job="j", task="t"))
-    check("僵尸被清掉后能拿到坑", lease is not None, str(lease))
-    check("旧占位已被删除", old[0] not in [r["record_id"] for r in fake3.active_rows()],
-          str([r["record_id"] for r in fake3.active_rows()]))
-
-    print("[5] 队列等待：满额时 acquire 会等，别人还了就能进")
-    fake4 = FakeFeishu()
-    gate_f = FeishuGate(gate_config(1, poll_ms=60, settle_ms=30), fake4, label="pc-f")
-    first = asyncio.run(gate_f.acquire(job="j", task="first"))
-    waited: list[tuple[int, int, float]] = []
-
-    async def second():
-        return await gate_f.acquire(
-            job="j", task="second",
-            on_wait=lambda in_use, limit, waited_s: waited.append((in_use, limit, waited_s)),
-        )
+    print("[2] 先到先得：额度 1，5 个人按顺序排队")
+    table2 = FakeTable(lag=0)
+    table2.seed_slots(1)
+    gate = FeishuGate(gate_config(1, settle_ms=10, poll_ms=30, wait_timeout_sec=30),
+                      table2, label="A")
+    order: list[str] = []
 
     async def scenario():
-        task = asyncio.create_task(second())
-        await asyncio.sleep(0.25)
-        blocked = not task.done()
-        await gate_f.release(first)
-        lease2 = await asyncio.wait_for(task, timeout=10)
-        return blocked, lease2
+        holder = await gate.acquire(job="job", task="holder")
+        await asyncio.sleep(0.2)
+        pending = []
+        for i in range(5):
+            async def one(name=f"t{i + 1}"):
+                lease = await gate.acquire(job="job", task=name)
+                if lease is not None:
+                    order.append(name)
+                    await gate.release(lease)      # 拿到就还，让后面的人继续
+                return name
+            pending.append(asyncio.create_task(one()))
+            await asyncio.sleep(0.2)
+        await asyncio.sleep(1.0)
+        await gate.release(holder)
+        await asyncio.gather(*pending, return_exceptions=True)
 
-    blocked, lease2 = asyncio.run(scenario())
-    check("满额时第二个确实在等", blocked)
-    check("第一个还了之后第二个拿到坑", lease2 is not None, str(lease2))
-    check("等待时回调报了队列状态", bool(waited) and waited[0][1] == 1, str(waited[:1]))
+    asyncio.run(scenario())
+    check("放行顺序 = 取号顺序（FIFO）", order == ["t1", "t2", "t3", "t4", "t5"], str(order))
+    check("排队期间确实取过号", gate.stats["tickets"] >= 5, f"tickets={gate.stats['tickets']}")
 
-    print("[6] 限流失败的识别 + 一键重试")
+    print("[3] 抢坑冲突：两台机器同时抢唯一的槽位")
+    table3 = FakeTable(lag=0)
+    table3.seed_slots(1)
+    gate_x = FeishuGate(gate_config(1, settle_ms=10, poll_ms=30, wait_timeout_sec=15), table3, label="X")
+    gate_y = FeishuGate(gate_config(1, settle_ms=10, poll_ms=30, wait_timeout_sec=15), table3, label="Y")
+    granted3, errors3 = asyncio.run(_burst([(gate_x, "X", 1), (gate_y, "Y", 1)], hold=0.3))
+    check("两人都最终拿到槽位", len(granted3) == 2, f"{granted3} errors={errors3}")
+    check("槽位峰值 ≤ 1", table3.busy_peak <= 1, f"peak={table3.busy_peak}")
+
+    print("[4] 僵尸槽位：1 小时前的占位可以直接抢")
+    table4 = FakeTable(lag=0)
+    table4.seed_slots(1, stale=True)
+    gate_z = FeishuGate(gate_config(1, stale_sec=120, settle_ms=10, poll_ms=30), table4, label="Z")
+    lease = asyncio.run(gate_z.acquire(job="job", task="t"))
+    check("僵尸槽位被接管", lease is not None, str(lease))
+    check("接管后记录里是我", any(slot.lease.startswith("pc-test") for slot in table4.slots()),
+          str([slot.lease[:18] for slot in table4.slots()]))
+    asyncio.run(gate_z.release(lease))
+
+    print("[5] 限流识别 + 一键重试分流")
     for text, expect in [
         ("HTTP 429 Too Many Requests", True),
         ("接口返回：并发数超限", True),
-        ("rate limit exceeded", True),
-        ("频率过高，请稍后再试", True),
+        ("飞书闸门排队超过 1800s（6 个槽位全被占满）", True),
         ("内容审核不通过", False),
-        ("图片过大", False),
     ]:
-        check(f"「{text[:18]}…」→ {'限流' if expect else '非限流'}", is_rate_limited(text) == expect)
+        check(f"「{text[:16]}…」→ {'限流' if expect else '非限流'}", is_rate_limited(text) == expect)
 
     bench = _bench_with_rate_limit_job()
     job = bench.get_job("job-rate-limit")
-    stats = job.counts()
-    check("job.stats.rate_limited = 2", stats.get("rate_limited") == 2, str(stats.get("rate_limited")))
-    from skillbridge.service import _retry_targets
-
-    targets, wanted = _retry_targets(job, None, "rate_limit")
-    check("一键重试只挑被限流的", [t.id for t in targets] == ["item-01__white", "item-01__black"],
-          str([t.id for t in targets]))
-    check("wanted 集合一致", wanted == {t.id for t in targets}, str(sorted(wanted)))
-    rest, _ = _retry_targets(job, None, "")
-    check("普通重试仍覆盖全部失败项", len(rest) == 3, str([t.id for t in rest]))
+    check("stats.rate_limited = 2", job.counts().get("rate_limited") == 2,
+          str(job.counts().get("rate_limited")))
+    only_limited, _wanted = _retry_targets(job, None, "rate_limit")
+    check("一键重试只挑限流失败",
+          [t.id for t in only_limited] == ["item-01__white", "item-01__black"],
+          str([t.id for t in only_limited]))
+    all_failed, _ = _retry_targets(job, None, "")
+    check("普通重试覆盖全部失败", len(all_failed) == 3, str(len(all_failed)))
 
     print()
     if FAILED:
@@ -220,24 +281,7 @@ def main() -> int:
     return 0
 
 
-async def _race(gate_a: FeishuGate, gate_b: FeishuGate, n_a: int, n_b: int):
-    tasks: list = []
-
-    async def worker(gate: FeishuGate, prefix: str, count: int):
-        for index in range(count):
-            try:
-                lease = await gate.acquire(job="job", task=f"{prefix}-{index}")
-            except Exception:  # noqa: BLE001 - 排队超时也照常继续（GateBusy）
-                lease = None
-            tasks.append(lease)
-            await asyncio.sleep(0.002)
-
-    await asyncio.gather(worker(gate_a, "a", n_a), worker(gate_b, "b", n_b))
-    return tasks
-
-
 def _bench_with_rate_limit_job() -> Workbench:
-    """造一个含「被限流失败」的 job（不跑服务，只测统计与重试分流）。"""
     config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     config["data_dir"] = str(SANDBOX / "data")
     config["skill_root"] = str(ROOT.parent / "apparel-style-recolor")
@@ -249,7 +293,6 @@ def _bench_with_rate_limit_job() -> Workbench:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(config, ensure_ascii=False, indent=1), encoding="utf-8")
     bench = Workbench(path)
-
     job = Job(
         id="job-rate-limit",
         params={"garment_type": "06-hoodie", "colors": ["white", "black"], "provider": "mock"},

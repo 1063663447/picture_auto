@@ -246,6 +246,10 @@ class Workbench:
         status = await gate.status()
         payload.update(status.as_dict())
         payload["config"] = cfg.public()
+        # 埋点：每个接口各自的拿牌/等待统计（排查「谁在排队、排了多久」）
+        payload["stats_by_provider"] = {
+            name: getattr(entry, "stats", {}) for name, entry in self._gates.items()
+        }
         return payload
 
     # ----------------------------------------------------------------- models #

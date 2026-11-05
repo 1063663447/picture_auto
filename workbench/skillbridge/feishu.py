@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import mimetypes
 import time
 import urllib.error
@@ -77,21 +78,43 @@ class FeishuConfig:
         return True, "就绪"
 
 
+# 飞书 API 复用一条长连接：每次新建 TLS 要 200~500ms，
+# 闸门每张图要读/写 2~3 次，多任务并发时这点开销会被放大成几十秒。
+_HTTP_CLIENT = None
+_HTTP_LOCK = threading.Lock()
+
+
+def _client():
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None:
+        with _HTTP_LOCK:
+            if _HTTP_CLIENT is None:
+                import httpx
+
+                _HTTP_CLIENT = httpx.Client(
+                    timeout=httpx.Timeout(45.0, connect=10.0),
+                    limits=httpx.Limits(max_connections=64, max_keepalive_connections=32),
+                    headers={"Connection": "keep-alive"},
+                )
+    return _HTTP_CLIENT
+
+
 def _json_request(method: str, url: str, token: str = "", payload: dict | None = None) -> dict:
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    request = urllib.request.Request(url, data=data, method=method)
-    request.add_header("Content-Type", "application/json; charset=utf-8")
+    headers = {"Content-Type": "application/json; charset=utf-8"}
     if token:
-        request.add_header("Authorization", f"Bearer {token}")
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            return json.loads(response.read() or b"{}")
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "replace")
+        response = _client().request(
+            method, url, headers=headers,
+            content=json.dumps(payload).encode("utf-8") if payload is not None else None,
+        )
+        text = response.text or "{}"
         try:
-            return json.loads(body)
+            return json.loads(text)
         except json.JSONDecodeError:
-            return {"code": exc.code, "msg": body[:300]}
+            return {"code": response.status_code, "msg": text[:300]}
+    except Exception as exc:  # noqa: BLE001 - 网络问题统一成飞书风格
+        return {"code": -1, "msg": f"{type(exc).__name__}: {exc}"}
 
 
 class FeishuBitable:
@@ -195,8 +218,18 @@ class FeishuBitable:
         return [{"file_token": token}] if token else []
 
     # ----------------------------------------------------------- records --
-    def search_table(self, table_id: str, page_size: int = 200, max_pages: int = 10) -> list[dict]:
-        """读任意表的全部行（自动翻页）。返回 [{record_id, fields}]。"""
+    def search_table(
+        self,
+        table_id: str,
+        page_size: int = 200,
+        max_pages: int = 10,
+        automatic: bool = False,
+    ) -> list[dict]:
+        """读任意表的全部行（自动翻页）。返回 [{record_id, fields}]。
+
+        `automatic=True` 时一起取 `created_time` 等系统字段 —— 队列排序用它
+        （服务端时间，不受各台机器时钟影响）。
+        """
         items: list[dict] = []
         page_token = ""
         for _ in range(max_pages):
@@ -206,7 +239,7 @@ class FeishuBitable:
             data = self._api(
                 "POST",
                 f"/bitable/v1/apps/{self.cfg.app_token}/tables/{table_id}/records/search{query}",
-                {"automatic_fields": False},
+                {"automatic_fields": bool(automatic)},
             )
             items.extend(data.get("items") or [])
             if not data.get("has_more"):
@@ -215,6 +248,19 @@ class FeishuBitable:
             if not page_token:
                 break
         return items
+
+    def get_record(self, table_id: str, record_id: str) -> dict:
+        """读单条记录（闸门回读确认用；比整表搜索便宜）。"""
+        data = self._api(
+            "GET",
+            f"/bitable/v1/apps/{self.cfg.app_token}/tables/{table_id}/records/{record_id}",
+        )
+        record = data.get("record") or {}
+        return {
+            "record_id": str(record.get("record_id") or record_id),
+            "fields": record.get("fields") or {},
+            "created_time": record.get("created_time"),
+        }
 
     def update_record(self, table_id: str, record_id: str, fields: dict) -> dict:
         return self._api(

@@ -33,6 +33,16 @@ WEB_DIR = WORKBENCH_DIR / "web"
 def create_app(config_path: str | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # 闸门每张图要读/写飞书（走线程池）。默认线程池只有 cpu+4 个线程，
+        # 多任务并发时会排队等线程，看起来像「凭空等了几十秒」。这里放大到 64。
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+
+            asyncio.get_running_loop().set_default_executor(
+                ThreadPoolExecutor(max_workers=64, thread_name_prefix="wb-io")
+            )
+        except Exception:  # noqa: BLE001
+            pass
         app.state.wb = Workbench(config_path)
         # 上次没写进飞书的任务，启动后补一遍（在线程里跑，别拖慢启动）
         try:

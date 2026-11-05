@@ -61,14 +61,15 @@
       "url": "",
       "token_env": "GATE_TOKEN",
       "limit": 15,
-      "poll_ms": 2500,
+      "poll_ms": 1500,
       "wait_timeout_sec": 1800,
       "fail_open": true,
       "provider": "feishu",
       "table_id": "tblYydJOE5r6KAow",
-      "settle_ms": 1200,
+      "settle_ms": 900,
       "stale_sec": 600,
-      "note": "provider=feishu 用飞书表格当并发队列（先跑 python -m skillbridge.feishu_gate --init 建表，把 table_id 填这里）；provider=http 则用 Cloudflare 阀门"
+      "note": "provider=feishu 用飞书表格当并发队列（先跑 python -m skillbridge.feishu_gate --init 建表，把 table_id 填这里）；provider=http 则用 Cloudflare 阀门",
+      "confirmations": 1
     },
     "notify": {
       "enabled": false,
@@ -207,13 +208,12 @@
     },
     "mock": {
       "type": "mock",
-      "label": "本地模拟（不发请求）",
       "enabled": true,
+      "mock_delay_sec": 1.0,
       "concurrency": 8,
-      "mock_delay_sec": 0.4,
-      "show_in_ui": false,
-      "max_concurrency": 8,
-      "global_concurrency": 8
+      "max_concurrency": 20,
+      "global_concurrency": 20,
+      "show_in_ui": false
     }
   },
   "feishu": {
