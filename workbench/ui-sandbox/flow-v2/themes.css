@@ -1,0 +1,311 @@
+/* A coherent color system for three complete, dark interface editions. */
+:root,
+:root[data-tone="obsidian"] {
+  --tone-bg:#08070c; --tone-rail:#100d15; --tone-panel:#18131f;
+  --tone-raised:#30243c; --tone-card:#201928; --tone-inset:#100c16;
+  --tone-fg:#f1eaf5; --tone-muted:#c5b8d0; --tone-subtle:#aa99b9;
+  --tone-accent:#c9addd; --tone-metal:#b29bbc; --tone-button:#533664;
+  --tone-button-end:#705080; --tone-glow:145 102 170; --tone-halo:116 74 145;
+  --tone-line:#b69cc532; --tone-edge:#b29bc265; --tone-bad:#e1a6bd;
+  --tone-action:#f8f0fc; --tone-orbit:#d8b8ee;
+}
+:root[data-tone="nocturne"] {
+  --tone-bg:#070a10; --tone-rail:#0d131d; --tone-panel:#151d2a;
+  --tone-raised:#29374b; --tone-card:#1b2738; --tone-inset:#0c131f;
+  --tone-fg:#e8eef5; --tone-muted:#bac8da; --tone-subtle:#9cacc2;
+  --tone-accent:#bdcfe8; --tone-metal:#a3b4ca; --tone-button:#354b68;
+  --tone-button-end:#536a89; --tone-glow:111 139 182; --tone-halo:63 88 131;
+  --tone-line:#9fb5d333; --tone-edge:#a4bad368; --tone-bad:#dbaaba;
+  --tone-action:#f1f6fc; --tone-orbit:#c6d8ee;
+}
+:root[data-tone="garnet"] {
+  --tone-bg:#0d080b; --tone-rail:#170d12; --tone-panel:#22151c;
+  --tone-raised:#41232f; --tone-card:#2c1b24; --tone-inset:#170d13;
+  --tone-fg:#f5eae7; --tone-muted:#d0b9bb; --tone-subtle:#b6989f;
+  --tone-accent:#e2bdb9; --tone-metal:#c1a59a; --tone-button:#6a3d49;
+  --tone-button-end:#885863; --tone-glow:170 106 122; --tone-halo:119 57 78;
+  --tone-line:#c19caa34; --tone-edge:#c39aa266; --tone-bad:#edb3bb;
+  --tone-action:#fff2ee; --tone-orbit:#e7c4b1;
+}
+:root[data-tone] {
+  --bg:var(--tone-bg); --panel:var(--tone-panel); --surface:var(--tone-panel);
+  --surface-2:var(--tone-inset); --surface-3:var(--tone-raised);
+  --fg:var(--tone-fg); --ink:var(--tone-fg); --fg-muted:var(--tone-muted);
+  --fg-subtle:var(--tone-subtle); --muted:var(--tone-muted);
+  --line:var(--tone-line); --border:var(--tone-line);
+  --primary:var(--tone-accent); --primary-hover:var(--tone-fg);
+  --purple:var(--tone-accent); --cyan:var(--tone-metal); --accent:var(--tone-accent);
+  --danger:var(--tone-bad); --warn:var(--tone-metal); --ring:rgb(var(--tone-glow)/.4);
+}
+:root[data-tone] body.flow-shell { color:var(--tone-fg); background:var(--tone-bg); }
+:root[data-tone] body.flow-shell::before {
+  background:radial-gradient(ellipse at 17% -15%,rgb(var(--tone-halo)/.27),transparent 57%),radial-gradient(ellipse at 100% 100%,rgb(var(--tone-glow)/.09),transparent 55%),var(--tone-bg);
+}
+:root[data-tone] body.flow-shell::after {
+  background:radial-gradient(ellipse at 12% 9%,rgb(var(--tone-halo)/.21),transparent 46%),radial-gradient(ellipse at 95% 100%,rgb(var(--tone-glow)/.12),transparent 45%);
+}
+:root[data-tone] .flow-shell .rail { background:linear-gradient(180deg,rgb(var(--tone-glow)/.025),transparent),var(--tone-rail); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .nav-icon { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .nav-icon.on,
+:root[data-tone] .flow-shell .nav-icon:hover { color:var(--tone-fg); background:rgb(var(--tone-glow)/.12); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .nav-icon.on::before { background:var(--tone-accent); box-shadow:0 0 12px rgb(var(--tone-glow)/.3); }
+:root[data-tone] .flow-shell .rail-sep { background:var(--tone-line); }
+:root[data-tone] .flow-shell .brand,
+:root[data-tone] .flow-shell .controls .section-label,
+:root[data-tone] .flow-shell .style-summary-name b,
+:root[data-tone] .flow-shell .style-colors .chip.sel { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .brand small,
+:root[data-tone] .flow-shell .toplinks,
+:root[data-tone] .flow-shell .demo-note,
+:root[data-tone] .flow-shell .scenario-tools label { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .topbar { border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .top-right .admin-top { color:var(--tone-muted); border-color:var(--tone-line); background:rgb(var(--tone-glow)/.035); }
+:root[data-tone] .flow-shell .workspace-tag,
+:root[data-tone] .flow-shell .flow-context-text { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .topbar-ready { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .demo-pill { color:var(--tone-muted); background:rgb(var(--tone-glow)/.06); border-color:var(--tone-line); }
+:root[data-tone] .workspace-tag i,
+:root[data-tone] .topbar-ready i,
+:root[data-tone] .demo-pill i,
+:root[data-tone] .profile-overview i { background:var(--tone-metal); box-shadow:0 0 9px rgb(var(--tone-glow)/.14); }
+:root[data-tone] .flow-shell .scenario-tools select { color:var(--tone-fg); background:var(--tone-card); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .scenario-tools button { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .glass,
+:root[data-tone] .flow-shell .workspace>.controls,
+:root[data-tone] .flow-shell .workspace>.canvas {
+  background:radial-gradient(ellipse at 0 0,rgb(var(--tone-halo)/.085),transparent 65%),var(--tone-panel);
+  border-color:var(--tone-edge); box-shadow:inset 0 1px 0 rgb(var(--tone-glow)/.09),0 12px 32px #0004;
+}
+:root[data-tone] .flow-shell .controls::before,
+:root[data-tone] .flow-shell .workspace>.canvas::before { background:linear-gradient(90deg,transparent,rgb(var(--tone-glow)/.55),transparent); }
+:root[data-tone] .flow-shell .controls::after,
+:root[data-tone] .flow-shell .workspace>.canvas::after { background:linear-gradient(90deg,transparent,var(--tone-accent),var(--tone-button-end),transparent); }
+:root[data-tone] .flow-shell .section-count,
+:root[data-tone] .flow-shell .section-label .hint,
+:root[data-tone] .flow-shell .style-count,
+:root[data-tone] .flow-shell .chevron { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .source-section,
+:root[data-tone] .flow-shell .style-editor { border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .upload { background:rgb(var(--tone-glow)/.025); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .upload:hover,
+:root[data-tone] .flow-shell .upload.over { background:rgb(var(--tone-glow)/.08); border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .upload strong { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .upload span span,
+:root[data-tone] .flow-shell .upload-help { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .upload .plus { color:var(--tone-accent); }
+:root[data-tone] .flow-shell .upload-help p { background:var(--tone-raised); border-color:var(--tone-edge); color:var(--tone-fg); }
+:root[data-tone] .flow-shell .style-block { background:var(--tone-inset); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .style-block.expanded { background:linear-gradient(130deg,rgb(var(--tone-glow)/.055),transparent 75%),var(--tone-raised); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .style-block:hover { border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .style-field .lbl,
+:root[data-tone] .flow-shell .field .lbl { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .style-field select,
+:root[data-tone] .flow-shell .field select,
+:root[data-tone] .flow-shell .field input { background:var(--tone-inset); color:var(--tone-fg); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .field option { background:var(--tone-panel); color:var(--tone-fg); }
+:root[data-tone] .flow-shell .style-colors .chip { background:var(--tone-card); border-color:var(--tone-line); color:var(--tone-muted); }
+:root[data-tone] .flow-shell .style-colors .chip.sel { background:rgb(var(--tone-glow)/.14); border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .style-colors .chip:hover { color:var(--tone-fg); border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .style-foot .hint,
+:root[data-tone] .flow-shell .styles-section>.summary { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .style-acts .tiny-button,
+:root[data-tone] .flow-shell .style-drop { color:var(--tone-accent); }
+:root[data-tone] .flow-shell .add-style { color:var(--tone-accent); background:rgb(var(--tone-glow)/.035); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .add-style:hover { background:rgb(var(--tone-glow)/.10); }
+:root[data-tone] .flow-shell .cuff-tag.plain,
+:root[data-tone] .flow-shell .cuff-tag.ribbed { color:var(--tone-metal); background:rgb(var(--tone-glow)/.05); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .settings-toggle { color:var(--tone-fg); background:radial-gradient(ellipse at 0 0,rgb(var(--tone-glow)/.09),transparent 70%),var(--tone-raised); border-color:var(--tone-edge); box-shadow:inset 0 1px 0 rgb(var(--tone-glow)/.15),0 4px 18px #0003; }
+:root[data-tone] .flow-shell .settings-toggle:hover { border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .settings-title { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .settings-title>svg,
+:root[data-tone] .flow-shell #settingsSummary,
+:root[data-tone] .flow-shell .settings-cta .chevron { color:var(--tone-accent); }
+:root[data-tone] .flow-shell .settings-title small { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .settings-cta { color:var(--tone-fg); background:rgb(var(--tone-glow)/.10); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell #settingsDetails[open]>.settings-body { color:var(--tone-fg); background:var(--tone-raised); border-color:var(--tone-edge); box-shadow:0 -10px 40px #0007; }
+:root[data-tone] .flow-shell .settings-body .summary { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .settings-body .note,
+:root[data-tone] .flow-shell .gate-hint { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .gate-hint[data-state="ok"] { color:var(--tone-metal); }
+:root[data-tone] .flow-shell .copy-row .btn { color:var(--tone-muted); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .copy-row .btn svg,
+:root[data-tone] .flow-shell .copy-row .btn span { color:var(--tone-accent); }
+:root[data-tone] .flow-shell .view-tab { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .view-tab.active { color:var(--tone-fg); border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .view-tab .count { color:var(--tone-accent); background:rgb(var(--tone-glow)/.09); }
+:root[data-tone] .flow-shell .job-strip b { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .job-strip #jobStage { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .tools .subtle { background:rgb(var(--tone-glow)/.025); color:var(--tone-muted); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .tools .danger-soft { color:var(--tone-metal); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .kpis { background:linear-gradient(125deg,rgb(var(--tone-glow)/.025),transparent 75%),var(--tone-card); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .kpis .kpi { border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .kpis .kpi .k { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .kpis .kpi .v { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .kpis .kpi.ok .v { color:var(--tone-accent); }
+:root[data-tone] .flow-shell .kpis .kpi.bad .v { color:var(--tone-bad); }
+:root[data-tone] .flow-shell .kpis .kpi .v small { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .progress { background:rgb(var(--tone-glow)/.13); }
+:root[data-tone] .flow-shell .progress>i { background:linear-gradient(90deg,var(--tone-button),var(--tone-accent)); }
+:root[data-tone] .flow-shell .progress-meta,
+:root[data-tone] .flow-shell .progress-meta #progressLabel { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .filter-tabs button { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .filter-tabs button>span { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .filter-tabs button.active { color:var(--tone-fg); background:rgb(var(--tone-glow)/.10); }
+:root[data-tone] .flow-shell .filter-tabs button.active>span { color:var(--tone-accent); }
+:root[data-tone] .flow-shell .gallery-density button,
+:root[data-tone] .flow-shell .toolbar,
+:root[data-tone] .flow-shell .toolbar .btn { color:var(--tone-muted); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .toolbar .count { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .toolbar .btn-accent { color:var(--tone-accent); background:rgb(var(--tone-glow)/.04); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .cardimg { background:var(--tone-card); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .cardimg:hover,
+:root[data-tone] .flow-shell .cardimg.sel { border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .cardimg .meta { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .cardimg .meta .garment,
+:root[data-tone] .flow-shell .cardimg .acts .btn { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .cardimg .acts { border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .cardimg .acts .btn:hover { color:var(--tone-fg); background:rgb(var(--tone-glow)/.08); }
+:root[data-tone] .flow-shell .cardimg .state,
+:root[data-tone] .flow-shell .cardimg .pick { background:var(--tone-panel); color:var(--tone-muted); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .cardimg.st-done .state { background:var(--tone-card); color:var(--tone-fg); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .cardimg.st-running .state { background:var(--tone-raised); color:var(--tone-accent); border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .cardimg.st-queued .state { background:var(--tone-panel); color:var(--tone-subtle); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .cardimg.st-queued .state::before { background:var(--tone-metal); }
+:root[data-tone] .flow-shell .canvas-foot { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .canvas-foot .dot { background:var(--tone-metal); }
+:root[data-tone] .flow-shell .composer { background:radial-gradient(ellipse at 0 0,rgb(var(--tone-glow)/.035),transparent 70%),var(--tone-raised); border-color:var(--tone-edge); box-shadow:inset 0 1px 0 rgb(var(--tone-glow)/.10); }
+:root[data-tone] .flow-shell .composer:focus-within { border-color:var(--tone-accent); }
+:root[data-tone] .flow-shell .composer-head { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .composer-head .brief-tag { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .composer-head #randomBrief { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .composer textarea { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .composer textarea::placeholder { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .prompt-chip { color:var(--tone-muted); background:rgb(var(--tone-glow)/.04); }
+:root[data-tone] .flow-shell .prompt-chip.chosen { color:var(--tone-accent); background:rgb(var(--tone-glow)/.11); }
+:root[data-tone] .flow-shell .generate-actions .btn-ghost { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .btn-primary { color:var(--tone-action); background:linear-gradient(110deg,var(--tone-button),var(--tone-button-end)); border-color:var(--tone-edge); box-shadow:inset 0 1px 0 rgb(var(--tone-glow)/.18),0 4px 20px rgb(var(--tone-halo)/.12); }
+:root[data-tone] .flow-shell .btn-primary:hover:not(:disabled) { color:var(--tone-action); background:linear-gradient(110deg,var(--tone-button-end),var(--tone-button)); box-shadow:inset 0 1px 0 rgb(var(--tone-glow)/.25),0 5px 23px rgb(var(--tone-glow)/.21); }
+:root[data-tone] .flow-shell .btn-primary.loading { color:var(--tone-action)!important; }
+:root[data-tone] .flow-shell .btn-primary.loading::before { border-color:var(--tone-line); border-top-color:var(--tone-fg); }
+:root[data-tone] .flow-shell .more-actions summary { color:var(--tone-muted); }
+:root[data-tone] .flow-shell .more-actions>div,
+:root[data-tone] .flow-shell .drawer { background:var(--tone-panel); border-color:var(--tone-edge); color:var(--tone-fg); }
+:root[data-tone] .flow-shell .drawer-head .who b { color:var(--tone-fg); }
+:root[data-tone] .flow-shell .drawer-head .who span { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .drawer .bubble { background:var(--tone-card); color:var(--tone-fg); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .msg.user .bubble { background:rgb(var(--tone-glow)/.15); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .drawer .quick button { color:var(--tone-muted); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .prompt-preview,
+:root[data-tone] .flow-shell .tool-result,
+:root[data-tone] .flow-shell .log { background:var(--tone-inset); color:var(--tone-muted); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .tool-line,
+:root[data-tone] .flow-shell .hitem,
+:root[data-tone] .flow-shell .frow { color:var(--tone-muted); background:rgb(var(--tone-glow)/.025); border-color:var(--tone-line); }
+:root[data-tone] .flow-shell .hint,
+:root[data-tone] .flow-shell .tip { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .toast { background:var(--tone-raised); border-color:var(--tone-edge); color:var(--tone-fg); }
+:root[data-tone] .flow-shell .toasts .toast.bad { background:var(--tone-card); color:var(--tone-bad); border-color:var(--tone-bad); }
+:root[data-tone] .flow-shell .empty { background:rgb(var(--tone-glow)/.025); color:var(--tone-muted); border-color:var(--tone-line); }
+:root[data-tone] .cardimg .shot.flash-card { background:var(--tone-inset); border-color:var(--tone-line); }
+:root[data-tone] .card-back { background:radial-gradient(ellipse at 10% 0%,rgb(var(--tone-glow)/.19),transparent 55%),radial-gradient(ellipse at 100% 100%,rgb(var(--tone-halo)/.15),transparent 60%),linear-gradient(145deg,var(--tone-raised),var(--tone-inset) 70%); }
+:root[data-tone] .card-back::before { border-color:var(--tone-edge); background:linear-gradient(135deg,rgb(var(--tone-glow)/.035) 25%,transparent 25%) 0 0/25px 25px,linear-gradient(315deg,rgb(var(--tone-glow)/.025) 25%,transparent 25%) 0 0/25px 25px; }
+:root[data-tone] .card-back::after { border-color:var(--tone-line); }
+:root[data-tone] .back-top { color:var(--tone-subtle); }
+:root[data-tone] .back-code,
+:root[data-tone] .back-emblem svg { color:var(--tone-accent); }
+:root[data-tone] .back-emblem::before { border-color:var(--tone-edge); }
+:root[data-tone] .back-emblem::after { border-color:var(--tone-line); }
+:root[data-tone] .back-emblem svg { filter:drop-shadow(0 0 10px rgb(var(--tone-glow)/.14)); }
+:root[data-tone] .back-status { color:var(--tone-fg); }
+:root[data-tone] .back-message { color:var(--tone-muted); }
+:root[data-tone] .back-meter { background:rgb(var(--tone-glow)/.14); }
+:root[data-tone] .back-meter i { background:linear-gradient(90deg,var(--tone-button),var(--tone-accent)); }
+:root[data-tone] .st-running .card-back { background:radial-gradient(ellipse at 12% 0%,rgb(var(--tone-glow)/.22),transparent 55%),radial-gradient(ellipse at 100% 100%,rgb(var(--tone-halo)/.18),transparent 60%),linear-gradient(145deg,var(--tone-raised),var(--tone-inset) 75%); }
+:root[data-tone] .st-running .back-emblem svg,
+:root[data-tone] .st-running .back-status { color:var(--tone-accent); }
+:root[data-tone] .st-running .card-back::before { border-color:var(--tone-accent); }
+:root[data-tone] .st-failed .card-back { background:var(--tone-card); }
+:root[data-tone] .st-failed .back-status { color:var(--tone-bad); }
+:root[data-tone] .cardimg .shot.flash-card::before { color:var(--tone-muted); background:var(--tone-inset); border-color:var(--tone-line); }
+:root[data-tone] .cardimg .front-retry { background:var(--tone-card); color:var(--tone-fg); }
+:root[data-tone] #lightbox[open] { background:var(--tone-panel); color:var(--tone-fg); border-color:var(--tone-edge); }
+:root[data-tone] #lightbox .lightbox-head,
+:root[data-tone] #lightbox .lightbox-foot { border-color:var(--tone-line); }
+:root[data-tone] #lightbox .lightbox-stage { background:radial-gradient(ellipse at 50% 10%,var(--tone-raised),var(--tone-inset) 75%); }
+:root[data-tone] #lightbox .lightbox-foot,
+:root[data-tone] #lightbox .image-loading { color:var(--tone-muted); }
+:root[data-tone] #lightbox .lightbox-foot a { color:var(--tone-accent); }
+:root[data-tone] #lightbox .lightbox-prev,
+:root[data-tone] #lightbox .lightbox-next { background:var(--tone-card); color:var(--tone-fg); border-color:var(--tone-line); }
+:root[data-tone] #railAvatar { background:var(--tone-raised); border-color:var(--tone-edge); box-shadow:0 0 0 4px rgb(var(--tone-glow)/.035); }
+:root[data-tone] #railAvatar:hover,
+:root[data-tone] #railAvatar[aria-expanded="true"] { box-shadow:0 0 0 4px rgb(var(--tone-glow)/.08),0 0 25px rgb(var(--tone-glow)/.20); }
+:root[data-tone] .avatar-status { background:var(--tone-metal); border-color:var(--tone-panel); }
+:root[data-tone] .profile-card { color:var(--tone-fg); background:linear-gradient(150deg,var(--tone-raised),var(--tone-panel)); border-color:var(--tone-edge); }
+:root[data-tone] .profile-header>img { border-color:var(--tone-line); }
+:root[data-tone] .profile-header .who-chip,
+:root[data-tone] .profile-header .iconbtn { color:var(--tone-muted); }
+:root[data-tone] .profile-header .who-chip small { color:var(--tone-accent); background:rgb(var(--tone-glow)/.08); }
+:root[data-tone] .profile-overview { background:rgb(var(--tone-glow)/.03); color:var(--tone-subtle); border-color:var(--tone-line); }
+:root[data-tone] .profile-overview>span:last-child { color:var(--tone-metal); }
+:root[data-tone] .profile-option { color:var(--tone-fg); }
+:root[data-tone] .profile-option:hover { background:rgb(var(--tone-glow)/.055); }
+:root[data-tone] .profile-option-icon,
+:root[data-tone] .profile-option-icon.mint,
+:root[data-tone] .profile-option-icon.warm { color:var(--tone-accent); background:rgb(var(--tone-glow)/.06); border-color:var(--tone-line); }
+:root[data-tone] .profile-option small,
+:root[data-tone] .profile-arrow,
+:root[data-tone] .profile-footer { color:var(--tone-subtle); }
+:root[data-tone] .profile-footer { border-color:var(--tone-line); }
+:root[data-tone] .profile-footer button { color:var(--tone-muted); }
+:root[data-tone] .mobile-tabs .mobile-profile { background:var(--tone-raised); border-color:var(--tone-edge); }
+:root[data-tone] .flow-shell .mobile-tabs button { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .mobile-tabs button>span { color:var(--tone-subtle); }
+:root[data-tone] .flow-shell .mobile-tabs button.active { color:var(--tone-fg); background:rgb(var(--tone-glow)/.10); }
+:root[data-tone] .flow-shell .mobile-tabs button.active>span { color:var(--tone-accent); }
+:root[data-tone] .flow-shell .badge.done,
+:root[data-tone] .flow-shell .badge.ok { color:var(--tone-accent); background:rgb(var(--tone-glow)/.05); border-color:var(--tone-line); }
+
+/* One compact studio keeps the workbench usable while comparing palettes. */
+.palette-launch { display:flex; align-items:center; gap:11px; margin-left:auto; flex:0 0 auto; }
+.studio-trigger { display:flex; align-items:center; gap:7px; min-height:32px; padding:5px 9px; border:1px solid var(--tone-edge); border-radius:8px; background:var(--tone-card); color:var(--tone-fg); font-size:11px; }
+.studio-trigger:hover { border-color:var(--tone-accent); }
+.studio-trigger svg { width:12px; height:12px; }
+.studio-swatch { width:11px; height:11px; border-radius:50%; box-shadow:0 0 10px rgb(var(--tone-glow)/.14); }
+.palette-overview-link { font-size:10px; color:var(--tone-subtle); white-space:nowrap; }
+.palette-overview-link:hover { color:var(--tone-fg); }
+.flow-bar .demo-note { display:none; }
+.flow-bar .scenario-tools { margin-left:0; }
+.palette-studio { position:fixed; z-index:56; padding:17px; overflow:auto; border:1px solid var(--tone-edge); border-radius:15px; background:linear-gradient(140deg,var(--tone-raised),var(--tone-panel)); color:var(--tone-fg); box-shadow:0 18px 55px #0009; animation:studioIn .18s ease-out; }
+.palette-studio header { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; }
+.palette-studio header>div { display:grid; gap:5px; }
+.palette-studio header small { color:var(--tone-subtle); font-size:8px; letter-spacing:2px; }
+.palette-studio header b { font-size:14px; font-weight:550; letter-spacing:.5px; }
+.studio-close { width:28px; height:28px; border-radius:7px; color:var(--tone-muted); background:rgb(var(--tone-glow)/.05); font-size:20px; }
+.studio-palettes { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.studio-palettes button { min-width:0; display:grid; justify-items:start; gap:5px; padding:8px; border:1px solid var(--tone-line); border-radius:9px; background:var(--tone-inset); color:var(--tone-muted); text-align:left; }
+.studio-palettes button.selected { color:var(--tone-fg); border-color:var(--tone-accent); background:rgb(var(--tone-glow)/.08); }
+.studio-palettes button b { font-size:11px; font-weight:500; }
+.studio-palettes button small { font-size:7px; color:var(--tone-subtle); letter-spacing:1px; }
+.studio-palette-strip { display:flex; width:100%; height:18px; overflow:hidden; border-radius:4px; margin-bottom:3px; border:1px solid #fff1; }
+.studio-palette-strip i { flex:1; }
+.studio-atmosphere-head { display:flex; align-items:center; justify-content:space-between; margin:18px 0 10px; gap:9px; }
+.studio-atmosphere-head b { font-size:11px; font-weight:500; }
+.studio-atmosphere-head span { font-size:9px; color:var(--tone-subtle); }
+.studio-effect-toggles { display:flex; gap:7px; }
+.studio-effect-toggles label { flex:1; display:flex; align-items:center; gap:5px; padding:7px; border:1px solid var(--tone-line); border-radius:7px; color:var(--tone-muted); font-size:11px; cursor:pointer; background:var(--tone-inset); }
+.studio-effect-toggles input { accent-color:var(--tone-accent); width:12px; height:12px; margin:0; }
+.studio-intensity { display:flex; align-items:center; gap:12px; margin:17px 0; font-size:10px; color:var(--tone-muted); }
+.studio-intensity input { min-width:0; flex:1; accent-color:var(--tone-accent); cursor:pointer; }
+.studio-intensity output { min-width:31px; font-size:10px; text-align:right; font-variant-numeric:tabular-nums; }
+.palette-studio footer { border-top:1px solid var(--tone-line); padding-top:12px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.palette-studio footer>span { color:var(--tone-subtle); font-size:9px; }
+.palette-studio footer>button { padding:5px 7px; border-radius:6px; font-size:10px; color:var(--tone-fg); background:rgb(var(--tone-glow)/.08); border:1px solid var(--tone-line); }
+:root[data-atmosphere-paused="true"] body.flow-shell::after,
+:root[data-atmosphere-paused="true"] .flow-shell .controls::after,
+:root[data-atmosphere-paused="true"] .flow-shell .workspace>.canvas::after { animation-play-state:paused; }
+@keyframes studioIn { from { opacity:0; transform:translateY(-5px); } to { opacity:1; transform:none; } }
+@media(max-width:1250px) { .flow-bar .flow-context-text { display:none; } .palette-overview-link { display:none; } .palette-launch { margin-left:auto; } .flow-bar { gap:10px; } }
+@media(max-width:760px) { .flow-bar .flow-context { display:none; } .palette-launch { margin-left:0; } .flow-bar .scenario-tools { margin-left:auto; } .flow-bar .scenario-tools select { max-width:172px; } .studio-trigger { font-size:10px; min-height:30px; padding:4px 7px; gap:6px; } .flow-bar { gap:7px; } .palette-studio { padding:15px; } }
+@media(max-width:380px) { .flow-bar .scenario-tools select { max-width:161px; font-size:10px; } .flow-bar .scenario-tools { gap:1px; } .flow-bar .scenario-tools button { font-size:10px; padding:6px 4px; } }
+@media(prefers-reduced-motion:reduce) { .palette-studio { animation:none; } }
