@@ -533,6 +533,13 @@ GEMINI_API_KEY=...
 | `terra-eco` | `gpt-image-2-eco` | 便宜快速，适合先小批量试提示词 |
 | `local` | 本地算法 | 不调接口，只换颜色、图案零失真，秒出图（见 §7.5） |
 
+### 模型下拉只列「有报价」的（9.4.3）
+
+65535 网关有 36 个模型，其中二十多个没报价。现在 `/api/models` 默认只返回**能算出单价**的
+（价格解析链：接口 `model_prices` → 飞书「模型定价」表 → `pricing.json`），并保留当前正在用的那个；
+`defaults.models_only_priced`（默认 `true`）可以关掉，排查时用
+`/api/models?provider=terra&include_unpriced=true` 看全量。实测备用接口从 36 个收敛到 9 个。
+
 ### 哪些接口要排队/限流：按接口开关（7.6.8）
 
 飞书闸门（15 个槽位 + 排队号）和并发上限**只对需要限流的接口生效**。
@@ -930,6 +937,13 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **款式锁 `GARMENT TYPE LOCK`（9.4.3）**：飞书改款记录 1382~1390 出现「基准色对、派生色变成卫衣」。
+  根因是**派生色**（跟随基准只改颜色）的提示词里既没有版型描述、也没有 no hood —— 模型只被要求
+  「别动形状、改颜色」，一部分颜色就自己发挥成帽兜卫衣。现在基准/派生/只换色/两阶段/返工统一注入
+  `GARMENT TYPE LOCK`：写明目标款式短语 + 按款式列出不许出现的部件（非卫衣 → no hood / no drawstrings /
+  no kangaroo pocket；平口 → no rib-knit cuffs；短袖 → no long sleeves），否定词同步追加；
+  卫衣款式自动不加 no hood。真机用「连帽卫衣原图 → 24 长袖 T 恤」验证通过，
+  回归 `python tools/check_garment_lock.py`。
 - **原图 + 效果图（8.0.0）**：款式表《墨西哥-服装款式代号表.xlsx》里每个款式每个颜色都有一张
   **效果图**（1500×1500 白底官方平铺产品图）。现在生图**必定带着效果图**：
   1. 导入：`python tools/import_style_catalog.py`（读 `library/source/*.xlsx`，把每色效果图落到

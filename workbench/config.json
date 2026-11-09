@@ -78,7 +78,8 @@
     },
     "subject": "auto",
     "retry_on_person": false,
-    "shape_lock": "master"
+    "shape_lock": "master",
+    "models_only_priced": true
   },
   "providers": {
     "terra": {

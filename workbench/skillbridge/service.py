@@ -396,13 +396,17 @@ class Workbench:
         self._model_cache[provider_name] = (time.time(), payload)
         return payload
 
-    async def list_models(self, name: str | None, *, refresh: bool = False) -> dict:
+    async def list_models(
+        self, name: str | None, *, refresh: bool = False, include_unpriced: bool = False
+    ) -> dict:
         """Pull the provider's model catalogue so the operator can pick a real id."""
         provider = self._get_provider_any(name)
         cached = self._model_cache.get(provider.name)
         if cached and not refresh and time.time() - cached[0] < MODEL_CACHE_TTL:
             payload = self._priced_models(cached[1], provider.name)
             payload["cached"] = True
+            if not include_unpriced:
+                payload = self._keep_priced_models(payload, provider)
             return payload
 
         current = str(provider.cfg.get("model") or "")
@@ -441,7 +445,38 @@ class Workbench:
         }
         self._model_cache[provider.name] = (time.time(), payload)
         self._write_models_cache(provider.name, payload)
+        if not include_unpriced:
+            payload = self._keep_priced_models(payload, provider)
         return payload
+
+    def _keep_priced_models(self, payload: dict, provider: Provider) -> dict:
+        """只列「有报价」的模型（默认行为）。
+
+        客户要求（2026-11-09）：备用接口按飞书「模型定价」表来读，不要把网关那 20 多个没报价的
+        模型全铺进下拉。规则：留**能算出单价**的（飞书定价表 → 接口覆盖 → pricing.json 任一命中），
+        外加当前正在用的那个（否则下拉框显示不出当前值）。飞书表读不到时会退到 pricing.json，
+        名单会变长 —— 这是有意的降级，不是 bug。
+        """
+        options = dict(self.defaults() or {})
+        setter = getattr(provider, "setting", None)
+        override = setter("models_only_priced", None) if callable(setter) else None
+        if override is None:
+            enabled = bool(options.get("models_only_priced", True))
+        else:
+            enabled = bool(override)
+        if not enabled:
+            return payload
+        models = list(payload.get("models") or [])
+        kept = [m for m in models if m.get("price") is not None or m.get("current")]
+        if len(kept) == len(models):
+            return payload
+        result = dict(payload)
+        result["models"] = kept
+        result["count"] = len(kept)
+        result["image_models"] = [m["id"] for m in kept if m.get("image")]
+        result["filtered_unpriced"] = len(models) - len(kept)
+        result["filter_note"] = "只列有报价的模型（飞书「模型定价」表 / 接口价目）"
+        return result
 
     def get_provider(self, name: str | None) -> Provider:
         name = (name or "").strip()

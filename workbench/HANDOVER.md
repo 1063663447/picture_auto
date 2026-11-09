@@ -151,6 +151,13 @@ workbench/
   3. 平口袖口原句 "sleeve stays at full width" 与紧身款冲突 → 带效果图时用 `CUFF_PLAIN_CLAUSE_REF`
 - 接口只支持单图（`max_images<2`）或缺效果图 → 自动退回「原图 + 颜色参考图」
 
+### 4.3.5 款式锁（9.4.3，别再删）
+派生色（跟随基准只改颜色）的提示词必须同时说清楚「这是什么款、不许出现哪些部件」，
+否则模型会把长袖 T 恤/索拉娜短袖画成帽兜卫衣（2026-11-09 飞书 1382~1390 实测 9 张错 4 张）。
+实现：`prompts.garment_lock()` / `garment_forbidden()` / `garment_negative()`，
+基准、派生、只换色、两阶段、返工全部注入；卫衣款式自动不加 no hood。
+回归：`tools/check_garment_lock.py`。
+
 ### 4.4 同款各色一致性（内部固定行为，界面无开关）
 第一个颜色 = 基准（原图 + 效果图）；其余颜色 = **基准成品 + 该色效果图**，
 提示词用 `MASTER_EFFECT_CLAUSE`（版型/印花/场景照基准，颜色照效果图）。
@@ -232,6 +239,9 @@ workbench/
   飞书表存在时会把本地价目整份替换掉，所以新增模型**必须**在 `config.json` 的接口 `model_prices` 里也写一份，
   否则飞书刷新后会回落到「未定价」。
 - 主接口 a6api 用 `fixed_unit_price=0.038` 覆盖所有模型；备用接口不设 fixed，按模型逐条给价。
+- **模型下拉默认只列有报价的**（`defaults.models_only_priced=true`，9.4.3）：备用接口 36 个模型 → 9 个；
+  想用没报价的模型，先给它报价（飞书表或接口 `model_prices`），或用
+  `/api/models?provider=terra&include_unpriced=true` 看全量。
 
 ## 7. 关键数据（实测，引用时注意日期 2026-11）
 

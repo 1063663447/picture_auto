@@ -1,0 +1,36 @@
+fix(prompt+ui): 派生色不再变成帽兜卫衣（款式锁）；备用接口模型列表只列有报价的
+
+一、飞书改款记录 1382~1390：预期长袖却出卫衣（9 张错 4 张）
+现象：3 款式 × 3 颜色的一单，基准色都对、部分派生色变成带帽兜抽绳的卫衣。
+排查：
+- 先把 9 张成品图从飞书下载逐张核对（data/test/feishu-1382-1390/contact-sheet.png），
+  错的是 03-杏色/03-白色/23-蓝色/24-宝蓝色（都不是基准色）
+- 再核对三个款式的 49 张效果图（data/test/effect-audit/），颜色与图全部对得上，排除数据问题
+根因：款式描述只写在**基准色**提示词里。派生色走 build_master_recolor（只改颜色），
+提示词里既没有 garment.phrase，也没有任何 no hood / no drawstrings —— 模型被要求「别动形状、改颜色」，
+一部分颜色就自己发挥成卫衣。
+修法：新增款式锁 GARMENT TYPE LOCK（prompts.garment_lock/garment_forbidden/garment_negative）
+- 写明目标款式短语 + 按款式列出不许出现的部件：非卫衣 → no hood / no drawstrings /
+  no kangaroo pocket / no sweatshirt body；平口 → no rib-knit cuffs/hem；短袖 → no long sleeves；
+  长袖 → no short sleeves
+- 基准、派生、只换色、两阶段、返工统一注入；否定词追加 Do not add hood, drawstrings, ...
+- 卫衣款式自动不加 no hood（靠 slug/phrase 判定）
+真机验证：故意用「连帽卫衣原图 → 24 长袖 T 恤」最容易翻车的输入，terra/gpt-image-2.5-sunburst，
+黑色（基准）36.5s、宝蓝色（派生）38.8s，两张都是干净长袖 T 恤、无帽兜抽绳（宝蓝正是原来错的那色）
+→ data/test/garment-lock/
+回归：tools/check_garment_lock.py（11 个款式的基准/派生/否定词 + 卫衣反例 + 长短袖互斥）
+
+二、备用接口模型列表只列有报价的
+要求：按飞书「模型定价」表读，不要把网关 36 个模型全铺出来。
+修法：service.list_models 默认只保留能算出单价的模型（接口 model_prices → 飞书定价表 → pricing.json），
+始终保留当前在用的那个；新增 defaults.models_only_priced（默认 true）与 provider 级覆盖；
+/api/models 增加 include_unpriced=true 看全量。
+实测：/api/models?provider=terra 由 36 → 9（隐藏 27），a6api 仍为 1。
+
+其他
+- config.json: defaults.models_only_priced=true
+- 新增 CHANGELOG_GARMENT_LOCK_9.4.3.md；README（款式锁一节 + 模型下拉说明）、HANDOVER（§4.3.5、§6.5）
+- 验证：check_garment_lock 新增 + selftest/check_effect_ref/check_no_person/check_cuff/
+  check_shape_lock/check_primary_workflow/check_garment_priority/check_person_consistency/
+  check_artwork_topology 共 10 个离线脚本全绿；线上 /api/models 9 个、/api/gate 200
+- 本轮付费调用仅 2 张（¥0.13 报价口径）

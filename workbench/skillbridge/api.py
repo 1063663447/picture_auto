@@ -365,9 +365,19 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"ok": True, **await bench.gate_status()}
 
     @app.get("/api/models")
-    async def list_models(request: Request, provider: str = "", refresh: bool = False):
+    async def list_models(
+        request: Request,
+        provider: str = "",
+        refresh: bool = False,
+        include_unpriced: bool = False,
+    ):
         bench = wb(request)
-        return {"ok": True, **await bench.list_models(provider, refresh=refresh)}
+        return {
+            "ok": True,
+            **await bench.list_models(
+                provider, refresh=refresh, include_unpriced=include_unpriced
+            ),
+        }
 
     @app.get("/api/refs/{type_dir}/{filename}")
     async def reference_image(request: Request, type_dir: str, filename: str):

@@ -1166,6 +1166,7 @@ def build_single_pass(
     want_effect = has_effect(color) if effect is None else bool(effect)
     parts = [
         prompt,
+        garment_lock(garment),
         sleeve_clause(garment),
         cuff_clause(garment, reference=want_effect),
         color_hint(color).strip(),
@@ -1256,6 +1257,63 @@ def build_recolor_only(
     return enforce_composition_rule(enforce_subject_rule(tidy_articles(base), subject))
 
 
+#: **款式锁**：把「这件衣服到底是什么款、哪些部件不许出现」显式写出来。
+#: 起因（2026-11-09，飞书改款记录 1382~1390）：3 款式 × 3 颜色的单子里，
+#: 基准色是对的，但**派生色**（跟随基准只改颜色）的提示词里既没有版型描述、也没有 no hood，
+#: 模型自己发挥，把长袖 T 恤/索罗娜短袖画成了**带帽兜抽绳的卫衣**（9 张里错 4 张）。
+#: 所以「只改颜色」必须同时说清楚「这是哪件衣服、不许加帽兜/抽绳/口袋/罗纹」。
+GARMENT_LOCK_TEMPLATE = (
+    "GARMENT TYPE LOCK — the finished garment must be {phrase}. Keep it that exact garment type in "
+    "every pixel: {forbidden}. The printed artwork, its placement and the scene stay as instructed, "
+    "but the garment itself must never drift into another style."
+)
+
+#: 明显属于「不该出现」的部件（按款式特征生成，不写死在某一个款上）
+_HOOD_FREE_HINT = ("no hood", "not a hoodie", "no drawstring", "no kangaroo pocket")
+
+
+def garment_forbidden(garment: GarmentType) -> str:
+    """按款式给出「不许出现」的部件清单。卫衣类才允许帽兜/抽绳/罗纹。"""
+    phrase = str(getattr(garment, "phrase", "") or "").lower()
+    slug = str(getattr(garment, "slug", "") or "").lower()
+    is_hood = "hoodie" in phrase or "hoodie" in slug or "hood" in phrase.replace("no hood", "")
+    cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
+    sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    items: list[str] = []
+    if not is_hood:
+        items += [
+            "no hood",
+            "no drawstrings",
+            "no kangaroo pocket",
+            "no sweatshirt or fleece body",
+        ]
+    if cuff != "ribbed":
+        items += ["no rib-knit cuffs", "no rib-knit hem", "no elastic gathered cuff or hem"]
+    if sleeve == "short":
+        items += ["no long sleeves", "no three-quarter sleeves"]
+    elif sleeve == "long":
+        items += ["no short sleeves", "no rolled-up sleeves"]
+    return ", ".join(items) if items else "no change to the garment type"
+
+
+def garment_lock(garment: GarmentType | None) -> str:
+    """款式锁整段；没有款式信息就返回空。"""
+    if garment is None:
+        return ""
+    phrase = " ".join(str(getattr(garment, "phrase", "") or "").split()) or garment.slug
+    return GARMENT_LOCK_TEMPLATE.format(phrase=phrase, forbidden=garment_forbidden(garment))
+
+
+def garment_negative(garment: GarmentType | None) -> str:
+    """否定词版：把同样的部件清单写成 Do not ... 形式。"""
+    if garment is None:
+        return ""
+    forbidden = garment_forbidden(garment)
+    if not forbidden or forbidden == "no change to the garment type":
+        return ""
+    return "Do not add " + forbidden.replace("no ", "") + "."
+
+
 def build_master_recolor(
     color: ColorRef,
     *,
@@ -1275,6 +1333,7 @@ def build_master_recolor(
     if garment is not None:
         base = (
             base
+            + " " + garment_lock(garment)
             + " " + sleeve_clause(garment)
             + " " + cuff_clause(garment, reference=want_effect)
         )
@@ -1305,6 +1364,9 @@ def full_negative(
         extra += " " + NEGATIVE_ARTWORK_TOPOLOGY
     if garment is not None:
         extra = extra + " " + sleeve_negative(garment) + " " + cuff_negative(garment)
+        hood_negative = garment_negative(garment)
+        if hood_negative:
+            extra = extra + " " + hood_negative
     return enforce_subject_negative((base + " " + extra).strip(), subject)
 
 
