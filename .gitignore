@@ -14,3 +14,5 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+# 构建资产（embed python + wheel，共 23MB，可从旧包重新提取：tools/extract_portable_assets.py）
+scratch/
