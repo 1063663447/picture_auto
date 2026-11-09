@@ -19,3 +19,10 @@ library/source/*.xlsx
 
 # 临时探测脚本
 tmp_*.py
+
+# 便携包产物（每个 80~90MB，共 260MB）：发布物不进仓库，按需重新构建
+releases/
+# 沙箱里的整份 workbench 副本（含 data/，200MB+）
+ui-sandbox/live-3d-v1/
+# 验证截图/对照页（体积大且可再生）
+validation/
