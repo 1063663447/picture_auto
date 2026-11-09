@@ -71,8 +71,11 @@ class OpenAICompatProvider(Provider):
             form["size"] = request.size
         elif cfg.get("send_size_auto"):
             form["size"] = "auto"
-        if request.quality and request.quality != "auto":
-            form["quality"] = request.quality
+        # 上游只收某些 quality 的模型（grok 系列只认 low/medium/auto）：
+        # 这里按模型收敛一次，避免 "upstream rejected the request" 直接失败。
+        quality = self.quality_for(self.model_name(request), request.quality)
+        if quality and quality != "auto":
+            form["quality"] = quality
         response_format = cfg.get("response_format", "b64_json")
         if response_format:
             form["response_format"] = str(response_format)

@@ -239,6 +239,9 @@ workbench/
   飞书表存在时会把本地价目整份替换掉，所以新增模型**必须**在 `config.json` 的接口 `model_prices` 里也写一份，
   否则飞书刷新后会回落到「未定价」。
 - 主接口 a6api 用 `fixed_unit_price=0.038` 覆盖所有模型；备用接口不设 fixed，按模型逐条给价。
+- **按模型收敛参数**（`defaults.quality_rules`，9.4.4）：grok 生图只认 `low/medium/auto`，
+  默认发 `high` 会被上游打回。建单时 `Provider.quality_for()` 收敛，`openai_compat._form()` 再兜一次；
+  收敛成 `auto` 时不发送该字段。别的模型不受影响，回归 `tools/check_model_params.py`。
 - **模型下拉默认只列有报价的**（`defaults.models_only_priced=true`，9.4.3）：备用接口 36 个模型 → 9 个；
   想用没报价的模型，先给它报价（飞书表或接口 `model_prices`），或用
   `/api/models?provider=terra&include_unpriced=true` 看全量。

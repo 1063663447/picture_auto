@@ -244,6 +244,32 @@ class Provider:
         raise NotImplementedError
 
     # -- model discovery ---------------------------------------------------- #
+    #: 有些模型只接受部分 quality 取值（例如 grok 系列只认 low / medium / auto）。
+    #: 规则写在 config 的 defaults.quality_rules 或 provider.quality_rules：
+    #:   [{"match": "grok-imagine", "allowed": ["low", "medium", "auto"], "default": "auto"}]
+    #: match 按模型 id 前缀匹配（不区分大小写），先命中的生效。
+    def quality_for(self, model: str, quality: str) -> str:
+        wanted = str(quality or "").strip().lower()
+        for rule in self.quality_rules():
+            match = str(rule.get("match") or "").strip().lower()
+            if not match:
+                continue
+            target = str(model or "").strip().lower()
+            if not (target.startswith(match) or match in target):
+                continue
+            allowed = [str(x).strip().lower() for x in (rule.get("allowed") or []) if str(x).strip()]
+            if not allowed or not wanted or wanted in allowed:
+                return wanted or str(rule.get("default") or allowed[0])
+            return str(rule.get("default") or allowed[0])
+        return wanted
+
+    def quality_rules(self) -> list[dict]:
+        rules: list[dict] = []
+        for source in (self.cfg.get("quality_rules"), (self.cfg.get("_global") or {}).get("quality_rules")):
+            if isinstance(source, list):
+                rules.extend(r for r in source if isinstance(r, dict))
+        return rules
+
     def model_name(self, request: EditRequest | None = None) -> str:
         override = getattr(request, "model", None) if request is not None else None
         return str(override or self.cfg.get("model") or "")

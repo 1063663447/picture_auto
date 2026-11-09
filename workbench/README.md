@@ -533,6 +533,28 @@ GEMINI_API_KEY=...
 | `terra-eco` | `gpt-image-2-eco` | 便宜快速，适合先小批量试提示词 |
 | `local` | 本地算法 | 不调接口，只换颜色、图案零失真，秒出图（见 §7.5） |
 
+### 按模型收敛参数：grok 只认 low / medium / auto（9.4.4）
+
+备用接口用 grok 生图时报过
+`upstream_error: This model only supports the following quality value(s): low, medium, auto.`
+—— 工作台默认发 `quality=high`，被上游直接打回。
+
+现在 `config.json → defaults.quality_rules` 里按**模型前缀**声明允许值：
+
+```jsonc
+"quality_rules": [
+  { "match": "grok-imagine", "allowed": ["low", "medium", "auto"], "default": "auto" }
+]
+```
+
+- 建单时 `Provider.quality_for()` 就把 `high` 收敛成 `auto`（任务参数/界面/预估一致）；
+- `openai_compat._form()` 发请求前再兜一次，历史任务重试、返工同样安全；
+- 收敛成 `auto` 时**不发送** quality 字段（auto 是上游默认）；
+- 别的模型（gpt-image 系列、主接口 a6api）完全不受影响；
+- 以后别的模型也有参数限制，加一条规则即可，不用改代码。
+
+回归：`python tools/check_model_params.py`。
+
 ### 模型下拉只列「有报价」的（9.4.3）
 
 65535 网关有 36 个模型，其中二十多个没报价。现在 `/api/models` 默认只返回**能算出单价**的

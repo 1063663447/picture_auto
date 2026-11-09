@@ -126,6 +126,12 @@ class Workbench:
         self.drafts_dir.mkdir(parents=True, exist_ok=True)
         self.reload_skill()
         self.providers: dict[str, Provider] = build_providers(self.config, self.env)
+        # 有些模型只接受部分 quality（grok 系列只认 low/medium/auto）：
+        # 把全局规则挂到每个 provider 上，provider 自己写的 quality_rules 优先。
+        global_rules = (self.config.get("defaults") or {}).get("quality_rules") or []
+        if global_rules:
+            for _provider in self.providers.values():
+                _provider.cfg.setdefault("_global", {})["quality_rules"] = global_rules
         # 跨机器的全局并发阀门（Cloudflare Worker）；没配就是 None，只用本机并发
         self.gate_config = GateConfig.from_config(
             (self.config.get("defaults") or {}).get("gate"), self.env
@@ -643,7 +649,8 @@ class Workbench:
                 rpm if rpm is not None else (provider_obj.setting("rpm", 0) or 0)
             ),
             "size": str(size or "auto"),
-            "quality": str(quality or "high"),
+            # 按模型收敛 quality（grok 只认 low/medium/auto），免得白跑一次才被上游打回
+            "quality": provider_obj.quality_for(chosen_model, str(quality or "high")),
             "seed": int(seed) if seed not in (None, "") else None,
             "max_retries": max(1, int(max_retries or defaults.get("max_retries") or 3)),
             "timeout_sec": float(timeout_sec or defaults.get("timeout_sec") or 90),

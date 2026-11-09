@@ -79,7 +79,19 @@
     "subject": "auto",
     "retry_on_person": false,
     "shape_lock": "master",
-    "models_only_priced": true
+    "models_only_priced": true,
+    "quality_rules": [
+      {
+        "match": "grok-imagine",
+        "allowed": [
+          "low",
+          "medium",
+          "auto"
+        ],
+        "default": "auto",
+        "note": "grok 生图只接受 low/medium/auto；传 high 会被上游打回（upstream_error: This model only supports ...）"
+      }
+    ]
   },
   "providers": {
     "terra": {
