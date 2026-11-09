@@ -22,6 +22,9 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 
 from . import agent, auth, feishu, feishu_export, harness, prompts, refine
+from . import subject as subject_mod
+from .harness_media import HarnessImage, inspect_images, rework_images
+from .harness_context import batch_context, batch_prompt, job_selections, target_requirements, validate_selections
 from .config import WORKBENCH_DIR
 from .providers.base import ProviderError
 from .service import Workbench, WorkbenchError
@@ -575,12 +578,16 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def pricing(request: Request):
         bench = wb(request)
         # 会去飞书读定价（同步 HTTP），必须丢线程池，否则出图轮询/SSE 会被卡住
-        return {"ok": True, **await asyncio.to_thread(bench.pricing_payload)}
+        account = None if current_role(request) == "admin" else current_account(request)
+        return {"ok": True, **await asyncio.to_thread(bench.pricing_payload, account=account)}
 
     @app.get("/api/usage")
     async def usage(request: Request):
         bench = wb(request)
-        return {"ok": True, **await asyncio.to_thread(bench.usage_payload)}
+        return {
+            "ok": True,
+            **await asyncio.to_thread(bench.usage_payload, account=current_account(request)),
+        }
 
     @app.post("/api/drafts")
     async def create_draft(request: Request, files: list[UploadFile] = File(...)):
@@ -598,79 +605,144 @@ def create_app(config_path: str | None = None) -> FastAPI:
         """对话框 + 流式输出：DeepSeek agent（可看图、可查价、可直接开工）优先，失败降级本地分析师。"""
         bench = wb(request)
         body = await request.json()
+        if not isinstance(body, dict):
+            return JSONResponse({"ok": False, "error": "请求必须是对象"}, status_code=400)
         mode = str(body.get("mode") or "intake")
         instruction = str(body.get("instruction") or "")
         job_id = str(body.get("job_id") or "")
-        task_ids = [str(t) for t in (body.get("task_ids") or [])]
         draft_id = str(body.get("draft_id") or "")
-        count = int(body.get("count") or 0)
-        base_prompt = str(body.get("base_prompt") or "")
-        garment_slug = body.get("garment_type")
-        colors = [str(c) for c in (body.get("colors") or []) if str(c).strip()]
-        model_choice = str(body.get("model") or "")
+        if mode not in {"intake", "rework"} or (mode == "rework" and not job_id):
+            return JSONResponse({"ok": False, "error": "返工需要有效的原任务"}, status_code=400)
+        mode = "rework" if job_id else mode
+        task_ids = body.get("task_ids") or []
+        if not isinstance(task_ids, list) or any(not isinstance(t, str) or not t for t in task_ids):
+            return JSONResponse({"ok": False, "error": "task_ids 必须是任务编号数组"}, status_code=400)
+        task_ids = list(dict.fromkeys(task_ids))
+        defaults = bench.defaults()
+        subject_choice = subject_mod.normalise(body.get("subject"))
+        subject_kind = subject_choice if subject_choice in {"garment", "person"} else ""
+        model_choice = str(body.get("model") or "").strip()
         provider_name = str(body.get("provider") or "").strip()
-        # 连续对话：前端把最近几轮问答带上来（[{role, content}]）
-        parsed_selections = [
-            {"garment_type": str(item.get("garment_type") or ""),
-             "garment_name": str(item.get("garment_name") or item.get("garment_type") or ""),
-             "colors": [str(c) for c in (item.get("colors") or [])]}
-            for item in (body.get("selections") or [])
-            if isinstance(item, dict)
-        ]
         history = [
             {"role": str(item.get("role") or ""), "content": str(item.get("content") or "")}
-            for item in (body.get("history") or [])
-            if isinstance(item, dict)
+            for item in (body.get("history") or []) if isinstance(item, dict)
         ]
-
         garment = None
         color = ""
         image_paths: list[Path] = []
-        subject_kind = ""
-        if job_id:
-            job = bench.get_job(job_id)
-            garment = bench.skill.type_by_alias(job.params.get("garment_type"))
-            ready = [t for t in job.tasks if t.out and (not task_ids or t.id in task_ids)]
-            count = count or len(ready)
-            if ready:
-                base_prompt = base_prompt or ready[0].prompt
-                color = ready[0].color_name
-                image_paths = [(job.root or bench.job_dir(job_id)) / str(t.out) for t in ready][:3]
-                subject_kind = str(getattr(ready[0], "subject", "") or "")
-            model_choice = model_choice or str(job.params.get("model") or "")
-        else:
-            try:
-                garment = bench.skill.type_by_alias(garment_slug)
-            except KeyError:
-                garment = bench.skill.type_by_alias(next(iter(bench.skill.types)))
-            if colors:
-                ref = garment.color(colors[0])
+        image_assets: list[HarnessImage] = []
+        image_notes: list[str] = []
+        target_prompts: list[dict] = []
+        task_context: list[dict] | None = None
+        inherited: dict = {}
+        try:
+            if job_id:
+                job = bench.get_job(job_id)
+                inherited = job.params
+                ready = [t for t in job.tasks if t.out and t.id in task_ids]
+                if task_ids and set(task_ids) != {t.id for t in ready}:
+                    raise ValueError("选中的返工任务不存在或尚无成品")
+                task_ids = [t.id for t in ready]
+                count = len(ready)
+                source_count = len({str(t.source) for t in ready})
+                task_context = []
+                rows = []
+                for task in ready:
+                    picked = bench.skill.type_by_alias(task.garment or inherited.get("garment_type"))
+                    # Rework colors may have a -v2 suffix; retain the actual task metadata.
+                    label = str(task.color)
+                    while label.endswith("-v2"):
+                        label = label.removesuffix("-v2")
+                    ref = picked.color(label)
+                    code = ref.file_code if ref else ""
+                    task_context.append({"task_id": task.id, "garment_type": picked.slug,
+                                         "garment_name": task.garment_name or picked.display_name,
+                                         "color": task.color, "color_name": task.color_name,
+                                         "hex": task.color_hex, "source": task.source,
+                                         "code": code,
+                                         "item": task.item, "view": task.view,
+                                         "subject": getattr(task, "subject", "")})
+                    rows.append({"garment_type": picked.slug, "color": task.color,
+                                 "name_zh": task.color_name, "hex": task.color_hex, "code": code})
+                    target_prompts.append({"task_id": task.id, "garment_type": picked.slug,
+                                           "color": task.color, "prompt": task.prompt,
+                                           "subject": subject_choice if subject_choice != "auto" else subject_mod.task_kind(job, task, bench.get_job)})
+                parsed_selections = []
+                for row in rows:
+                    picked = bench.skill.type_by_alias(row["garment_type"])
+                    selected = next((s for s in parsed_selections if s["garment_type"] == picked.slug), None)
+                    if selected is None:
+                        selected = {"garment_type": picked.slug, "garment_name": picked.display_name,
+                                    "colors": [], "color_details": []}
+                        parsed_selections.append(selected)
+                    if row["color"] not in selected["colors"]:
+                        selected["colors"].append(row["color"])
+                        selected["color_details"].append({"label": row["color"], "name_zh": row["name_zh"],
+                                                          "hex": row["hex"], "code": row["code"]})
+                image_assets, image_notes = rework_images(job, ready, bench.get_job, limit=agent.MAX_IMAGES)
+                image_paths = [row.path for row in image_assets]
+                kinds = {subject_mod.task_kind(job, t, bench.get_job) for t in ready}
+                subject_kind = subject_kind or (next(iter(kinds)) if len(kinds) == 1 else "")
+                model_choice = model_choice or str(inherited.get("model") or "")
+                provider_name = provider_name or str(inherited.get("provider") or "")
             else:
-                ref = garment.colors[0] if garment.colors else None
-            color = ref.name_zh if ref else ""
-            if draft_id:
-                image_paths = bench.draft_image_paths(draft_id)[:3]
-            if image_paths:
-                from . import subject as subject_mod
+                parsed_selections = validate_selections(bench.skill, body)
+                uploads = bench.draft_image_paths(draft_id) if draft_id else []
+                source_count = len(uploads)
+                count = source_count * sum(len(row["colors"]) for row in parsed_selections)
+                image_paths = uploads[:agent.MAX_IMAGES]
+                image_assets = [HarnessImage(path, "upload", f"原始上传图 · {path.name}") for path in image_paths]
+                if len(uploads) > len(image_paths):
+                    image_notes.append(f"本轮只附带 {len(image_paths)}/{len(uploads)} 个原图文件，不能声称已全部看过。")
+                if image_paths:
+                    subject_kind = subject_mod.detect(image_paths[0], subject_choice)
+            if parsed_selections:
+                garment = bench.skill.type_by_alias(parsed_selections[0]["garment_type"])
+            if sum(len(row["colors"]) for row in parsed_selections) == 1:
+                color = parsed_selections[0]["color_details"][0]["name_zh"]
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
-                subject_kind = subject_mod.detect(image_paths[0])
-            if not base_prompt and ref is not None:
-                base_prompt = prompts.build_single_pass(
-                    bench.skill,
-                    garment,
-                    ref,
-                    " ".join(instruction.split()) if instruction else None,
-                    subject=subject_kind,
-                )
+        def setting(name: str, fallback):
+            return body[name] if name in body and body[name] not in (None, "") else inherited.get(name, fallback)
 
-        defaults = bench.defaults()
+        pattern_mode = str(setting("pattern_mode", "") or prompts.detect_pattern_mode(instruction) or "preserve")
+        if pattern_mode not in prompts.PATTERN_MODES:
+            return JSONResponse({"ok": False, "error": "未知图案策略"}, status_code=400)
+        provider_obj = bench.get_provider(provider_name or None)
+        model_choice = model_choice or str(provider_obj.cfg.get("model") or "")
+        settings = {
+            "provider": provider_obj.name, "model": model_choice,
+            "size": str(setting("size", "auto")), "quality": str(setting("quality", "high")),
+            "output_format": str(setting("output_format", defaults.get("output_format") or "png")),
+            "subject_requested": subject_choice, "subject_resolved": subject_kind or "auto",
+            "pattern_mode": pattern_mode, "pattern_brief": str(setting("pattern_brief", "")),
+            "send_reference": setting("send_reference", True), "shape_lock": str(setting("shape_lock", "")),
+            "concurrency": setting("concurrency", "auto"), "generation_mode": str(setting("generation_mode", "single_pass")),
+        }
+        optional_settings = {name: setting(name, None) for name in
+                             ("rpm", "seed", "max_retries", "timeout_sec", "input_fidelity")
+                             if name in body or name in inherited}
+        settings.update(optional_settings)
+        estimate = bench.pricer.estimate(model_choice, count, settings["size"], provider=provider_obj.name)
+        context = batch_context(selections=parsed_selections, source_count=source_count,
+                                output_count=count, settings=settings, estimate=estimate, tasks=task_context)
+        if not job_id:
+            for selected in parsed_selections:
+                picked = bench.skill.type_by_alias(selected["garment_type"])
+                for label in selected["colors"]:
+                    ref = picked.color(label)
+                    prompt = prompts.build_single_pass(
+                        bench.skill, picked, ref, instruction if instruction and not harness.looks_like_question(instruction) else None,
+                        pattern_mode=pattern_mode, pattern_brief=settings["pattern_brief"], subject=subject_kind,
+                    )
+                    target_prompts.append({"garment_type": picked.slug, "color": label, "prompt": prompt})
+                    target_prompts[-1]["subject"] = subject_kind
+        # A single-task legacy preview is safe; multi-target previews must not be first-color prompts.
+        base_prompt = target_prompts[0]["prompt"] if len(target_prompts) == 1 else batch_prompt(context)
         agent_cfg = defaults.get("harness") or {}
         agent_key = str(bench.env.get(str(agent_cfg.get("api_key_env") or ""), "")).strip()
         agent_model = str(agent_cfg.get("model") or "").strip()
-        # 用请求指定的接口；没指定才回退默认接口。
-        # 以前这里写死 get_provider(None)，导致「改图选了 a6api 还是发到 65535」
-        provider_obj = bench.get_provider(provider_name or None)
-        model_choice = model_choice or str(provider_obj.cfg.get("model") or "")
 
         def sse(event: dict) -> bytes:
             payload = json.dumps(event["data"], ensure_ascii=False)
@@ -679,6 +751,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         async def local_frames(reason: str = ""):
             if reason:
                 yield sse({"event": "delta", "data": {"text": f"（{reason}，改用本地分析）\n\n"}})
+            if image_assets:
+                yield sse({"event": "delta", "data": {"text": "本地降级只分析需求文字，不具备原图／成品视觉识别能力；不假定已确认正反面内容。\n\n"}})
             async for event in harness.stream(
                 mode=mode,
                 instruction=instruction,
@@ -688,6 +762,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 count=count,
                 llm_cfg={},
                 env=bench.env,
+                batch_context=context,
+                target_prompts=target_prompts,
             ):
                 yield sse(event)
 
@@ -699,18 +775,21 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 garment=garment.display_name if garment else "",
                 color=color,
                 count=count,
-                selections=parsed_selections,
+                selections=job_selections(parsed_selections),
+                batch_context=context,
+                target_prompts=target_prompts,
                 model=model_choice,
                 base_prompt=base_prompt,
                 draft_id=draft_id,
                 job_id=job_id,
                 task_ids=task_ids,
-                pattern_mode=str(body.get("pattern_mode") or ""),
+                pattern_mode=pattern_mode,
                 pattern_modes=list(prompts.PATTERN_MODES),
+                subject=subject_kind or subject_choice,
             )
 
             async def tool_list_models() -> str:
-                data = await bench.list_models(None)
+                data = await bench.list_models(provider_obj.name)
                 rows = [m for m in data["models"] if m.get("image")]
                 lines = [
                     f"{m['id']} · {m.get('price_label') or '未定价'}"
@@ -718,71 +797,61 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 ]
                 return f"当前 {len(rows)} 个图片模型：\n" + "\n".join(lines[:30])
 
-            async def tool_inspect() -> str:
-                from .providers.local_recolor import LocalRecolorProvider, _border_color
+            inspection = None
+            attached_assets: list[HarnessImage] = []
 
-                helper = LocalRecolorProvider("inspect", {})
-                lines = []
-                targets = image_paths[:3]
-                if not targets:
-                    return "没有可检查的图片（还没上传或还没生成成品）"
-                for path in targets:
-                    if not path.is_file():
-                        continue
-                    try:
-                        with Image.open(path) as handle:
-                            width, height = handle.size
-                            rgb = handle.convert("RGB")
-                        background = _border_color(rgb)
-                        garment_tone = helper._estimate_garment(rgb, background)
-                        ratio = round(width / max(1, height), 3)
-                        line = f"{path.name}：{width}×{height}（横:竖 ≈ {ratio}）面料主色 RGB{garment_tone}"
-                        if max(width, height) < 1200:
-                            line += " · 分辨率偏低"
-                        lines.append(line)
-                    except Exception:  # noqa: BLE001
-                        lines.append(f"{path.name}：读取失败")
-                lines.append("提示：长边 < 1200px 的原图会被模型放大补细节，图案字形容易漂。")
-                return "\n".join(lines)
+            async def tool_inspect() -> str:
+                nonlocal inspection
+                if inspection is None:
+                    inspection = await asyncio.to_thread(inspect_images, attached_assets, image_notes)
+                return inspection
 
             async def tool_estimate(model: str, amount: int) -> str:
                 est = bench.pricer.estimate(
-                    model or model_choice,
-                    amount or count,
-                    str(body.get("size") or "auto"),
+                    model or model_choice, count, settings["size"], provider=provider_obj.name,
                 )
+                scope = f"{provider_obj.name} / {settings['size']}；当前完整批次 {count} 张"
                 if not est["priced"]:
-                    return f"{est['model']} 未定价（可在 pricing.json 里填单价）"
+                    return f"{scope}；{est['model']} 单价未知、总价未知（未定价）"
                 tier = f" · {est['tier']} 档" if est.get("tier") else ""
                 return (
-                    f"{est['model']} × {est['count']} 张 = {est['total']} {est['currency']}"
-                    f"（单价 {est['unit']} {est['currency']}/张{tier}）"
+                    f"{scope}；{est['model']} × {est['count']} 张 = {est['total']} {est['currency']}"
+                    f"（单价 {est['unit']} {est['currency']}/张{tier}）；仅报价，不修改当前模型或选择"
                 )
 
             async def tool_submit(extra: str) -> str:
+                if created["job_id"]:
+                    return f"任务 {created['job_id']} 已创建，请勿重复提交"
+                if mode != "intake":
+                    return "失败：当前是返工，请使用 submit_rework"
                 if not draft_id:
                     return "失败：没有待生成的图片草稿"
+                if not parsed_selections:
+                    return "失败：尚未选择款式和颜色，请在工作台选择后再提交"
                 uploads = await asyncio.to_thread(bench.draft_uploads, draft_id)
                 job = await asyncio.to_thread(
                     bench.create_job,
                     uploads,
-                    garment_type=garment.slug if garment else None,
-                    colors=colors or None,
-                    selections=ctx.selections or None,
-
+                    garment_type=parsed_selections[0]["garment_type"],
+                    selections=job_selections(parsed_selections),
                     provider=provider_obj.name,
                     model=model_choice,
-                    concurrency="auto",
-                    size=str(body.get("size") or "auto"),
-                    quality=str(body.get("quality") or "high"),
-                    output_format=str(body.get("output_format") or "png"),
+                    concurrency=settings["concurrency"],
+                    mode=settings["generation_mode"],
+                    size=settings["size"],
+                    quality=settings["quality"],
+                    output_format=settings["output_format"],
                     extra_requirements=extra,
-                    pattern_mode=str(ctx.pattern_mode or body.get("pattern_mode") or ""),
-                    pattern_brief=str(body.get("pattern_brief") or ""),
+                    pattern_mode=str(ctx.pattern_mode or pattern_mode),
+                    pattern_brief=settings["pattern_brief"],
+                    subject=subject_choice,
+                    send_reference=settings["send_reference"],
+                    shape_lock=settings["shape_lock"],
+                    **optional_settings,
                     account=current_account(request),
                 )
-                bench.start(job.id)
                 created["job_id"] = job.id
+                bench.start(job.id)
                 created["requirements"] = " ".join((extra or "").split())
                 est = job.params.get("estimate") or {}
                 cost = (
@@ -795,15 +864,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 )
 
             async def tool_rework(text: str) -> str:
-                if not job_id or not task_ids:
-                    return "失败：没有选中的成品"
+                if created["job_id"]:
+                    return f"任务 {created['job_id']} 已创建，请勿重复提交"
+                if mode != "rework" or not job_id or not task_ids:
+                    return "失败：没有选中的返工成品"
                 job = await bench.create_rework_job(
                     job_id, task_ids, text or instruction or "按需求调整",
                     provider=provider_obj.name, model=model_choice,
+                    subject=subject_choice,
+                    size=settings["size"],
+                    quality=settings["quality"],
+                    output_format=settings["output_format"],
+                    pattern_mode=str(ctx.pattern_mode or pattern_mode),
                     account=current_account(request),
                 )
-                bench.start(job.id)
                 created["job_id"] = job.id
+                bench.start(job.id)
                 created["requirements"] = " ".join((text or "").split())
                 return f"成功：返工任务 {job.id} 已提交，{len(job.tasks)} 张"
 
@@ -824,13 +900,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
             ctx.submit_generation = tool_submit
             ctx.submit_rework = tool_rework
             ctx.job_status = tool_status
-            for path in image_paths:
-                data_url = agent.encode_image(path)
+            for row in image_assets:
+                data_url = await asyncio.to_thread(agent.encode_image, row.path)
                 if data_url:
                     ctx.images.append(data_url)
+                    ctx.image_labels.append(row.label)
+                    attached_assets.append(row)
+                else:
+                    image_notes.append(f"{row.label} 编码失败，未发送给在线模型，不能声称已看到内容。")
+            ctx.image_notes = " ".join(image_notes)
 
-            if created["job_id"]:
-                pass
+            yield sse({"event": "meta", "data": {"mode": mode, "count": count, "batch_context": context}})
             async for event in agent.run_agent(
                 user_message=instruction,
                 ctx=ctx,
@@ -846,6 +926,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
                         created["requirements"] or data.get("requirements") or ""
                     )
                     data["instruction"] = " ".join(instruction.split())
+                    data["batch_context"] = context
+                    data["target_prompts"] = data.get("target_prompts") or target_requirements(
+                        target_prompts, data["requirements"], pattern_mode=ctx.pattern_mode, subject=ctx.subject,
+                    )
                     if created["job_id"]:
                         data["job_id"] = created["job_id"]
                     event = {"event": "prompt", "data": data}
@@ -863,6 +947,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 async for chunk in agent_frames(agent_cfg):
                     yield chunk
             except Exception as exc:  # noqa: BLE001 - 永远给用户一个可用结果
+                if created["job_id"]:
+                    yield sse({"event": "job", "data": {"job_id": created["job_id"]}})
+                    yield sse({"event": "delta", "data": {"text": "任务已创建；后续对话连接异常，请查看任务记录，勿重复提交。"}})
+                    return
                 async for chunk in local_frames(f"在线模型不可用：{type(exc).__name__}"):
                     yield chunk
 

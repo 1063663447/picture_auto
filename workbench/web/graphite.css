@@ -1,0 +1,354 @@
+/* Production GRAPHITE / CHROME (石墨银紫), selected from black-purple-v3.
+   Load after blackglass.css; retain data-tone="obsidian" and add
+   data-finish="graphite" to <html>. This layer changes finish, not layout.
+   Glass stays on the stationary ::before backing, never the scroll ancestor. */
+:root[data-finish="graphite"] {
+  --graphite-bg: #000;
+  --graphite-rail: #060608;
+  --graphite-panel: #101014;
+  --graphite-raised: #1a191f;
+  --graphite-card: #131217;
+  --graphite-inset: #09090c;
+  --graphite-accent: #b7b0d3;
+  --graphite-silver: #c1bdc9;
+  --graphite-text: #eeedf2;
+  --graphite-muted: #bbb6c6;
+  --graphite-subtle: #96909f;
+  --graphite-edge: #b8b0cc4b;
+  --graphite-button: #222027;
+  --graphite-button-end: #34303f;
+  --graphite-glass: rgba(15,15,19,.94);
+  --graphite-blur: 12px;
+  --graphite-radius: 11px;
+  --graphite-glow: 146 134 177;
+  --graphite-halo: 61 53 77;
+  --graphite-bad: #d9a7ba;
+  --graphite-warn: #d8c2a2;
+  --graphite-bad-edge: #d9a7ba70;
+  --graphite-warn-edge: #d8c2a270;
+  --graphite-ring: #b7b0d366;
+  --graphite-action: #f4f0fa;
+
+  /* Public tokens for the separately owned AI dialog and legacy components. */
+  --tone-bg: var(--graphite-bg);
+  --tone-rail: var(--graphite-rail);
+  --tone-panel: var(--graphite-panel);
+  --tone-raised: var(--graphite-raised);
+  --tone-card: var(--graphite-card);
+  --tone-inset: var(--graphite-inset);
+  --tone-fg: var(--graphite-text);
+  --tone-muted: var(--graphite-muted);
+  --tone-subtle: var(--graphite-subtle);
+  --tone-accent: var(--graphite-accent);
+  --tone-metal: var(--graphite-silver);
+  --tone-button: var(--graphite-button);
+  --tone-button-end: var(--graphite-button-end);
+  --tone-glow: var(--graphite-glow);
+  --tone-halo: var(--graphite-halo);
+  --tone-line: var(--graphite-edge);
+  --tone-edge: var(--graphite-edge);
+  --tone-bad: var(--graphite-bad);
+  --tone-action: var(--graphite-action);
+  --tone-orbit: var(--graphite-accent);
+  --bg: var(--graphite-bg);
+  --panel: var(--graphite-panel);
+  --surface: var(--graphite-panel);
+  --surface-2: var(--graphite-inset);
+  --surface-3: var(--graphite-raised);
+  --line: var(--graphite-edge);
+  --border: var(--graphite-edge);
+  --border-strong: var(--graphite-silver);
+  --ink: var(--graphite-text);
+  --fg: var(--graphite-text);
+  --fg-muted: var(--graphite-muted);
+  --fg-subtle: var(--graphite-subtle);
+  --muted: var(--graphite-muted);
+  --purple: var(--graphite-accent);
+  --primary: var(--graphite-accent);
+  --primary-hover: var(--graphite-silver);
+  --primary-soft: rgb(var(--graphite-glow) / .06);
+  --on-primary: var(--graphite-action);
+  --cyan: var(--graphite-silver);
+  --accent: var(--graphite-accent);
+  --accent-soft: rgb(var(--graphite-glow) / .06);
+  --danger: var(--graphite-bad);
+  --danger-soft: #d9a7ba12;
+  --warn: var(--graphite-warn);
+  --warn-soft: #d8c2a212;
+  --ring: var(--graphite-ring);
+  --glass: var(--graphite-glass);
+  --glass-strong: var(--graphite-panel);
+  --glass-line: var(--graphite-edge);
+  --glass-hi: #ffffff12;
+  --glass-tint: rgb(var(--graphite-glow) / .045);
+  --shadow-1: 0 1px 2px #0006;
+  --shadow-2: 0 12px 30px #0007;
+  --shadow-3: 0 22px 60px -20px #000a, 0 2px 8px #0007;
+  --shadow-glow: 0 4px 20px rgb(var(--graphite-glow) / .12);
+  --aurora-1: rgb(var(--graphite-halo) / .045);
+  --aurora-2: rgb(var(--graphite-halo) / .035);
+  --aurora-3: rgb(var(--graphite-glow) / .025);
+  --r-md: var(--graphite-radius);
+  --r-lg: var(--graphite-radius);
+  color-scheme: dark;
+  background: var(--graphite-bg);
+}
+
+:root[data-finish="graphite"][data-tone] body.flow-shell {
+  background: var(--graphite-bg);
+  color: var(--graphite-text);
+}
+:root[data-finish="graphite"][data-tone] body.flow-shell::before {
+  background: radial-gradient(ellipse 250px 150px at 93% 88%, rgb(var(--graphite-halo) / .045), transparent 78%);
+}
+:root[data-finish="graphite"][data-tone] body.flow-shell::after {
+  background: radial-gradient(ellipse 260px 100px at 31% 8%, rgb(var(--graphite-halo) / .04), transparent 75%);
+}
+:root[data-finish="graphite"] ::selection { background: #b7b0d340; color: var(--graphite-text); }
+:root[data-finish="graphite"] :is(button, a, input, select, textarea, summary):focus-visible {
+  outline-color: var(--graphite-accent);
+}
+:root[data-finish="graphite"] :is(input[type="checkbox"], input[type="radio"]) { accent-color: var(--graphite-accent); }
+
+/* Neutral rail/chrome, including selected and mobile states. */
+:root[data-finish="graphite"][data-tone] .flow-shell .rail { background: var(--graphite-rail); border-right-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.logo, .brand-mark) {
+  background: linear-gradient(145deg, var(--graphite-button-end), var(--graphite-button));
+  color: var(--graphite-silver);
+  border-color: var(--graphite-edge);
+  box-shadow: inset 0 1px 0 #ffffff12, 0 4px 18px #0006;
+}
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.nav-icon, .mobile-tabs button) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.nav-icon.on, .nav-icon:hover, .mobile-tabs button.active) {
+  background: var(--graphite-raised); color: var(--graphite-text); border-color: var(--graphite-edge);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .nav-icon.on::before { background: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .rail-sep { background: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.topbar, .mobile-tabs, .source-section, .settings-section, .job-strip) { border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.brand, .toplinks .current, .toplinks a:hover, .toplinks button:hover) { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.brand small, .flow-context-text > span, .demo-note, .billing-hint, .topbar-ready, .mobile-tabs button > span) { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.toplinks, .flow-context-text, .workspace-tag, .scenario-tools label, .scenario-tools button) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .toplinks .current::after { background: var(--graphite-accent); box-shadow: 0 0 12px rgb(var(--graphite-glow) / .16); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.session-pill, .demo-pill, .ambience-toggle, .top-right .admin-top, .account-menu > summary) {
+  background: var(--graphite-card); color: var(--graphite-muted); border-color: var(--graphite-edge);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.session-pill i, .demo-pill i, .workspace-tag i, .topbar-ready i, .profile-overview i, .canvas-foot .dot, .cardimg .meta .dot) {
+  background: var(--graphite-silver); box-shadow: 0 0 8px rgb(var(--graphite-glow) / .12);
+}
+
+/* Preserve the existing containment, card/shot visibility, grid bounds and scroll.
+   No filter is added to controls/canvas: legacy glass.css keeps that ancestor clear. */
+:root[data-finish="graphite"][data-tone] .flow-shell .workspace > :is(.controls, .canvas) {
+  background: none;
+  border-color: var(--graphite-edge);
+  border-radius: var(--graphite-radius);
+  box-shadow: inset 0 1px 0 #ffffff12, 0 12px 25px #0008;
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .workspace > :is(.controls, .canvas)::before {
+  background: linear-gradient(90deg, transparent, rgb(var(--graphite-glow) / .23), transparent) 50% 0 / 70% 1px no-repeat,
+    linear-gradient(140deg, rgb(var(--graphite-glow) / .045), transparent 32%), var(--graphite-glass);
+  -webkit-backdrop-filter: blur(var(--graphite-blur)) saturate(104%);
+  backdrop-filter: blur(var(--graphite-blur)) saturate(104%);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .workspace > :is(.controls, .canvas)::after {
+  background: linear-gradient(90deg, transparent, var(--graphite-accent), var(--graphite-silver), transparent);
+}
+
+/* Uploads, style accordion and settings: black/graphite fills, silver focus edges. */
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.controls .section-label, .style-summary-name b, .upload strong, .settings-title) { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.section-count, .section-label .hint, .style-count, .chevron, .style-field .lbl, .field .lbl, .style-foot .hint, .styles-section > .summary, .upload span span, .upload-help, .settings-title small, .settings-body .note, .gate-hint) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.upload, .style-block) {
+  background: var(--graphite-inset); border-color: var(--graphite-edge); border-radius: var(--graphite-radius);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.upload:hover, .upload.over, .upload.pressed) { background: var(--graphite-card); border-color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.upload .plus, .upload-help summary:hover, .style-acts .tiny-button, .tiny-button:hover, .settings-title > svg, .settings-cta .chevron) { color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.thumb, .thumb.uploading, .style-mini, .style-number) { background: var(--graphite-card); border-color: var(--graphite-edge); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .thumb.uploading::before { border-color: var(--graphite-edge); border-top-color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .upload-help p { background: var(--graphite-raised); color: var(--graphite-text); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .upload em { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell .upload em code { background: var(--graphite-card); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-block.expanded { background: var(--graphite-raised); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-block:hover { border-color: var(--graphite-accent); box-shadow: none; }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-editor { border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.style-field select, .field select, .field input, .card-body select, .card-body input, .scenario-tools select, .rework-model select, .input-row textarea) {
+  background: var(--graphite-inset); color: var(--graphite-text); border-color: var(--graphite-edge);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.field option, .style-field option, .rework-model option, .scenario-tools option) { background: var(--graphite-panel); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-colors .chip { background: var(--graphite-card); border-color: var(--graphite-edge); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-colors .chip.sel { background: var(--graphite-raised); border-color: var(--graphite-accent); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-colors .chip:hover { border-color: var(--graphite-silver); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-colors .chip.sel .dot { box-shadow: 0 0 0 2px rgb(var(--graphite-glow) / .06); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.cuff-tag.plain, .cuff-tag.ribbed, .add-style) { background: var(--graphite-card); color: var(--graphite-muted); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .add-style:hover { background: var(--graphite-raised); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-drop { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .style-drop:hover { color: var(--graphite-bad); background: var(--danger-soft); border-color: var(--graphite-bad-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .settings-toggle {
+  background: var(--graphite-card); border-color: var(--graphite-edge);
+  box-shadow: inset 0 1px 0 #ffffff09, 0 4px 16px #0006;
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .settings-toggle:hover { border-color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell #settingsSummary { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .settings-cta { background: var(--graphite-raised); border-color: var(--graphite-edge); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell #settingsDetails[open] > .settings-body {
+  background: var(--graphite-panel); border-color: var(--graphite-edge); color: var(--graphite-text);
+  border-radius: var(--graphite-radius); box-shadow: 0 -10px 40px #0007;
+}
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.settings-body .summary, .gate-hint[data-state="ok"], .copy-row .btn, .copy-row .btn svg, .copy-row .btn span) { color: var(--graphite-muted); }
+
+/* Results, KPI strip, filters and prompt composer. */
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.view-tab, .filter-tabs button, .gallery-density button, .toolbar, .toolbar .btn, .job-strip b, .progress-meta, .canvas-foot) { color: var(--graphite-muted); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .view-tab.active { color: var(--graphite-text); border-color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.view-tab .count, .toolbar .btn-accent) { color: var(--graphite-accent); background: var(--graphite-card); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.filter-tabs button > span, .toolbar .count) { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell .job-strip #jobStage { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell .filter-tabs button.active { background: var(--graphite-raised); color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .filter-tabs button.active > span { color: var(--graphite-silver); }
+:root[data-finish="graphite"][data-tone] .flow-shell .filter-tabs button:hover { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .kpis { background: var(--graphite-card); border-color: var(--graphite-edge); border-radius: var(--graphite-radius); }
+:root[data-finish="graphite"][data-tone] .flow-shell .kpis .kpi { border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .kpis .kpi .k { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.kpis .kpi .v, .kpis .kpi.ok .v) { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .kpis .kpi .v small { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.progress, .back-meter) { background: var(--graphite-raised); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.progress > i, .back-meter i) { background: linear-gradient(90deg, var(--graphite-button-end), var(--graphite-accent)); }
+:root[data-finish="graphite"][data-tone] .flow-shell .progress-meta #progressLabel { color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .composer {
+  background: var(--graphite-panel); border-color: var(--graphite-edge); border-radius: var(--graphite-radius);
+  box-shadow: inset 0 1px 0 #ffffff07, 0 4px 20px #0005;
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .composer:focus-within { border-color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .composer-head { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .composer-head .brief-tag { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell .composer-head #randomBrief { color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .composer textarea { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.composer textarea, .input-row textarea)::placeholder { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell .prompt-chip { background: var(--graphite-card); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.prompt-chip:hover, .prompt-chip.chosen) { background: var(--graphite-raised); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.btn, .subtle) { color: var(--graphite-muted); background: transparent; border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.generate-actions .btn-ghost, .tools .subtle) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.btn, .subtle):hover:not(:disabled) { background: var(--graphite-raised); border-color: var(--graphite-accent); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .btn-primary {
+  background: linear-gradient(110deg, var(--graphite-button), var(--graphite-button-end));
+  border-color: rgb(var(--graphite-glow) / .64); color: var(--graphite-action);
+  box-shadow: inset 0 1px 0 #ffffff0a, 0 2px 15px rgb(var(--graphite-halo) / .12);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(110deg, var(--graphite-button-end), var(--graphite-button));
+  color: var(--graphite-action); box-shadow: inset 0 1px 0 #ffffff0d, 0 3px 18px rgb(var(--graphite-glow) / .14);
+}
+/* Only this color needs !important: the legacy loading label also uses it. */
+:root[data-finish="graphite"][data-tone] .flow-shell .btn.loading { color: var(--graphite-text) !important; }
+:root[data-finish="graphite"][data-tone] .flow-shell .btn.loading::before,
+:root[data-finish="graphite"][data-tone] .flow-shell .tools .subtle.loading::after { border-color: var(--graphite-edge); border-top-color: var(--graphite-accent); }
+
+/* Foil/flip and art remain intact; only the backing and chrome are recolored. */
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg { background: var(--graphite-card); border-color: var(--graphite-edge); border-radius: var(--graphite-radius); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg:hover { border-color: var(--graphite-silver); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg.sel { border-color: var(--graphite-accent); box-shadow: inset 0 0 0 1px rgb(var(--graphite-glow) / .35); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.cardimg .shot, .cardimg .shot.flash-card, .cardimg .ph) { background: var(--graphite-inset); border-color: var(--graphite-edge); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .card-back {
+  background: radial-gradient(ellipse at 10% 0%, rgb(var(--graphite-glow) / .06), transparent 55%), linear-gradient(145deg, var(--graphite-card), var(--graphite-inset) 75%);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .st-running .card-back {
+  background: radial-gradient(ellipse at 10% 0%, rgb(var(--graphite-glow) / .1), transparent 55%), linear-gradient(145deg, var(--graphite-raised), var(--graphite-inset) 75%);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .card-back::before {
+  border-color: var(--graphite-edge);
+  background: linear-gradient(135deg, rgb(var(--graphite-glow) / .025) 25%, transparent 25%) 0 0 / 25px 25px;
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .card-back::after,
+:root[data-finish="graphite"][data-tone] .flow-shell .back-emblem::before,
+:root[data-finish="graphite"][data-tone] .flow-shell .back-emblem::after,
+:root[data-finish="graphite"][data-tone] .flow-shell .st-running .card-back::before { border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.back-top, .back-message, .cardimg .meta .garment, .cardimg .meta .file) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .back-code { color: var(--graphite-silver); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.back-status, .st-running .back-status, .cardimg .meta, .cardimg .meta .name) { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.back-emblem svg, .st-running .back-emblem svg) { color: var(--graphite-silver); filter: drop-shadow(0 0 12px rgb(var(--graphite-glow) / .13)); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.cardimg .state, .cardimg .pick, .cardimg.st-done .state, .cardimg.st-queued .state, .cardimg .meta .sync-tag) { background: var(--graphite-card); color: var(--graphite-muted); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg.st-running .state { background: var(--graphite-raised); color: var(--graphite-accent); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg.st-queued .state::before,
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg.st-running.in-viewport .state::before { background: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg.st-running .shot::after { background: linear-gradient(115deg, transparent 25%, rgb(var(--graphite-glow) / .07) 50%, transparent 75%); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.cardimg .acts, .cardimg .acts .btn) { border-color: var(--graphite-edge); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg .acts .btn:hover { background: var(--graphite-raised); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg .shot::before,
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg .shot.flash-card::before { background: #131217e6; color: var(--graphite-text); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .cardimg .front-retry { background: var(--graphite-panel); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.job-loading-surface, .submission-card) { background: var(--graphite-panel); border-color: var(--graphite-edge); border-radius: var(--graphite-radius); color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell .submission-card > span { color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell .submission-card > b { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.submission-label, .submission-card > small) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .sk { background: var(--graphite-card); }
+:root[data-finish="graphite"][data-tone] .flow-shell .sk::after { background: linear-gradient(110deg, transparent 20%, rgb(var(--graphite-glow) / .06), transparent 80%); }
+:root[data-finish="graphite"][data-tone] .flow-shell.booting .gallery-scroll { background: var(--graphite-inset); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.empty, #filterEmpty) { background: var(--graphite-inset); border-color: var(--graphite-edge); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell #filterEmpty svg { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell #filterEmpty button { background: var(--graphite-raised); color: var(--graphite-accent); border-color: var(--graphite-edge); }
+
+/* Every production drawer/menu: no purple slabs behind prompt/log/usage content. */
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.profile-card, .palette-studio, .drawer, .more-actions > div, .account-popover) {
+  background: var(--graphite-panel); border-color: var(--graphite-edge); color: var(--graphite-text);
+  border-radius: var(--graphite-radius); box-shadow: inset 0 1px 0 #ffffff09, 0 18px 55px #0009;
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .drawer { border-radius: var(--graphite-radius) 0 0 var(--graphite-radius); }
+:root[data-finish="graphite"][data-tone] .flow-shell #usageDrawer { background: var(--graphite-panel); }
+:root[data-finish="graphite"][data-tone] .flow-shell .scrim { background: #000b; }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.drawer-head, .drawer-foot, .profile-footer) { border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .drawer-head .who b { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.drawer-head .who span, .profile-header .who-chip, .profile-header .iconbtn, .profile-option small, .profile-arrow, .profile-footer, .profile-footer button, .more-actions summary) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.drawer-head .avatar, .profile-option-icon, .profile-option-icon.mint, .profile-option-icon.warm) { background: var(--graphite-card); color: var(--graphite-accent); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.drawer .bubble, .drawer .quick button, .tool-line, .hitem, .frow, .acc-card, .usage-card, .rework-model) {
+  background: var(--graphite-card); color: var(--graphite-muted); border-color: var(--graphite-edge);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell .drawer .msg.user .bubble { background: var(--graphite-raised); color: var(--graphite-text); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.drawer .bubble.muted, .bubble .tool-line, .rework-model .field .lbl, .rework-model .hint) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell .msg.typing .bubble i { background: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.drawer .quick button:hover, .hitem:hover, .hitem.on, .frow:hover, .profile-option:hover, .profile-option:focus-visible, .account-popover .subtle:hover, .more-actions summary:hover) { background: var(--graphite-raised); color: var(--graphite-text); border-color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.prompt-preview, .tool-result, .log) { background: var(--graphite-inset); color: var(--graphite-muted); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.hint, .tip, .usage-card h3, .acc-card header code, .acc-recent li) { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.usage-card p, .acc-card .acc-kpi em, .acc-recent li em, .profile-option, .profile-overview > span:last-child) { color: var(--graphite-text); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.usage-card, .acc-card, .rework-model, .prompt-preview, .log) { border-radius: var(--graphite-radius); }
+:root[data-finish="graphite"][data-tone] .flow-shell .profile-header > img { border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .profile-header .who-chip small { background: var(--graphite-raised); color: var(--graphite-silver); }
+:root[data-finish="graphite"][data-tone] .flow-shell .profile-overview { background: var(--graphite-card); border-color: var(--graphite-edge); color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.mobile-tabs .mobile-profile, #railAvatar) { background: var(--graphite-card); border-color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] .flow-shell #railAvatar { box-shadow: 0 0 0 4px rgb(var(--graphite-glow) / .04); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(#railAvatar:hover, #railAvatar[aria-expanded="true"]) { box-shadow: 0 0 0 4px rgb(var(--graphite-glow) / .08), 0 0 25px rgb(var(--graphite-glow) / .16); }
+:root[data-finish="graphite"][data-tone] .flow-shell .avatar-status { background: var(--graphite-silver); border-color: var(--graphite-card); }
+
+/* Lightbox selectors intentionally outrank legacy ID-based rules; art is untouched. */
+:root[data-finish="graphite"][data-tone] #lightbox[open] { background: var(--graphite-panel); color: var(--graphite-text); border-color: var(--graphite-edge); border-radius: var(--graphite-radius); }
+:root[data-finish="graphite"][data-tone] #lightbox::backdrop { background: #000e; }
+:root[data-finish="graphite"][data-tone] #lightbox :is(.lightbox-head, .lightbox-foot) { border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] #lightbox .lightbox-stage { background: var(--graphite-inset); }
+:root[data-finish="graphite"][data-tone] #lightbox :is(.lightbox-foot, .image-loading) { color: var(--graphite-muted); }
+:root[data-finish="graphite"][data-tone] #lightbox .lightbox-foot a { color: var(--graphite-accent); }
+:root[data-finish="graphite"][data-tone] #lightbox :is(.lightbox-prev, .lightbox-next) { background: var(--graphite-raised); color: var(--graphite-text); border-color: var(--graphite-edge); }
+
+/* Semantic states stay distinct: rose failures, warm warnings, silver success. */
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.badge, .tag, .badge.done, .badge.ok) { background: var(--graphite-card); color: var(--graphite-silver); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.badge.no, .st-canceled .back-status, .cardimg.st-canceled .ph) { color: var(--graphite-subtle); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.kpis .kpi.bad .v, .usage-error, .st-failed .back-status, .cardimg.st-failed .ph, .log .line.error span, .log-line.error, .log-line.error span) { color: var(--graphite-bad); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.cardimg.st-failed .state, .cardimg .err, .badge.failed, .badge.bad, .tag.bad, .btn-danger, .tools .danger-soft) {
+  background: var(--graphite-card); color: var(--graphite-bad); border-color: var(--graphite-bad-edge);
+}
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.btn-danger:hover:not(:disabled), .tools .danger-soft:hover:not(:disabled)) { background: var(--danger-soft); color: var(--graphite-bad); border-color: var(--graphite-bad-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .st-failed .card-back { background: linear-gradient(145deg, var(--graphite-card), var(--graphite-inset) 75%); }
+:root[data-finish="graphite"][data-tone] .flow-shell .st-failed .back-emblem::before { border-color: var(--graphite-bad-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.summary.warn, .gate-hint[data-state="warn"], .rework-model .hint[data-state="switch"], .log .line.warn span, .log-line.warn, .log-line.warn span) { color: var(--graphite-warn); }
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.cardimg .person-warning, .badge.partial, .badge.warn, .tag.warn) { background: var(--graphite-card); color: var(--graphite-warn); border-color: var(--graphite-warn-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .toast { background: var(--graphite-panel); color: var(--graphite-text); border-color: var(--graphite-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .toast svg { color: var(--graphite-silver); }
+:root[data-finish="graphite"][data-tone] .flow-shell .toasts .toast.bad { background: var(--graphite-panel); border-color: var(--graphite-bad-edge); }
+:root[data-finish="graphite"][data-tone] .flow-shell .toast.bad svg { color: var(--graphite-bad); }
+
+/* Color-only scrollbars; retain native sizes and every existing scroll boundary. */
+:root[data-finish="graphite"][data-tone] .flow-shell :is(.style-list, .gallery-scroll, .controls, .log, .history, .chat, .drawer, .log-list, .settings-body, .prompt-preview) { scrollbar-color: var(--graphite-edge) transparent; }
+:root[data-finish="graphite"] ::-webkit-scrollbar-thumb { background-color: var(--graphite-edge); }
+:root[data-finish="graphite"] ::-webkit-scrollbar-thumb:hover { background-color: var(--graphite-subtle); }
+@media (max-width: 760px) {
+  :root[data-finish="graphite"] { --graphite-blur: 8px; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-finish="graphite"][data-tone] .flow-shell .workspace > :is(.controls, .canvas)::before { background-color: var(--graphite-panel); }
+}

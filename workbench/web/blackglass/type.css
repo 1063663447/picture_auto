@@ -1,0 +1,267 @@
+/* PRISM color and type hierarchy, layered over the current workbench. */
+:root {
+  --bg: #0b1020;
+  --panel: #1b2337;
+  --surface: #1b2337;
+  --surface-2: #141d30;
+  --surface-3: #27334a;
+  --line: #bdcce324;
+  --border: #bdcce32a;
+  --ink: #f2f5fc;
+  --fg: #f2f5fc;
+  --fg-muted: #bac5d7;
+  --fg-subtle: #9faec3;
+  --muted: #afbed2;
+  --purple: #d3c0ff;
+  --primary: #cdb7ff;
+  --cyan: #a9ebd5;
+  --accent: #a9ebd5;
+  --warn: #f2d39d;
+  --danger: #ffb8c8;
+  --ease: cubic-bezier(.18,.75,.22,1);
+}
+body.flow-shell {
+  color: var(--fg);
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-size: 14px;
+  background: #0b1020;
+}
+body.flow-shell::before {
+  background: radial-gradient(ellipse at 22% -15%,#6751a633,transparent 55%), radial-gradient(ellipse at 100% 100%,#316d7130,transparent 55%), linear-gradient(130deg,#101328,#0b1320);
+}
+.flow-shell .rail { background: linear-gradient(180deg,#161c30ed,#111b2af7); border-right-color: #bfcae521; }
+.flow-shell .rail-sep { background: #c4d2e329; }
+.flow-shell .nav-icon { color: #afbdd2; }
+.flow-shell .nav-icon.on { color: #e3d9ff; background: #c3aaf51b; border: 1px solid #baa4ea25; }
+.flow-shell .nav-icon:hover { color: #f7f7ff; background: #d2ccf219; }
+.flow-shell .brand { color: #f7f7ff; font-size: 17px; font-weight: 650; letter-spacing: 1.5px; }
+.flow-shell .brand small { font-size: 9px; font-weight: 500; color: #a9bad2; letter-spacing: 1.8px; }
+.flow-shell .topbar { border-color: #c3cce721; }
+.flow-shell .toplinks { color: #b9c7da; font-size: 12px; }
+.flow-shell .toplinks a:hover { color: #f0e9ff; }
+.flow-shell .top-right .admin-top { color: #d5ddec; background: #b3bbd708; border-color: #b8c7e12b; font-size: 11px; }
+.flow-shell .flow-bar { gap: 14px; }
+.flow-shell .flow-context-text { color: #dce5f3; font-size: 12px; }
+.flow-shell .flow-context-text > span { color: #97a7c1; }
+.flow-shell .demo-pill { color: #b5f0dc; border-color: #a6dfcd30; background: #86dbc511; font-size: 10px; }
+.flow-shell .demo-note { color: #a0b0c8; font-size: 10px; }
+.flow-shell .scenario-tools label { color: #b0bfd5; font-size: 11px; }
+.flow-shell .scenario-tools select { background: #242c42; border-color: #bac7e337; color: #ecedfc; font-size: 11px; min-height: 31px; }
+.flow-shell .scenario-tools button { font-size: 11px; color: #c9d1e2; white-space: nowrap; }
+.flow-shell .scenario-tools button:hover { color: #faf3ff; }
+.flow-shell .glass {
+  background: linear-gradient(145deg,#a8a6d40b,transparent 65%), #1a2437;
+  border-color: #becce52f;
+  box-shadow: inset 0 1px 0 #f0f4ff0a, 0 10px 32px #02071024;
+}
+.flow-shell .controls {
+  background: linear-gradient(155deg,#31314b30,transparent 40%), #1b2539;
+  border-radius: 17px;
+}
+.flow-shell .controls::before { background: linear-gradient(90deg,transparent,#d1b3ff87,transparent); }
+.flow-shell .controls .section-label { color: #f1f4fc; font-size: 13px; font-weight: 600; letter-spacing: .5px; }
+.flow-shell .section-count { color: #d4c9e9; font-size: 11px; font-weight: 400; }
+.flow-shell .section-label .hint { color: #b9c8da; font-size: 11px; }
+.flow-shell .source-section { border-color: #bdcce324; }
+.flow-shell .upload { background: #bcb8ef08; border-color: #c7bee44b; min-height: 56px; }
+.flow-shell .upload:hover, .flow-shell .upload.over { background: #b7a8e917; border-color: #dfccff; }
+.flow-shell .upload strong { color: #edf2fb; font-size: 12px; font-weight: 500; }
+.flow-shell .upload span span { color: #b4c4d8; font-size: 11px; }
+.flow-shell .upload .plus { color: #e2d2ff; }
+.flow-shell .thumb { border-color: #c2cce537; }
+.flow-shell .upload-help { color: #aebdd3; font-size: 10px; }
+.flow-shell .upload-help p { color: #dbe4f2; background: #2b364c; border-color: #b6c4dc45; }
+.flow-shell .style-block { background: #141d30; border-color: #c1cbe02a; border-radius: 11px; }
+.flow-shell .style-block.expanded { background: linear-gradient(130deg,#b49ddc13,transparent 80%), #222d42; border-color: #c9b5f36b; }
+.flow-shell .style-block:hover { border-color: #d0b9fa78; }
+.flow-shell .style-summary { min-height: 64px; }
+.flow-shell .style-summary-name b { font-size: 12px; color: #f0f2fb; font-weight: 550; }
+.flow-shell .style-count { font-size: 11px; color: #c5d2e6; }
+.flow-shell .chevron { color: #c8d2e4; }
+.flow-shell .mini-swatches { gap: 4px; }
+.flow-shell .mini-swatches i { width: 9px; height: 9px; border-color: #ffffff40; }
+.flow-shell .style-editor { border-top-color: #c1cbe020; }
+.flow-shell .style-field .lbl { color: #bec9da; font-size: 10px; }
+.flow-shell .style-field select { background: #141f32; color: #edf3fb; border-color: #bccce236; font-size: 11px; min-height: 32px; }
+.flow-shell .style-colors { gap: 6px; }
+.flow-shell .style-colors .chip { color: #bcc8db; background: #182338; border-color: #c1cbe02c; font-size: 11px; padding: 4px 8px; }
+.flow-shell .style-colors .chip.sel { color: #f1ebff; background: #b89be527; border-color: #d1b7ff88; }
+.flow-shell .style-colors .chip:hover { color: #fff; border-color: #e4ccff; }
+.flow-shell .style-foot .hint { color: #b4c2d7; font-size: 10px; }
+.flow-shell .style-acts .tiny-button { color: #d8c8f9; font-size: 10px; }
+.flow-shell .style-drop { color: #c0ccdf; }
+.flow-shell .style-drop:hover { color: #ffc3d1; }
+.flow-shell .styles-section > .summary { color: #b1c0d5; font-size: 10px; }
+.flow-shell .add-style { font-size: 11px; color: #ded1fa; border-color: #c4b0ea58; background: #b5a0ea09; min-height: 33px; }
+.flow-shell .add-style:hover { background: #b5a0ea1a; }
+.flow-shell .cuff-tag.plain { color: #bcf2de; background: #72bda71c; border-color: #91d5bd39; }
+.flow-shell .cuff-tag.ribbed { color: #e3d5ff; background: #ae91d71e; border-color: #c0a9e83b; }
+
+/* A prominent action with a clear label, summary and explicit call to action. */
+.flow-shell .settings-section { border: 0; }
+.flow-shell .settings-toggle {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 6px 8px;
+  margin: 4px 12px 11px;
+  min-height: 80px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #d4c0fa7a;
+  background: radial-gradient(ellipse at 0 0,#bd95ed2b,transparent 70%), linear-gradient(130deg,#3a3856,#283a4a);
+  box-shadow: inset 0 1px 0 #f1e5ff17, 0 4px 18px #040a1522;
+  transition: border-color .18s, transform .18s;
+}
+.flow-shell .settings-toggle:hover { border-color: #efe0ff; transform: translateY(-1px); }
+.flow-shell .settings-title { grid-column: 1; grid-row: 1; color: #f5f3ff; font-size: 13px; font-weight: 600; gap: 8px; }
+.flow-shell .settings-title > svg { width: 17px; height: 17px; color: #e4ccff; }
+.flow-shell .settings-title > span { display: grid; gap: 3px; }
+.flow-shell .settings-title small { display: block; font-weight: 400; color: #c2d0e4; font-size: 10px; }
+.flow-shell #settingsSummary { grid-column: 1; grid-row: 2; color: #c7eddf; font-size: 10px; margin: 0 0 0 25px; }
+.flow-shell .settings-cta { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; gap: 3px; color: #fff1cd; background: #e7c78810; border: 1px solid #e7c78852; padding: 6px 7px; border-radius: 7px; font-size: 10px; align-self: center; white-space: nowrap; }
+.flow-shell .settings-cta .chevron { color: #ffe1ab; }
+.flow-shell #settingsDetails[open] > .settings-body { bottom: 143px; max-height: calc(100% - 166px); color: #edf3fc; background: #273249fc; border-color: #c7b8ec72; box-shadow: 0 -10px 40px #030b1a66; }
+.flow-shell .field .lbl { color: #c4d0e1; font-size: 11px; }
+.flow-shell .field select, .flow-shell .field input { background: #172238; border-color: #bdcce23b; color: #eff3fc; }
+.flow-shell .field option { background: #202d43; color: #f0f3fc; }
+.flow-shell .settings-body .field select { font-size: 12px; min-height: 35px; }
+.flow-shell .settings-body .summary { color: #e4ebf6; font-size: 11px; line-height: 1.7; }
+.flow-shell .settings-body .note { color: #aebed3; font-size: 10px; }
+.flow-shell .gate-hint { color: #bad2dd; font-size: 10px; }
+.flow-shell .gate-hint[data-state="ok"] { color: #bbf0dd; }
+.flow-shell .copy-row .btn { color: #c5d0e3; font-size: 11px; border-color: #b6c5de30; min-height: 32px; }
+.flow-shell .copy-row .btn svg, .flow-shell .copy-row .btn span { color: #c1aedf; }
+
+.flow-shell .view-tab { color: #b7c4d8; font-size: 13px; }
+.flow-shell .view-tab.active { color: #f3ebff; border-color: #dac2ff; }
+.flow-shell .view-tab .count { color: #e7dbff; background: #bfa6e51e; font-size: 10px; }
+.flow-shell .job-strip b { color: #e1e8f4; font-size: 11px; }
+.flow-shell .job-strip #jobStage { color: #b7c4d9; font-size: 10px; }
+.flow-shell .tools .subtle { color: #d2deed; font-size: 11px; border-color: #b5c8e23a; background: #b5c8e207; }
+.flow-shell .tools .danger-soft { color: #ffe0b0; border-color: #dfbd7c66; }
+.flow-shell .kpis { background: linear-gradient(130deg,#2a2a424d,transparent), #1c293d; border-color: #b8c9e42f; min-height: 64px; }
+.flow-shell .kpis .kpi { border-color: #b8c9e425; }
+.flow-shell .kpis .kpi .k { font-size: 11px; color: #bdccdf; }
+.flow-shell .kpis .kpi .v { font-size: 22px; font-weight: 500; color: #eff2ff; }
+.flow-shell .kpis .kpi.ok .v { color: #b4f0db; }
+.flow-shell .kpis .kpi.bad .v { color: #ffc5d2; }
+.flow-shell .kpis .kpi .v small { color: #afc0d6; font-size: 10px; }
+.flow-shell .progress { background: #bbcbe229; height: 3px; }
+.flow-shell .progress > i { background: linear-gradient(90deg,#ccb0fc,#b0ecd3); }
+.flow-shell .progress-meta { color: #b9c9dd; font-size: 10px; margin-top: 7px; }
+.flow-shell .progress-meta #progressLabel { color: #e2d2ff; }
+.flow-shell .filter-tabs button { color: #b5c3d8; font-size: 11px; padding: 6px 8px; }
+.flow-shell .filter-tabs button > span { color: #9fb1c9; font-size: 10px; }
+.flow-shell .filter-tabs button.active { color: #f3ecff; background: #bda5e521; }
+.flow-shell .filter-tabs button.active > span { color: #dfcbff; }
+.flow-shell .gallery-density button { color: #becce1; font-size: 11px; }
+.flow-shell .toolbar { color: #c3d1e4; }
+.flow-shell .toolbar .check { font-size: 11px; }
+.flow-shell .toolbar .count { color: #b1c1d8; font-size: 10px; }
+.flow-shell .toolbar .btn { font-size: 10px; color: #c9d5e8; border-color: #bfd0e52c; min-height: 30px; }
+.flow-shell .toolbar .btn-accent { color: #b8efd9; background: #88cbb80b; border-color: #a3dec139; }
+.flow-shell .gallery-scroll { padding-top: 3px; }
+.flow-shell .cardimg { background: #1e2b40; border-color: #c4d0e632; border-radius: 13px; }
+.flow-shell .cardimg:hover { border-color: #d8c2ffad; }
+.flow-shell .cardimg.sel { border-color: #d6baff; }
+.flow-shell .cardimg .meta { font-size: 12px; color: #f1f4fb; padding: 11px 11px 9px; }
+.flow-shell .cardimg .meta .garment { color: #c1cde0; font-size: 10px; }
+.flow-shell .cardimg .acts { border-color: #bacce31f; padding: 7px 8px; }
+.flow-shell .cardimg .acts .btn { font-size: 11px; color: #c8d8e9; min-height: 28px; }
+.flow-shell .cardimg .acts .btn:hover { color: #fff; background: #c2c5eb12; }
+.flow-shell .cardimg .pick { background: #192137d9; border-color: #e3e7f24f; }
+.flow-shell .canvas-foot { color: #9bb0c9; font-size: 10px; }
+.flow-shell .composer { background: radial-gradient(ellipse at 0 0,#ab8ddc20,transparent 75%), linear-gradient(120deg,#242b43,#213543); border-color: #d0bdf85e; box-shadow: inset 0 1px 0 #efe9ff0b; padding: 13px 16px; }
+.flow-shell .composer:focus-within { border-color: #dfc9ffbe; }
+.flow-shell .composer-head { color: #e0d8f2; font-size: 11px; }
+.flow-shell .composer-head .brief-tag { color: #b7c6dc; font-size: 9px; }
+.flow-shell .composer-head #randomBrief { color: #d8c7f1; font-size: 10px; }
+.flow-shell .composer textarea { color: #f0f3fb; font-size: 13px; line-height: 1.9; height: 35px; min-height: 35px; }
+.flow-shell .composer textarea::placeholder { color: #b5c4d8; }
+.flow-shell .prompt-chip { color: #c3d0e3; background: #bdcae20b; font-size: 9px; padding: 4px 7px; }
+.flow-shell .prompt-chip.chosen { color: #f2eaff; background: #bca4e52b; }
+.flow-shell .generate-actions .btn { font-size: 12px; min-height: 37px; }
+.flow-shell .generate-actions .btn-ghost { color: #d6e0f0; }
+.flow-shell .btn-primary { color: #152234; background: linear-gradient(110deg,#d4befb,#acdccc); border-color: #e2d4ff99; font-weight: 650; box-shadow: inset 0 1px 0 #fff6,0 4px 17px #bca1ed22; }
+.flow-shell .btn-primary:hover:not(:disabled) { color: #101c2d; background: linear-gradient(110deg,#e2ceff,#beefdf); box-shadow: inset 0 1px 0 #fff8,0 4px 22px #bca1ed35; }
+.flow-shell .btn-primary.loading { color: #172237 !important; }
+.flow-shell .btn-primary.loading::before { border-color: #17223744; border-top-color: #172237; }
+.flow-shell #startBtn { min-width: 132px; }
+.flow-shell .more-actions summary { color: #c4d1e5; }
+.flow-shell .more-actions > div { background: #2a354c; border-color: #b5c7e24d; }
+.flow-shell .drawer { background: linear-gradient(140deg,#272b40,#19283a 70%); border-color: #c3b9e752; color: #edf2fb; }
+.flow-shell .drawer-head .who b { color: #f1f4fb; font-size: 14px; }
+.flow-shell .drawer-head .who span { color: #bac9df; font-size: 11px; }
+.flow-shell .drawer .bubble { background: #c0cbe20b; color: #e4eaf4; border-color: #bccbe22c; font-size: 13px; }
+.flow-shell .msg.user .bubble { background: #b497e328; border-color: #c1a7ed60; }
+.flow-shell .drawer .quick button { color: #d3dff1; border-color: #b3c8e336; }
+.flow-shell .prompt-preview, .flow-shell .tool-result, .flow-shell .log { background: #111c30; color: #d3e0f1; border-color: #a6bfe12e; font-size: 12px; }
+.flow-shell .tool-line, .flow-shell .hitem, .flow-shell .frow { color: #d8e3f1; border-color: #a9c0df36; background: #bdcce108; }
+.flow-shell .hint, .flow-shell .tip { color: #b4c3da; }
+.flow-shell .toast { background: #2b3a50f5; border-color: #cbb6f27a; color: #f4f6fc; font-size: 12px; }
+.flow-shell .toasts .toast.bad { background: #493244f5; border-color: #e8afc280; }
+.flow-shell .empty { background: #bacce105; border-color: #b7c8e334; color: #c1d0e3; }
+
+@media (min-width: 1281px) { .flow-shell .workspace { grid-template-columns: 312px minmax(0,1fr); } }
+@media (min-width: 1650px) { .flow-shell .workspace { grid-template-columns: 334px minmax(0,1fr); } }
+@media (max-width: 1250px) {
+  .flow-shell .canvas-head { flex-wrap: wrap; }
+  .flow-shell .canvas-left { width: auto; flex: 1; }
+  .flow-shell .tools { position: static; max-width: 100%; margin-left: auto; }
+  .flow-shell .kpis .kpi .k { font-size: 10px; }
+  .flow-shell .kpis .kpi .v { font-size: 20px; }
+  .flow-shell .settings-toggle { margin-left: 10px; margin-right: 10px; padding: 10px; }
+  .flow-shell .settings-cta { padding: 6px; font-size: 9px; }
+  .flow-shell .filter-tabs button { font-size: 10px; padding-left: 6px; padding-right: 6px; }
+}
+@media (max-width: 760px) {
+  .flow-shell .brand { font-size: 16px; letter-spacing: 1px; }
+  .flow-shell .mobile-tabs button { color: #c2cee0; font-size: 12px; }
+  .flow-shell .mobile-tabs button > span { color: #a8bbd6; font-size: 10px; }
+  .flow-shell .mobile-tabs button.active { color: #f5eeff; background: #c4acea24; }
+  .flow-shell .mobile-tabs button.active > span { color: #ddc8ff; }
+  .flow-shell .scenario-tools select { font-size: 11px; min-height: 30px; }
+  .flow-shell .controls .section-label { font-size: 13px; }
+  .flow-shell .settings-toggle { min-height: 78px; margin: 3px 12px 10px; padding: 11px; }
+  .flow-shell .settings-title { font-size: 13px; }
+  .flow-shell .settings-cta { font-size: 10px; padding: 7px 8px; }
+  .flow-shell .style-summary-name b { font-size: 13px; }
+  .flow-shell .style-colors .chip { font-size: 12px; min-height: 32px; }
+  .flow-shell .view-tab { font-size: 12px; }
+  .flow-shell .tools .subtle { font-size: 10px; padding: 4px 7px; }
+  .flow-shell .kpis { min-height: 55px; padding: 9px 0; }
+  .flow-shell .kpis .kpi .k { font-size: 9px; }
+  .flow-shell .kpis .kpi .v { font-size: 19px; }
+  .flow-shell .kpis .kpi .v small { font-size: 8px; }
+  .flow-shell .progress-meta { font-size: 9px; }
+  .flow-shell .filter-tabs button { font-size: 10px; padding: 5px 6px; }
+  .flow-shell .filter-tabs button > span { font-size: 9px; }
+  .flow-shell .toolbar .check { font-size: 10px; }
+  .flow-shell .toolbar .count { font-size: 9px; }
+  .flow-shell .toolbar .btn { min-height: 27px; font-size: 9px; }
+  .flow-shell .cardimg .meta { font-size: 11px; padding: 9px 8px 7px; }
+  .flow-shell .cardimg .meta .garment { font-size: 9px; }
+  .flow-shell .cardimg .acts { padding: 5px; }
+  .flow-shell .cardimg .acts .btn { font-size: 10px; min-height: 28px; }
+  .flow-shell .composer { padding: 10px 12px; }
+  .flow-shell .composer textarea { font-size: 12px; min-height: 31px; height: 31px; margin: 5px 0 7px; }
+  .flow-shell .generate-actions .btn { font-size: 11px; min-height: 35px; }
+  .flow-shell #startBtn { min-width: 128px; }
+  .flow-shell .drawer .bubble { font-size: 12px; }
+}
+@media (max-width: 420px) {
+  .flow-shell .canvas-head { flex-direction: column; align-items: stretch; }
+  .flow-shell .canvas-left { width: 100%; flex: none; }
+  .flow-shell .tools { align-self: flex-end; flex: none; }
+  .flow-shell .filter-tabs button { padding-left: 4px; padding-right: 4px; font-size: 9px; }
+  .flow-shell .progress-meta { font-size: 8px; }
+  .flow-shell .brand { font-size: 15px; }
+  .flow-shell .toolbar .btn { font-size: 9px; padding-left: 5px; padding-right: 5px; }
+  .flow-shell .settings-cta { font-size: 10px; }
+}
+@media (max-height: 700px) and (min-width: 761px) {
+  .flow-shell .settings-toggle { min-height: 72px; padding-top: 9px; padding-bottom: 9px; margin-bottom: 9px; }
+  .flow-shell .composer { padding: 10px 13px; }
+  .flow-shell .composer textarea { min-height: 29px; height: 29px; }
+  .flow-shell .kpis { min-height: 53px; }
+}

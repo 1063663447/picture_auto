@@ -50,11 +50,20 @@
     files: [],
     jobId: null,
     pollTimer: null,
+    pollEpoch: 0,
+    pollController: null,
+    jobLoading: false,
     busy: false,
     job: null,
     selected: new Set(),
     harnessMode: null,
     harnessBusy: false,
+    harnessOpening: false,
+    harnessSubmittedJob: "",
+    harnessStreamDone: false,
+    harnessHasResult: false,
+    harnessContextKey: "",
+    reworkMeta: null,
     draftId: "",
     reworkTargets: [],
     reworkSourceJob: null,
@@ -186,10 +195,12 @@
     if ([...$("sizeTier").options].some((o) => o.value === tier)) $("sizeTier").value = tier;
   }
 
-  function priceOf(model, size) {
-    // 同一个模型名在不同网关售价不一样（实测差十几倍）：接口带了覆盖价就先用它
-    const provider = state.providers.find((p) => p.name === ($("provider") || {}).value);
-    const override = provider && provider.model_prices && provider.model_prices[model];
+  function priceOf(model, size, providerName) {
+    const provider=state.providers.find(p=>p.name===(providerName||$("provider").value));
+    if(provider?.fixed_unit_price!==undefined&&provider.fixed_unit_price!==null){
+      return {unit:Number(provider.fixed_unit_price),tier:"",tiered:false,fallback:false,tiers:{},other:null,override:true};
+    }
+    const override=provider?.model_prices?.[model];
     if (override !== undefined && override !== null) {
       return {
         unit: Number(override), tier: "", tiered: false, fallback: false,
@@ -328,9 +339,7 @@
     }
     el.dataset.value = String(target);
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.classList.remove("bump");
-    void el.offsetWidth;                        // 重置动画
-    el.classList.add("bump");
+    if (!reduce && el.animate) el.animate([{opacity:.5,transform:"translateY(3px)"},{opacity:1,transform:"none"}],{duration:180,easing:"ease-out"});
     if (reduce) {
       el.textContent = formatter ? formatter(target) : String(target);
       return;
@@ -357,6 +366,8 @@
       state.session = data;
       $("whoChip").hidden = false;
       $("whoName").textContent = data.display || data.account;
+      $("whoRole").textContent = data.admin ? "管理员" : "成员";
+      $("profileSession").textContent = "已登录";
       $("whoChip").title = `${data.display || data.account} · ${data.role === "admin" ? "管理员" : "成员"}`
         + (data.source === "feishu" ? " · 账号来自飞书表" : " · 本地兜底账号");
       $("accountsBtn").hidden = !data.admin;
@@ -441,54 +452,35 @@
 
   /* ------------------------------------------------------------- bootstrap */
   async function boot() {
-    await loadSession();
-    try {
-      const health = await api("/api/health");
-      $("healthLine").textContent = `${health.types} 款 · ${health.providers_ui || health.providers} 接口`;
-    } catch (_) { /* ignore */ }
-
-    try {
-      const skill = await api("/api/skill");
-      state.skill = skill;
-      if (skill.warnings && skill.warnings.length) {
-        $("skillWarn").hidden = false;
-        $("skillWarn").textContent = `解析提示 ${skill.warnings.length} 条`;
-        $("skillWarn").title = skill.warnings.join("\n");
-      }
-      restoreStyles();
-      renderStyles();
-    } catch (err) {
-      console.warn("skill 读取失败", err);
-    }
-
-    // 价格表必须先就位，否则模型下拉渲染时拿不到单价
-    await loadPricing();
-
-    try {
-      const data = await api("/api/providers");
-      state.providers = data.providers || [];
-      state.ui = data.ui || {};
-      state.defaults = data.defaults || {};
-      renderProviders();
-      restoreSettings();
-      loadGate();
-    } catch (_) { /* ignore */ }
     bind();
-    loadHistory();
-    refreshCacheInfo();
-    const params = new URLSearchParams(location.search);
-    if (params.get("denied") === "admin") {
-      toast("bad", "管理后台只对管理员开放，请联系管理员开通");
-    }
-    const deep = params.get("job");
-    if (deep) watchJob(deep);
-    if (location.hash === "#logs") switchView("logs");
-    window.addEventListener("hashchange", () => {
-      if (location.hash === "#logs") switchView("logs");
-      else if (location.hash === "#gallery") switchView("gallery");
-    });
-    updateSummary();
-    if (params.get("panel") === "prompt") showPrompt();
+    window.WorkbenchUI.ready({state,updateSummary,switchView,showPrompt,toast,downloadUrl,jobPhase});
+    window.AIWorkflow?.bind({open:()=>openDrawer("harness"),close:closeHarness,results:()=>{switchView("gallery");window.WorkbenchUI.mobilePane("results");closeHarness();}});
+    const pricingReady=loadPricing();
+    const jobs=[
+      loadSession(),
+      api("/api/health").then(health=>{
+        $("healthLine").textContent=`${health.types} 款 · ${health.providers_ui||health.providers} 接口`;
+        $("connectionLabel").textContent="服务已连接";
+      }).catch(()=>{$("connectionLabel").textContent="服务连接失败";}),
+      api("/api/skill").then(skill=>{
+        state.skill=skill;restoreStyles();renderStyles();
+        if(skill.warnings?.length){$("skillWarn").hidden=false;$("skillWarn").textContent=`解析提示 ${skill.warnings.length} 条`;$("skillWarn").title=skill.warnings.join("\n");}
+      }).catch(err=>{toast("bad",`款式库读取失败：${err.message}`);$("styleList").textContent="款式库读取失败，请刷新页面重试";}),
+      api("/api/providers").then(async data=>{
+        state.providers=data.providers||[];state.ui=data.ui||{};state.defaults=data.defaults||{};
+        await pricingReady;renderProviders();restoreSettings();loadGate();
+      }).catch(err=>toast("bad",`生图接口读取失败：${err.message}`)),
+      pricingReady,
+    ];
+    await Promise.allSettled(jobs);
+    document.body.classList.remove("booting");
+    loadHistory();refreshCacheInfo();
+    const params=new URLSearchParams(location.search);
+    if(params.get("denied")==="admin")toast("bad","管理后台只对管理员开放，请联系管理员开通");
+    const deep=params.get("job");if(deep)watchJob(deep);
+    if(location.hash==="#logs")switchView("logs");
+    window.addEventListener("hashchange",()=>{if(location.hash==="#logs")switchView("logs");else if(location.hash==="#gallery")switchView("gallery");});
+    updateSummary();if(params.get("panel")==="prompt")showPrompt();
   }
 
   /* ---------------------------------------------------------- styles 篇 */
@@ -552,45 +544,33 @@
       }));
   }
 
+  let openStyle=0;
+  function miniSwatches(item) {
+    return (styleType(item.slug)?.colors||[]).filter(c=>item.colors.has(c.label)).slice(0,5)
+      .map(c=>`<i style="background:${esc(c.hex)}" title="${esc(c.name_zh)}"></i>`).join("");
+  }
   function renderStyles() {
-    const box = $("styleList");
-    if (!box || !state.skill) return;
-    const slugs = Object.keys(state.skill.types);
-    box.innerHTML = state.styles.map((item, index) => {
-      const type = styleType(item.slug);
-      const colors = type ? type.colors : [];
-      const options = slugs.map((slug) => {
-        const t = state.skill.types[slug];
-        const cuff = t.cuff_zh ? ` · ${t.cuff_zh}` : "";
-        return `<option value="${esc(slug)}"${slug === item.slug ? " selected" : ""}>${esc(t.display_name)} · ${t.colors.length} 色${esc(cuff)}</option>`;
+    const box=$("styleList");if(!box||!state.skill)return;
+    const slugs=Object.keys(state.skill.types);
+    box.innerHTML=state.styles.map((item,index)=>{
+      const type=styleType(item.slug),colors=type?.colors||[],expanded=index===openStyle;
+      const options=slugs.map(slug=>{
+        const t=styleType(slug),used=state.styles.some((s,i)=>i!==index&&s.slug===slug);
+        return `<option value="${esc(slug)}"${slug===item.slug?" selected":""}${used?" disabled":""}>${esc(t.display_name)} · ${t.colors.length} 色</option>`;
       }).join("");
-      const chips = colors.map((color) => {
-        const on = item.colors.has(color.label);
-        // 只用色块：效果图是给模型的，不在面板里铺图（之前铺缩略图把卡片顶变形了）
-        return `<button class="chip${on ? " sel" : ""}" type="button" data-color="${esc(color.label)}"
-          title="${esc(color.name_zh)} ${esc(color.hex)}${color.effect ? " · 带效果图" : ""}" aria-pressed="${on}">
-          <span class="dot" style="background:${esc(color.hex)}"></span>${esc(color.name_zh)}</button>`;
-      }).join("");
-      return `<div class="style-block" data-index="${index}">
-        <div class="style-top">
-          <label class="field style-field">
-            <span class="lbl">款式 ${state.styles.length > 1 ? `#${index + 1}` : ""}
-              <span class="style-tags"><span class="count">${colors.length} 色</span>${cuffTag(type)}</span></span>
-            <select class="style-select" data-slug="${esc(item.slug)}" aria-label="款式 ${index + 1}">${options}</select>
-          </label>
-          <button class="style-drop" type="button" data-drop="${index}" title="移除这个款式"
-            ${state.styles.length > 1 ? "" : "hidden"}><svg><use href="#i-x"/></svg></button>
-        </div>
-        <div class="style-colors">${chips}</div>
-        <div class="style-foot">
-          <span class="hint">已选 ${item.colors.size} / ${colors.length} 色</span>
-          <span class="style-acts">
-            <button class="tiny-button" type="button" data-pick="all">全选</button>
-            <button class="tiny-button" type="button" data-pick="none">清空</button>
-          </span>
-        </div>
-      </div>`;
+      const chips=colors.map(color=>`<button class="chip${item.colors.has(color.label)?" sel":""}" type="button" data-color="${esc(color.label)}" title="${esc(color.name_zh)} ${esc(color.hex)}${color.effect?" · 有官方效果参考":""}" aria-pressed="${item.colors.has(color.label)}"><span class="dot" style="background:${esc(color.hex)}"></span>${esc(color.name_zh)}</button>`).join("");
+      return `<div class="style-block${expanded?" expanded":""}" data-index="${index}">
+        <button class="style-summary" type="button" data-toggle-style="${index}" aria-expanded="${expanded}" aria-controls="style-editor-${index}"><span class="style-mini style-number">${index+1}</span><span class="style-summary-name"><b>${esc(type?.display_name||item.slug)}</b><span class="mini-swatches">${miniSwatches(item)}</span></span><span class="style-count">${item.colors.size} 色</span><span class="chevron" aria-hidden="true">⌄</span></button>
+        <div class="style-editor" id="style-editor-${index}"${expanded?"":" hidden"}><div class="style-top"><label class="field style-field"><span class="lbl">更换款式 ${cuffTag(type)}</span><select class="style-select" aria-label="款式 ${index+1}">${options}</select></label><button class="style-drop" type="button" data-drop="${index}" aria-label="移除${esc(type?.display_name||item.slug)}"${state.styles.length>1?"":" hidden"}><svg><use href="#i-x"/></svg></button></div><div class="style-colors">${chips}</div><div class="style-foot"><span class="hint">${item.colors.size} / ${colors.length} 色</span><span class="style-acts"><button class="tiny-button" type="button" data-pick="all">全选</button><button class="tiny-button" type="button" data-pick="none">清空</button></span></div></div></div>`;
     }).join("");
+    updateSummary();
+  }
+  function syncStyleColors(index) {
+    const item=state.styles[index],card=$("styleList").querySelector(`[data-index="${index}"]`);if(!item||!card)return;
+    card.querySelectorAll("[data-color]").forEach(chip=>{const on=item.colors.has(chip.dataset.color);chip.classList.toggle("sel",on);chip.setAttribute("aria-pressed",String(on));});
+    card.querySelector(".style-count").textContent=`${item.colors.size} 色`;
+    card.querySelector(".mini-swatches").innerHTML=miniSwatches(item);
+    card.querySelector(".style-foot .hint").textContent=`${item.colors.size} / ${allLabels(item.slug).length} 色`;
     updateSummary();
   }
 
@@ -598,7 +578,9 @@
     if (!state.skill) return;
     const slugs = Object.keys(state.skill.types);
     const used = new Set(state.styles.map((s) => s.slug));
-    const next = slugs.find((slug) => !used.has(slug)) || slugs[0];
+    const next=slugs.find(slug=>!used.has(slug));
+    if(!next){toast("ok","所有款式已添加");return;}
+    openStyle=state.styles.length;
     state.styles.push({ slug: next, colors: new Set(allLabels(next)) });
     saveSettings();
     renderStyles();
@@ -614,7 +596,7 @@
     // 同一款式不重复（已经是别的卡片的那款就换回来）
     const clash = state.styles.findIndex((s, i) => i !== index && s.slug === slug);
     if (clash >= 0) {
-      state.styles[index].slug = state.styles[clash].slug === slug ? item.slug : slug;
+      toast("bad","这个款式已经在列表中");renderStyles();return;
     }
     item.slug = slug;
     item.colors = new Set(allLabels(slug));   // 换款式 → 默认全色
@@ -636,6 +618,11 @@
       const card = event.target.closest(".style-block");
       if (!card) return;
       const index = Number(card.dataset.index);
+      if(event.target.closest("[data-toggle-style]")){
+        openStyle=openStyle===index?-1:index;
+        box.querySelectorAll(".style-block").forEach(row=>{const on=Number(row.dataset.index)===openStyle;row.classList.toggle("expanded",on);row.querySelector(".style-summary").setAttribute("aria-expanded",String(on));row.querySelector(".style-editor").hidden=!on;});
+        return;
+      }
       const chip = event.target.closest("[data-color]");
       if (chip) {
         event.preventDefault();
@@ -651,7 +638,7 @@
           ? new Set(allLabels(item.slug))
           : new Set();
         saveSettings();
-        renderStyles();
+        syncStyleColors(index);
         return;
       }
       const drop = event.target.closest("[data-drop]");
@@ -670,7 +657,7 @@
     if (item.colors.has(label)) item.colors.delete(label);
     else item.colors.add(label);
     saveSettings();
-    renderStyles();
+    syncStyleColors(index);
   }
 
   /* ------------------------------------------------------------- 全局阀门 */
@@ -764,9 +751,7 @@
     const items = state.files.length;
     const colors = totalColors();
     const calls = expectedCalls();
-    $("outputCount").textContent = state.skill
-      ? `将产出 ${items * colors} 张成品（${items} 图 × ${colors} 色）· 全部一起提交，超额的自动排队`
-      : "";
+    $("outputCount").textContent=state.skill?`${items} 张原图 × ${colors} 个款色 = ${items*colors} 张成品`:"";
 
     const model = currentModel();
     const size = currentSize();
@@ -787,7 +772,9 @@
         `（${model} · ${size === "auto" ? "auto" : size} · ${quality}）`;
       line.classList.remove("warn");
     }
-    $("startBtn").disabled = !(items > 0 && colors > 0) || state.busy;
+    $("startBtn").disabled = Boolean(startBlockedReason());
+    syncActionControls();
+    window.WorkbenchUI?.syncConfig();
   }
 
   /* ------------------------------------------------------------- providers */
@@ -800,14 +787,16 @@
       option.textContent = provider.label;
       select.appendChild(option);
     }
-    const saved = restore("provider", null);
-    const ready = state.providers.filter((p) => p.ready);
-    const preferred = state.providers.find((p) => p.name === saved) || ready[0] || state.providers[0];
+    const primary=state.providers.find(p=>p.default)||state.providers[0];
+    const policy="primary-v1",migrate=restore("providerPolicy","")!==policy;
+    const saved=migrate?primary?.name:restore("provider",primary?.name);
+    if(migrate){store("providerPolicy",policy);store("provider",saved);}
+    const ready=state.providers.filter(p=>p.ready);
+    const preferred=state.providers.find(p=>p.name===saved)||primary||ready[0]||state.providers[0];
     if (preferred) select.value = preferred.name;
     select.addEventListener("change", () => {
       store("provider", select.value);
       applyProvider();
-      loadModels(select.value);
       loadGate();
     });
     applyProvider();
@@ -824,71 +813,36 @@
     loadModels(provider.name);
   }
 
-  async function loadModels(providerName, refresh) {
-    const select = $("model");
-    // 慢的时候先给一个明确的「正在读取」，别让下拉长时间空白
-    if (select && !select.options.length) {
-      const stub = document.createElement("option");
-      stub.value = "";
-      stub.textContent = "正在读取模型…";
-      select.appendChild(stub);
-      select.disabled = true;
-    }
+  let modelRequest=0;
+  async function loadModels(providerName,refresh) {
+    const request=++modelRequest,select=$("model"),provider=state.providers.find(p=>p.name===providerName)||{};
+    const wantedBefore=restore(`model.${providerName}`,provider.model||"");
+    $("modelManual").value=restore(`modelManual.${providerName}`,"");
+    select.disabled=true;updateSummary();
     try {
-      const data = await api(
-        `/api/models?provider=${encodeURIComponent(providerName)}&refresh=${refresh ? "true" : "false"}`
-      );
-      const select = $("model");
-      const previous = currentModel() || restore(`model.${providerName}`, "");
-      select.innerHTML = "";
-      const rows = (data.models || []).filter((m) => m.image);
-      state.modelRows = rows;
-      for (const model of rows) {
-        const option = document.createElement("option");
-        option.value = model.id;
-        option.dataset.model = model.id;
-        select.appendChild(option);
-      }
-      const manual = document.createElement("option");
-      manual.value = "__manual__";
-      manual.textContent = "其他（手填模型名）";
-      select.appendChild(manual);
-
-      const wanted = rows.find((m) => m.id === previous) ? previous : (rows[0] ? rows[0].id : "__manual__");
-      select.value = wanted;
-      select.disabled = false;
-      $("modelManual").hidden = wanted !== "__manual__";
-      renderModelLabels();
-      store(`model.${providerName}`, wanted);
-    } catch (err) {
-      console.warn("模型拉取失败", err.message);
-      const select = $("model");
-      select.disabled = false;
-      select.innerHTML = "";
-      {
-        const provider = state.providers.find((p) => p.name === $("provider").value) || {};
-        const fallback = restore(`model.${$("provider").value}`, provider.model || "");
-        if (fallback) {
-          const option = document.createElement("option");
-          option.value = fallback;
-          option.dataset.model = fallback;
-          select.appendChild(option);
-        }
-        const manual = document.createElement("option");
-        manual.value = "__manual__";
-        manual.textContent = "其他（手填模型名）";
-        select.appendChild(manual);
-        select.value = fallback || "__manual__";
-        $("modelManual").hidden = select.value !== "__manual__";
-        renderModelLabels();
-      }
+      const data=await api(`/api/models?provider=${encodeURIComponent(providerName)}&refresh=${refresh?"true":"false"}`);
+      if(request!==modelRequest||$("provider").value!==providerName)return;
+      const rows=(data.models||[]).filter(m=>m.image);state.modelRows=rows;select.replaceChildren();
+      rows.forEach(model=>{const option=document.createElement("option");option.value=model.id;option.dataset.model=model.id;select.appendChild(option);});
+      const manual=document.createElement("option");manual.value="__manual__";manual.textContent="其他（手填模型名）";select.appendChild(manual);
+      const choices=[wantedBefore,provider.model,data.current];
+      const wanted=wantedBefore==="__manual__"?"__manual__":choices.find(id=>rows.some(row=>row.id===id))||(rows[0]?.id||"__manual__");
+      select.value=wanted;$("modelManual").hidden=wanted!=="__manual__";store(`model.${providerName}`,wanted);renderModelLabels();
+    } catch(err) {
+      if(request!==modelRequest||$("provider").value!==providerName)return;
+      select.replaceChildren();state.modelRows=[];
+      if(wantedBefore&&wantedBefore!=="__manual__"){const option=document.createElement("option");option.value=wantedBefore;option.dataset.model=wantedBefore;select.appendChild(option);}
+      const manual=document.createElement("option");manual.value="__manual__";manual.textContent="其他（手填模型名）";select.appendChild(manual);
+      select.value=wantedBefore||"__manual__";$("modelManual").hidden=select.value!=="__manual__";renderModelLabels();
+      toast("bad",`模型列表读取失败，已保留上次设置：${err.message}`);
+    } finally {
+      if(request===modelRequest&&$("provider").value===providerName){select.disabled=false;updateSummary();}
     }
-    updateSummary();
   }
 
   async function loadPricing() {
     try {
-      const data = await api("/api/pricing");
+      const [data,usage]=await Promise.all([api("/api/pricing"),api("/api/usage").catch(()=>null)]);
       state.pricing.payload = data;
       state.pricing.currency = data.currency || "USD";
       state.pricing.source = data.source || "file";
@@ -904,7 +858,7 @@
           state.pricing.raw[model.model] = null;
         }
       }
-      state.usage = data.usage;
+      if(usage)state.usage=usage;
       state.pricingAt = Date.now();
       renderUsage();
       renderModelLabels();
@@ -927,33 +881,60 @@
   }
 
   /* ------------------------------------------------------------------ files */
-  function addFiles(fileList) {
-    for (const file of fileList) {
-      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) continue;
-      state.files.push({ file, url: URL.createObjectURL(file), name: file.name });
+  async function addFiles(fileList) {
+    const entries=[];
+    for(const file of [...fileList]){
+      if(!/^image\/(png|jpeg|webp)$/.test(file.type)){toast("bad",`${file.name}：请选择 PNG、JPG 或 WebP`);continue;}
+      if(file.size>20*1024*1024){toast("bad",`${file.name}：原图不能超过 20 MB`);continue;}
+      const entry={file,url:"",name:file.name,loading:true};state.files.push(entry);entries.push(entry);
     }
     renderThumbs();
+    for(const entry of entries){
+      try{
+        const bitmap=await createImageBitmap(entry.file),ratio=Math.min(160/bitmap.width,200/bitmap.height,1);
+        const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(bitmap.width*ratio));canvas.height=Math.max(1,Math.round(bitmap.height*ratio));
+        canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
+        const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",.8));if(!blob)throw new Error("预览生成失败");
+        if(!state.files.includes(entry))continue;
+        entry.url=URL.createObjectURL(blob);entry.loading=false;
+      }catch(_){const index=state.files.indexOf(entry);if(index>=0)state.files.splice(index,1);toast("bad",`${entry.name}：图片无法读取，请重新选择`);}
+      renderThumbs();
+    }
+  }
+  function pasteImages(event) {
+    const editing=element=>element instanceof Element&&(element.isContentEditable||element.closest('textarea,select,[role="textbox"],#harnessDrawer')||element.closest('input:not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="submit"]):not([type="reset"]):not([type="color"])'));
+    if(event.defaultPrevented||editing(event.target)||editing(document.activeElement)||!event.clipboardData)return;
+    const files=[],mirrors=new Map(),key=file=>JSON.stringify([file.name,file.type,file.size,file.lastModified]);
+    for(const item of [...(event.clipboardData.items||[])]){
+      if(item.kind!=="file"||!item.type.startsWith("image/"))continue;
+      const file=item.getAsFile();if(!file)continue;
+      files.push(file);const id=key(file);mirrors.set(id,(mirrors.get(id)||0)+1);
+    }
+    for(const file of [...(event.clipboardData.files||[])]){
+      if(!file.type.startsWith("image/"))continue;
+      const id=key(file),remaining=mirrors.get(id)||0;
+      if(remaining){mirrors.set(id,remaining-1);continue;}
+      files.push(file);
+    }
+    if(!files.length)return;
+    let next=[...state.files,...files].reduce((max,entry)=>Math.max(max,Number(/^item-(\d+)(?:_|\.)/i.exec(entry.name)?.[1])||0),0)+1;
+    const named=files.map(file=>{
+      if(file.name&&!/^(?:image|blob|clipboard|untitled)(?:\.[^.]+)?$/i.test(file.name))return file;
+      const ext=({"image/png":"png","image/jpeg":"jpg","image/webp":"webp"})[file.type]||file.type.slice(6).replace(/[^a-z0-9]/gi,"")||"png";
+      return new File([file],`item-${String(next++).padStart(2,"0")}_view-01.${ext}`,{type:file.type,lastModified:file.lastModified});
+    });
+    event.preventDefault();
+    addFiles(named);
   }
 
   function renderThumbs() {
-    const box = $("thumbs");
-    box.innerHTML = "";
-    state.files.forEach((entry, index) => {
-      const wrap = document.createElement("div");
-      wrap.className = "thumb";
-      wrap.innerHTML = `<img src="${entry.url}" alt=""/><span class="idx">${index + 1}</span>
-        <button type="button" aria-label="移除第 ${index + 1} 张">×</button>`;
-      wrap.querySelector("button").addEventListener("click", (event) => {
-        event.preventDefault();
-        state.files.splice(index, 1);
-        state.draftId = "";
-        renderThumbs();
-      });
-      box.appendChild(wrap);
+    const box=$("thumbs");box.replaceChildren();
+    state.files.forEach((entry,index)=>{
+      const wrap=document.createElement("div");wrap.className=`thumb${entry.loading?" uploading":""}`;
+      wrap.innerHTML=`${entry.url?`<img src="${entry.url}" alt="素材 ${index+1}" decoding="async"/>`:""}<span class="idx">${index+1}</span><button type="button" aria-label="移除第 ${index+1} 张">×</button>`;
+      wrap.querySelector("button").addEventListener("click",event=>{event.preventDefault();state.files.splice(index,1);if(entry.url)URL.revokeObjectURL(entry.url);state.draftId="";renderThumbs();});box.appendChild(wrap);
     });
-    $("fileCount").textContent = state.files.length ? `${state.files.length} 张` : "未选择";
-    state.draftId = "";
-    updateSummary();
+    $("fileCount").textContent=state.files.length?`${state.files.length} 张`:"未选择";state.draftId="";updateSummary();
   }
 
   /* --------------------------------------------------------------- settings */
@@ -995,23 +976,26 @@
   }
 
   /* ---------------------------------------------------------------- drafts */
-  async function ensureDraft() {
-    if (state.draftId) return state.draftId;
-    const form = new FormData();
-    state.files.forEach((entry) => form.append("files", entry.file, entry.file.name));
-    const data = await api("/api/drafts", { method: "POST", body: form });
-    state.draftId = data.draft_id;
-    return state.draftId;
+  async function ensureDraft(){
+    if(state.draftId)return state.draftId;
+    const files=state.files.map(entry=>entry.file),form=new FormData();
+    files.forEach(file=>form.append("files",file,file.name));
+    const data=await api("/api/drafts",{method:"POST",body:form});
+    if(files.length!==state.files.length||files.some((file,index)=>file!==state.files[index]?.file))throw new Error("上传期间原图已变化，本次旧草稿已忽略，请重新点击生成");
+    state.draftId=data.draft_id;return state.draftId;
   }
 
   /* ------------------------------------------------------- job creation --- */
-  async function createJob(extraRequirements) {
+  async function createJob(extraRequirements, {fromHarness=false}={}) {
     if (state.busy) return;
+    const blocked=startBlockedReason();if(blocked){toast("bad",blocked);return;}
     saveSettings();
     state.busy = true;
     updateSummary();
     $("startBtn").classList.add("loading");
     $("startBtn").textContent = "提交中…";
+    window.WorkbenchUI.beginSubmission(selectionsPayload());
+    if(fromHarness)window.AIWorkflow?.phase('submitting');
     try {
       const form = new FormData();
       state.files.forEach((entry) => form.append("files", entry.file, entry.file.name));
@@ -1034,7 +1018,8 @@
       if (extraRequirements) form.append("extra_requirements", extraRequirements);
       form.append("start", "true");
       const data = await api("/api/jobs", { method: "POST", body: form });
-      closeHarness();
+      window.WorkbenchUI.endSubmission(true);
+      if(fromHarness){state.harnessSubmittedJob=data.job.id;window.AIWorkflow?.submitted(data.job.id);}else closeHarness();
       watchJob(data.job.id, data.job);
       loadHistory();
       loadGate();
@@ -1044,7 +1029,9 @@
         ? `已开工：${data.job.stats.total} 张，预计 ${money(est.total, est.currency)}`
         : "已开工");
     } catch (err) {
-      toast("bad", `创建任务失败：${err.message}`);
+      window.WorkbenchUI.endSubmission(false);
+      toast("bad", `创建任务未确认：${err.message}。请先查看任务记录确认，避免重复提交。`);
+      if(fromHarness)window.AIWorkflow?.error(`提交结果未确认：${err.message}。请先查看任务记录，勿重复提交。`);
     } finally {
       state.busy = false;
       $("startBtn").classList.remove("loading");
@@ -1059,47 +1046,63 @@
   //  - 标签页在后台就**停轮询**，切回来立刻拉一次
   //  - 任务跑得久就逐步拉长间隔（1.2s → 2s → 3s）
   //  - 跑完后不再轮询
-  function watchJob(jobId, seed) {
-    state.jobId = jobId;
-    state.selected = new Set();
-    state.pollStartedAt = Date.now();
-    try {
-      const url = new URL(location.href);
-      url.searchParams.set("job", jobId);
-      history.replaceState(null, "", url);
-    } catch (_) { /* ignore */ }
-    if (state.pollTimer) clearTimeout(state.pollTimer);
-    // POST 的响应里已经带完整任务列表 → 先渲染一帧，别让用户干等第一次轮询
-    if (seed && seed.id === jobId) renderJob(seed);
+  function setJobLoading(loading) {
+    state.jobLoading=loading;
+    if(loading)$("jobDuration").hidden=true;
+    $("galleryPane").inert=loading;$("logPane").inert=loading;
+    $("galleryPane").setAttribute("aria-busy",String(loading));
+    document.body.classList.toggle("job-loading",loading);
+    let surface=$("jobLoadingSurface");
+    if(loading){
+      if(!surface){surface=document.createElement("p");surface.id="jobLoadingSurface";surface.className="job-loading-surface";surface.setAttribute("role","status");$("galleryScroll").prepend(surface);}
+      surface.textContent="正在切换任务，读取完成后即可操作";
+    }else surface?.remove();
+    updateSummary();
+  }
 
-    const tick = async () => {
-      if (!state.jobId) return;
-      if (document.hidden) {          // 后台不请求，切回来由 visibilitychange 触发
-        state.pollTimer = null;
-        return;
-      }
-      let delay = 1200;
-      try {
-        const data = await api(`/api/jobs/${state.jobId}`);
+  function watchJob(jobId, seed) {
+    const epoch=++state.pollEpoch,changed=state.jobId!==jobId;
+    state.pollController?.abort();
+    const controller=new AbortController();state.pollController=controller;
+    if(state.pollTimer)clearTimeout(state.pollTimer);state.pollTimer=null;
+    state.jobId=jobId;
+    if(changed){state.selected=new Set();$("lightbox").close();}
+    state.pollStartedAt=Date.now();
+    const current=()=>state.pollEpoch===epoch&&state.jobId===jobId;
+    try{
+      const url=new URL(location.href);url.searchParams.set("job",jobId);history.replaceState(null,"",url);
+    }catch(_){}
+    if(seed&&seed.id===jobId)renderJob(seed);
+    else{
+      setJobLoading(true);
+      $("jobTitle").textContent="正在读取任务";$("jobStage").textContent="等待服务器返回任务详情";
+    }
+    const tick=async()=>{
+      if(!current())return;
+      state.pollTimer=null;
+      if(document.hidden)return;
+      let delay=1200;
+      try{
+        const data=await api(`/api/jobs/${jobId}`,{signal:controller.signal});
+        if(!current())return;
+        if(!data.job||data.job.id!==jobId)throw new Error("任务编号不匹配");
         renderJob(data.job);
-        if (TERMINAL.includes(data.job.status)) {
-          loadHistory();
-          loadGate();
-          maybeLoadPricing();
-          state.pollTimer = null;
-          return;
+        if(TERMINAL.includes(data.job.status)){
+          loadHistory();loadGate();maybeLoadPricing();return;
         }
-        const total = (data.job.stats || {}).total || 0;
-        const elapsed = (Date.now() - (state.pollStartedAt || Date.now())) / 1000;
-        if (total > 12) delay = 2400;
-        else if (total > 6) delay = 1600;
-        if (elapsed > 60) delay = Math.max(delay, 2000);
-        if (elapsed > 180) delay = Math.max(delay, 3000);
-      } catch (err) {
-        $("jobStage").textContent = `读取任务失败：${err.message}`;
-        delay = 2500;
+        const total=(data.job.stats||{}).total||0,elapsed=(Date.now()-state.pollStartedAt)/1000;
+        if(total>12)delay=2400;else if(total>6)delay=1600;
+        if(elapsed>60)delay=Math.max(delay,2000);
+        if(elapsed>180)delay=Math.max(delay,3000);
+      }catch(err){
+        if(!current()||err.name==="AbortError")return;
+        const phase=state.job?.id===jobId?jobPhase(state.job):null;
+        if(phase?.terminal)return;
+        $("jobStage").textContent=`${phase?.packaging?"生成完成，正在打包 · ":""}状态更新暂时失败，正在重试：${err.message}`;
+        if(state.jobLoading&&$("jobLoadingSurface"))$("jobLoadingSurface").textContent=`读取任务失败，正在重试：${err.message}`;
+        delay=2500;
       }
-      state.pollTimer = setTimeout(tick, delay);
+      if(current())state.pollTimer=setTimeout(tick,delay);
     };
     tick();
   }
@@ -1111,8 +1114,24 @@
     loadPricing();
   }
 
+  function formatJobDuration(seconds){
+    const value=Math.max(0,Number(seconds)||0),hours=Math.floor(value/3600),minutes=Math.floor(value%3600/60),remaining=(value%60).toFixed(1);
+    return hours?`${hours}小时 ${minutes}分 ${remaining}秒`:minutes?`${minutes}分 ${remaining}秒`:`${remaining}秒`;
+  }
+
+  function jobPhase(job) {
+    const stats=job.stats||{},terminal=TERMINAL.includes(job.status);
+    const completed=Number(stats.done||0)+Number(stats.skipped||0),total=Number(stats.total||0);
+    const settled=total>0&&completed+Number(stats.failed||0)+Number(stats.canceled||0)>=total&&!Number(stats.running||0)&&!Number(stats.pending||0)&&!Number(stats.queued||0)&&!(job.tasks||[]).some(task=>["pending","queued","running"].includes(task.status));
+    const packaging=!terminal&&(settled||/packag|finaliz|打包|整理/.test(`${job.status} ${job.stage||""}`));
+    return {terminal,packaging,successful:job.status==="done"&&!Number(stats.failed||0),progress:Math.max(0,Math.min(terminal?100:99,Number(job.progress)||0))};
+  }
+
   function renderJob(job) {
-    state.job = job;
+    if(job.id!==state.jobId)return;
+    state.job=job;
+    const phase=jobPhase(job);
+    if(state.jobLoading)setJobLoading(false);
     const params = job.params || {};
     const isRework = params.kind === "rework";
     const styleCount = (params.selections || []).length;
@@ -1121,7 +1140,11 @@
       : styleCount > 1
         ? `${styleCount} 个款式 · ${job.stats.total} 张`
         : `${params.garment_name || "任务"} · ${job.stats.total} 张`;
-    $("jobStage").textContent = job.stage || job.status;
+    $("jobStage").textContent = phase.successful?"生成完成":phase.packaging?(params.packaging_progress?`生成完成，校验打包 ${params.packaging_progress}`:/打包|校验|packag/i.test(job.stage||"")?job.stage:"生成完成，正在打包"):job.stage||job.status;
+    const duration=$("jobDuration"),end=Number(job.finished_at||job.updated_at||0);
+    const seconds=typeof job.duration==="number"?job.duration:end-Number(job.created_at||end);
+    duration.hidden=!TERMINAL.includes(job.status)||!Number.isFinite(seconds)||seconds<0;
+    duration.textContent=duration.hidden?"":` · 总耗时 ${formatJobDuration(seconds)}`;
 
     const stats = job.stats;
     animateNumber($("kpiTotal"), stats.total);
@@ -1136,8 +1159,9 @@
       $("kpiCost").textContent = "未定价";
     }
     const bar = $("progressBar");
-    bar.setAttribute("aria-valuenow", String(Math.round(job.progress)));
-    bar.querySelector("i").style.width = `${job.progress}%`;
+    bar.setAttribute("aria-valuenow", String(Math.round(phase.progress)));
+    bar.setAttribute("aria-valuetext",phase.packaging?"图片已处理完成，正在整理打包":`${Math.round(phase.progress)}%`);
+    bar.style.setProperty("--progress",String(phase.progress/100));
     bar.classList.toggle("done", TERMINAL.includes(job.status));
     $("progressLabel").textContent = `${done} / ${stats.total}`;
     // 排队位置（来自飞书表轮询）：前方还有 xx 个任务
@@ -1153,7 +1177,7 @@
     if (queuedTotal > 0 && limit) queueParts.push(`飞书队列 ${queuedTotal} 张 / 额度 ${limit}`);
     if (!queueParts.length && waiting) queueParts.push(`排队 ${waiting}`);
     queueParts.push(`失败 ${stats.failed}`);
-    if (job.error) queueParts.push(job.error);
+    if (job.error&&!phase.successful) queueParts.push(job.error);
     $("progressStats").textContent = queueParts.join(" · ");
     const chip = $("queueChip");
     if (chip) {
@@ -1206,6 +1230,7 @@
         entry.el.style.setProperty("--i", String(Math.min(index, 14)));
         state.cards.set(task.id, entry);
         grid.appendChild(entry.el);
+        window.WorkbenchUI?.observeCard(entry.el,task);
       }
       seen.add(task.id);
       updateCard(entry, task, job);
@@ -1234,7 +1259,9 @@
     document.body.classList.toggle("busy", !TERMINAL.includes(job.status));
 
     $("resultToolbar").hidden = !job.tasks.length;
-    syncSelection();
+    syncSelection(true);
+    window.WorkbenchUI?.syncJob();
+    updateSummary();
   }
 
   /* 成品卡：建壳 + 增量更新（只有变化的部分才动 DOM） */
@@ -1249,7 +1276,7 @@
     el.innerHTML = `
       <label class="pick" title="选择"><input type="checkbox" data-task="${esc(task.id)}" aria-label="选择 ${esc(task.item)} ${esc(task.color_name)}"/></label>
       <span class="state"></span>
-      <div class="shot"><div class="ph"></div></div>
+      <div class="shot flash-card"><div class="card-turner"><div class="card-back"><div class="back-top"><span>OBSIDIAN</span><span class="back-code">${esc(task.view||"")}</span></div><div class="back-emblem" aria-hidden="true">${icon("i-spark",34)}</div><b class="back-status">等待生成</b><span class="back-message">已为这张成品保留位置</span><span class="back-meter" aria-hidden="true"><i></i></span></div><div class="card-front"></div></div></div>
       <div class="meta">
         <span class="dot" style="background:${esc(task.color_hex || "#94a3b8")}"></span>
         <span class="name">${esc(task.color_name)}</span>
@@ -1266,6 +1293,9 @@
     return {
       el,
       shot: el.querySelector(".shot"),
+      front:el.querySelector(".card-front"),
+      backText:el.querySelector(".back-status"),
+      backMessage:el.querySelector(".back-message"),
       state: el.querySelector(".state"),
       input: el.querySelector("input[data-task]"),
       dl: el.querySelector("[data-dl]"),
@@ -1297,9 +1327,7 @@
     return Math.round(job.updated_at || 0);
   }
 
-  // 网格直接用**原图**（不再走缩略图/IndexedDB）：本地读盘本来就快，
-  // 只做两件事保证滚动流畅 —— 视口外不加载（IntersectionObserver + rootMargin）、
-  // 加载完成前留位占位（.shot 已有 aspect-ratio，不会抖）。
+  // 列表仅按视口加载服务端缩略图；灯箱预览和原图下载各用独立地址。
   let imageIO = null;
   function lazyObserver() {
     if (imageIO || typeof IntersectionObserver === "undefined") return imageIO;
@@ -1310,34 +1338,25 @@
         imageIO.unobserve(img);
         if (img.dataset.src) img.src = img.dataset.src;
       }
-    }, { rootMargin: "500px 0px" });
+    }, {root:$("galleryScroll"),rootMargin:"180px 0px"});
     return imageIO;
   }
 
-  function mountImage(entry, url, task) {
-    let img = entry.shot.querySelector("img");
-    if (!img) {
-      img = document.createElement("img");
-      img.decoding = "async";
-      img.alt = `${task.color_name}成品`;
-      entry.shot.innerHTML = "";
-      entry.shot.appendChild(img);
-    }
-    // 浏览器 HTTP 缓存（immutable + 版本号）负责重复命中，不再自己存一份
-    img.removeAttribute("src");
-    img.dataset.src = url;
-    const io = lazyObserver();
-    if (io) {
-      img.loading = "lazy";
-      io.observe(img);
-    } else {
-      img.src = url;
-    }
+  function mountImage(entry,url,task) {
+    const previous=entry.front.querySelector("img");if(previous)lazyObserver()?.unobserve(previous);
+    const img=document.createElement("img");img.decoding="async";img.loading="eager";
+    img.alt=`${task.garment_name||""} · ${task.color_name} · ${task.item}`;img.width=520;img.height=650;
+    window.WorkbenchUI.resetCard(entry);entry.shot.setAttribute("aria-busy","true");
+    img.onload=async()=>{try{await img.decode();}catch(_){}if(!img.isConnected)return;entry.shot.setAttribute("aria-busy","false");window.WorkbenchUI.revealCard(entry,task);};
+    img.onerror=()=>{if(!img.isConnected)return;entry.shot.setAttribute("aria-busy","false");const retry=document.createElement("button");retry.type="button";retry.className="front-retry";retry.textContent="图片读取失败 · 点击重载";retry.onclick=event=>{event.stopPropagation();mountImage(entry,url,task);};entry.front.replaceChildren(retry);entry.el.classList.add("flash-revealed");};
+    entry.front.replaceChildren(img);img.dataset.src=url;const io=lazyObserver();if(io)io.observe(img);else img.src=url;
   }
 
   function refreshCacheInfo() { /* 已取消 IndexedDB 图片缓存 */ }
 
   function updateCard(entry, task, job) {
+    const signature=[task.status,task.queue_ahead,task.duration,task.thumb,task.thumb_small,task.version,task.error,task.out,task.master,task.master_task,task.person_alert,state.selected.has(task.id)].join("|");
+    if(entry.renderSignature===signature)return;entry.renderSignature=signature;
     const status = task.status;
     if (entry.status !== status) {
       entry.el.classList.remove(
@@ -1351,32 +1370,28 @@
     // 排队中的图要说清楚「还差几个」，不能都显示成生成中
     let stateText = `${STATUS[status] || status}`;
     if (status === "queued") {
-      const ahead = Number(task.queue_ahead);
-      stateText = Number.isFinite(ahead) && ahead > 0 ? `排队中，还有 ${ahead} 个` : "排队中";
+      const ahead=task.queue_ahead==null?NaN:Number(task.queue_ahead);
+      stateText=Number.isFinite(ahead)&&ahead>0?`排队中，还有 ${ahead} 张`:"排队中";
     } else if (task.duration) {
       stateText += ` ${task.duration}s`;
     }
     if (entry.state.textContent !== stateText) entry.state.textContent = stateText;
 
     // 只有真的换了图（版本变化）才动 <img>：否则进度轮询会不停重新解码
-    const imageUrl = task.thumb
-      ? `${task.thumb}?v=${taskVersion(task, job) || 0}`
-      : "";
+    const imageUrl=task.thumb_small||(task.thumb?`${task.thumb}${task.thumb.includes("?")?"&":"?"}v=${taskVersion(task,job)||0}`:"");
     if (imageUrl) {
       if (entry.thumb !== imageUrl) {
         entry.thumb = imageUrl;
         entry.el.classList.add("settled");
-        entry.el.dataset.full = imageUrl;
+        entry.el.dataset.full=task.preview||`${task.thumb}?v=${taskVersion(task,job)||0}`;
         mountImage(entry, imageUrl, task);
       }
     } else if (entry.thumb) {
-      entry.shot.innerHTML = `<div class="ph">${STATUS[status] || status}</div>`;
+      entry.front.replaceChildren();window.WorkbenchUI.resetCard(entry);delete entry.el.dataset.full;
       entry.thumb = "";
       entry.el.classList.add("settled");
     } else {
-      const ph = entry.shot.querySelector(".ph");
-      const label = STATUS[status] || status;
-      if (ph && ph.textContent !== label) ph.textContent = label;
+      // 背面状态由业务展示层统一处理（基准依赖、排队、生成与异常）。
     }
 
     if (task.error && entry.errorText !== task.error) {
@@ -1420,7 +1435,7 @@
       }
     }
 
-    entry.rework.disabled = status !== "done";
+    if(entry.rework.disabled!==(status!=="done"))entry.rework.disabled=status!=="done";
 
     if (status === "failed") {
       if (!entry.retry) {
@@ -1439,21 +1454,16 @@
     if (entry.input.checked !== state.selected.has(task.id)) {
       entry.input.checked = state.selected.has(task.id);
     }
+    window.WorkbenchUI.updateCard(entry,task);
   }
 
-  function syncSelection() {
-    const ready = (state.job?.tasks || []).filter((t) => t.out);
-    document.querySelectorAll("#gridImgs .cardimg").forEach((card) => {
-      const on = state.selected.has(card.dataset.task);
-      card.classList.toggle("sel", on);
-      const input = card.querySelector("input[data-task]");
-      if (input) input.checked = on;
-    });
-    const count = state.selected.size;
-    $("selCount").textContent = `已选 ${count} 张`;
-    $("batchReworkBtn").disabled = count === 0;
-    $("batchExportBtn").disabled = ready.length === 0 && count === 0;
-    $("selAll").checked = ready.length > 0 && count === ready.length;
+  function syncSelection(onlyControls=false) {
+    const ready=(state.job?.tasks||[]).filter(t=>t.out);
+    if(!onlyControls)state.cards.forEach(entry=>{const on=state.selected.has(entry.el.dataset.task);if(entry.el.classList.contains("sel")!==on)entry.el.classList.toggle("sel",on);if(entry.input.checked!==on)entry.input.checked=on;});
+    const count=state.selected.size,label=`已选 ${count} 张`;
+    if($("selCount").textContent!==label)$("selCount").textContent=label;
+    $("batchReworkBtn").disabled=count===0||Boolean(submissionBlockedReason());$("batchExportBtn").disabled=state.jobLoading||(ready.length===0&&count===0);
+    $("selAll").checked=ready.length>0&&count===ready.length;
   }
 
   /* ---------------------------------------------------------------- history */
@@ -1490,51 +1500,35 @@
 
   /* --------------------------------------------------------------- actions */
   async function cancelJob() {
-    if (!state.jobId) return;
+    if(state.jobLoading||!state.jobId||state.job?.id!==state.jobId)return;
+    const jobId=state.jobId;
     await withLoading($("cancelBtn"), async () => {
-      try { await api(`/api/jobs/${state.jobId}/cancel`, { method: "POST" }); }
+      try { await api(`/api/jobs/${jobId}/cancel`, { method: "POST" }); }
       catch (err) { toast("bad", err.message); }
     }, "取消中…");
   }
-  async function retryJob() {
-    if (!state.jobId) return;
-    await withLoading($("retryBtn"), async () => {
-      try {
-        await api(`/api/jobs/${state.jobId}/retry`, { method: "POST" });
-        watchJob(state.jobId);
-      } catch (err) { toast("bad", err.message); }
-    }, "重试中…");
+  async function retryTasks(button, form) {
+    const blocked=submissionBlockedReason();if(blocked){toast("bad",blocked);return;}
+    if(!state.jobId||state.job?.id!==state.jobId)return;
+    const jobId=state.jobId;state.busy=true;updateSummary();
+    try{
+      await withLoading(button,()=>api(`/api/jobs/${jobId}/retry`,{method:"POST",...(form?{body:form}:{})}),"重试中…");
+      if(state.jobId===jobId)watchJob(jobId);
+    }catch(err){toast("bad",`重试未确认：${err.message}。请先查看任务记录，避免重复提交。`);}
+    finally{state.busy=false;updateSummary();}
   }
-  async function retryLimited() {
-    if (!state.jobId) return;
-    const form = new FormData();
-    form.append("only", "rate_limit");
-    await withLoading($("retryLimitedBtn"), async () => {
-      try {
-        await api(`/api/jobs/${state.jobId}/retry`, { method: "POST", body: form });
-        watchJob(state.jobId);
-        toast("ok", "已重新排队：被限流的图会按闸门额度慢慢补上");
-      } catch (err) { toast("bad", err.message); }
-    }, "重试中…");
-  }
-
-  async function retrySingle(taskId) {
-    if (!state.jobId) return;
-    const form = new FormData();
-    form.append("task_ids", taskId);
-    try {
-      await api(`/api/jobs/${state.jobId}/retry`, { method: "POST", body: form });
-      watchJob(state.jobId);
-    } catch (err) { toast("bad", err.message); }
-  }
+  async function retryJob(){await retryTasks($("retryBtn"));}
+  async function retryLimited(){const form=new FormData();form.append("only","rate_limit");await retryTasks($("retryLimitedBtn"),form);}
+  async function retrySingle(taskId){const form=new FormData();form.append("task_ids",taskId);await retryTasks(null,form);}
   function exportSelection() {
-    if (!state.jobId) return;
+    if(state.jobLoading||!state.jobId||state.job?.id!==state.jobId)return;
     const ids = [...state.selected];
     const query = ids.length ? `?tasks=${encodeURIComponent(ids.join(","))}` : "";
     window.location.href = `/api/jobs/${state.jobId}/export${query}`;
     toast("ok", ids.length ? `正在导出 ${ids.length} 张原图` : "正在导出全部成品（原图）");
   }
   async function showPrompt() {
+    openDrawer("prompt");$("promptBody").innerHTML=skeletonHTML(5,26);
     await withLoading($("previewBtn"), async () => {
     try {
       const pick = primaryStyle();
@@ -1545,7 +1539,7 @@
         body: JSON.stringify({
           garment_type: pick.slug,
           color,
-          requirement: state.requirements || "",
+          requirement: ($("briefInput").value||state.requirements||"").trim(),
           pattern_mode: currentPatternMode(),
           subject: $("subject") ? $("subject").value : "auto",
         }),
@@ -1669,30 +1663,30 @@
   }
   function closeFeishu() { closePanel("feishuDrawer", "feishuScrim"); }
 
+  const panelCloseTimers=new Map();
   function openDrawer(which) {
-    const isPrompt = which === "prompt";
-    const scrim = isPrompt ? $("promptScrim") : $("harnessScrim");
-    const panel = isPrompt ? $("promptDrawer") : $("harnessDrawer");
-    (isPrompt ? $("harnessDrawer") : $("promptDrawer")).hidden = true;
-    (isPrompt ? $("harnessScrim") : $("promptScrim")).hidden = true;
-    scrim.hidden = false;
-    panel.hidden = false;
-    requestAnimationFrame(() => { scrim.classList.add("on"); panel.classList.add("on"); });
-    if (!isPrompt) setTimeout(() => $("harnessInput").focus(), 240);
+    const isPrompt=which==="prompt",scrim=$(isPrompt?"promptScrim":"harnessScrim"),panel=$(isPrompt?"promptDrawer":"harnessDrawer");
+    const other=$(isPrompt?"harnessDrawer":"promptDrawer"),otherScrim=$(isPrompt?"harnessScrim":"promptScrim");
+    other.hidden=true;other.classList.remove("on");otherScrim.hidden=true;otherScrim.classList.remove("on");
+    clearTimeout(panelCloseTimers.get(panel.id));
+    const epoch=String(Number(panel.dataset.panelEpoch||0)+1);panel.dataset.panelEpoch=epoch;
+    scrim.hidden=false;panel.hidden=false;
+    requestAnimationFrame(()=>{if(panel.dataset.panelEpoch!==epoch)return;scrim.classList.add("on");panel.classList.add("on");window.AIWorkflow?.refresh();});
+    if(!isPrompt)setTimeout(()=>{if(panel.dataset.panelEpoch===epoch&&!panel.hidden)$("harnessInput").focus({preventScroll:true});},240);
   }
-  function closePanel(panelId, scrimId) {
-    $(panelId).classList.remove("on");
-    $(scrimId).classList.remove("on");
-    setTimeout(() => { $(panelId).hidden = true; $(scrimId).hidden = true; }, 240);
+  function closePanel(panelId,scrimId) {
+    const panel=$(panelId),scrim=$(scrimId),epoch=String(Number(panel.dataset.panelEpoch||0)+1);panel.dataset.panelEpoch=epoch;
+    panel.classList.remove("on");scrim.classList.remove("on");clearTimeout(panelCloseTimers.get(panelId));
+    panelCloseTimers.set(panelId,setTimeout(()=>{if(panel.dataset.panelEpoch===epoch){panel.hidden=true;scrim.hidden=true;}},240));
   }
-  function closeHarness() { closePanel("harnessDrawer", "harnessScrim"); }
+  function closeHarness(){closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
   function closePrompt() { closePanel("promptDrawer", "promptScrim"); }
 
   /* ----------------------------------------------------------- harness chat */
   function chatBubble(role, text) {
     const wrap = document.createElement("div");
     wrap.className = `msg ${role}`;
-    wrap.innerHTML = `<span class="who">${role === "user" ? "你" : "harness"}</span><div class="bubble"></div>`;
+    wrap.innerHTML = `<span class="who">${role === "user" ? "你" : "AI 工作室"}</span><div class="bubble"></div>`;
     const bubble = wrap.querySelector(".bubble");
     bubble.textContent = text || "";
     $("chatLog").appendChild(wrap);
@@ -1719,7 +1713,7 @@
     if (state.typingEl) return;
     const wrap = document.createElement("div");
     wrap.className = "msg assistant typing";
-    wrap.innerHTML = `<span class="who">harness</span><div class="bubble"><i></i><i></i><i></i></div>`;
+    wrap.innerHTML = `<span class="who">AI 工作室</span><div class="bubble"><i></i><i></i><i></i></div>`;
     $("chatLog").appendChild(wrap);
     state.typingEl = wrap;
     scrollChat();
@@ -1772,8 +1766,9 @@
     }
     const line = row.querySelector(".tool-line");
     line.classList.remove("running");
-    line.classList.add("done");
-    line.querySelector(".spin").outerHTML = `<span class="ok">${icon("i-check", 12)}</span>`;
+    const failed=/^(失败|错误|工具.+执行失败|Error:)/i.test(body);
+    line.classList.add(failed?"failed":"done");
+    line.querySelector(".spin").outerHTML=`<span class="ok">${icon(failed?"i-alert":"i-check",12)}</span>`;
     line.querySelector(".txt").textContent = TOOL_LABEL[name] || name;
     const result = row.querySelector(".tool-result");
     if (body) {
@@ -1825,6 +1820,8 @@
     state.assistantText = "";
     state.typingEl = null;
     state.toolRows.clear();
+    state.streamedText="";state.harnessSubmittedJob="";state.harnessHasResult=false;state.harnessStreamDone=false;
+    $("harnessInput").value="";
   }
 
   function renderQuick(list) {
@@ -1843,64 +1840,52 @@
     }
   }
 
-  async function openHarness(mode, taskIds) {
-    state.harnessMode = mode;
-    state.reworkTargets = mode === "rework" ? (taskIds || [...state.selected]) : [];
-    state.reworkSourceJob = state.jobId;
-    resetChat();
-    if (mode === "rework") {
-      if (!state.reworkTargets.length) { toast("bad", "请先选择要改图的成品"); return; }
-      $("harnessTitle").textContent = "改图返工";
-      $("harnessSub").textContent = `以选中的 ${state.reworkTargets.length} 张成品为参考图`;
-      $("harnessApply").textContent = "确认返工";
-      $("harnessDefault").textContent = "取消";
-      renderQuick(QUICK_REWORK);
-      await initReworkModels();
-      chatBubble("assistant", `要返工 ${state.reworkTargets.length} 张。说说要改什么（哪一处、往哪个方向），我先看清楚再动手。`);
-    } else {
-      try { await ensureDraft(); }
-      catch (err) { toast("bad", `上传草稿失败：${err.message}`); return; }
-      const items = state.files.length;
-      const colors = totalColors();
-      const styleText = state.styles
-        .map((entry) => `${styleName(entry.slug)}（${entry.colors.size} 色）`)
-        .join(" + ");
-      $("harnessTitle").textContent = "需求沟通";
-      $("harnessSub").textContent = `${items} 图 × ${colors} 色 · 预计 ${items * colors} 次调用`;
-      $("harnessApply").textContent = "按分析结果生成";
-      $("harnessDefault").textContent = "按默认生成";
-      renderQuick(QUICK_INTAKE);
-      const model = currentModel();
-      const price = state.pricing.byId[model];
-      const cost = price && price.unit !== null
-        ? `预计 ${money(price.unit * items * colors, price.currency)}`
-        : "该模型未定价";
-      chatBubble(
-        "assistant",
-        `这批：${styleText} · ${items} 图 × 共 ${colors} 色，${model}，${cost}。\n有特殊要求可以直接说，也可以让我先看图判断风险。`
-      );
-    }
-    // 只有改图才显示「换模型」那一行
-    $("reworkModel").hidden = mode !== "rework";
-    $("harnessApply").disabled = true;
-    openDrawer("harness");
-    if (state.pendingBrief) {
-      $("harnessInput").value = state.pendingBrief;
-      state.pendingBrief = "";
-      $("harnessInput").focus();
-    }
+  function harnessContextKey(){
+    if(state.harnessMode==="rework")return "";
+    return JSON.stringify({files:state.files.map(e=>[e.file.name,e.file.size,e.file.lastModified]),selections:selectionsPayload(),provider:$("provider").value,model:currentModel(),size:currentSize(),quality:$("quality").value,subject:$("subject").value,pattern:currentPatternMode(),format:currentOutputFormat(),brief:briefText()});
+  }
+  function harnessContextChanged(){return state.harnessMode==="intake"&&!!state.harnessContextKey&&state.harnessContextKey!==harnessContextKey();}
+  async function openHarness(mode,taskIds){
+    const blocked=submissionBlockedReason();if(blocked){toast("bad",blocked);return false;}
+    if(mode==="rework"&&(!state.job||state.job.id!==state.jobId))return false;
+    if(mode!=="rework"){const reason=startBlockedReason();if(reason){toast("bad",reason);return false;}}
+    const targets=mode==="rework"?(taskIds||[...state.selected]):[];
+    if(mode==="rework"&&!targets.length){toast("bad","请先选择要改图的成品");return false;}
+    state.harnessOpening=true;state.harnessMode=mode;state.reworkTargets=targets;state.reworkSourceJob=state.jobId;
+    const params=state.job?.params||{};
+    state.reworkMeta={provider:String(params.provider||""),model:String(params.model||""),size:String(params.size||"auto")};
+    resetChat();state.harnessContextKey=harnessContextKey();
+    if(mode!=="rework"&&state.pendingBrief){$("harnessInput").value=state.pendingBrief;state.pendingBrief="";}
+    $("harnessTitle").textContent=mode==="rework"?"AI 改图工作室":"AI 创作工作室";
+    $("harnessSub").textContent=mode==="rework"?`对照原始上传图与 ${targets.length} 张待改成品；保留完整正反面构图`:`${state.files.length} 张原图 · ${totalColors()} 个款色 · 先对齐需求，再确认生成`;
+    $("harnessApply").textContent=mode==="rework"?"确认返工":"确认并生成";
+    $("harnessDefault").textContent=mode==="rework"?"返回画廊":"按默认生成";
+    $("reworkModel").hidden=mode!=="rework";
+    renderQuick(mode==="rework"?QUICK_REWORK:QUICK_INTAKE);
+    window.AIWorkflow?.start(mode);openDrawer("harness");updateSummary();
+    try{
+      if(mode==="rework"){
+        await initReworkModels();
+        chatBubble("assistant",`本轮将对照原始上传图与 ${targets.length} 张待改成品。请说明要改的地方；同张原图中的正反面将一起核对。`);
+      }else{
+        await ensureDraft();
+        if(harnessContextChanged())throw new Error("素材或生成设定在准备期间发生变化，请重新点击生成");
+        const model=currentModel(),price=priceOf(model,currentSize()),count=expectedCalls();
+        const cost=price.unit!==null?`预计 ${money(price.unit*count,state.pricing.currency)}`:"该模型未定价";
+        chatBubble("assistant",`${state.styles.length} 个款式 · ${count} 张预计成品 · ${model} · ${cost}。我会先对齐这次要求，明确需要改变和保留的部分。`);
+      }
+      window.AIWorkflow?.phase('idle',mode==="rework"?'说明需要修改的地方；发送后 AI 将对照原始上传图与当前成品。':'素材已准备，正在进入本轮需求分析。');
+      return true;
+    }catch(err){
+      window.AIWorkflow?.error(`素材准备失败：${err.message}。本轮尚未提交生图，可重新点击生成。`);
+      chatBubble("assistant",`素材准备未完成：${err.message}。没有提交生图任务。`);return false;
+    }finally{state.harnessOpening=false;updateSummary();}
   }
 
   /* ------------------------------------------------- 改图：换模型 ---------- */
   // 成品当参考图交给别的模型重画：默认跟原任务同接口同模型，选了别人才换
   function sourceJobMeta() {
-    const job = state.job || {};
-    const params = job.params || {};
-    return {
-      provider: String(params.provider || ""),
-      model: String(params.model || ""),
-      size: String(params.size || "auto"),
-    };
+    return state.reworkMeta||{provider:"",model:"",size:"auto"};
   }
 
   async function initReworkModels() {
@@ -1921,37 +1906,27 @@
     await loadReworkModels(providerSel.value, meta.model);
   }
 
+  let reworkModelRequest=0;
   async function loadReworkModels(providerName, preferred) {
-    const select = $("reworkModelSel");
-    select.disabled = true;
-    select.innerHTML = '<option value="">正在读取模型…</option>';
-    let rows = [];
-    try {
-      const data = await api(
-        `/api/models?provider=${encodeURIComponent(providerName)}&refresh=false`
-      );
-      rows = (data.models || []).filter((m) => m.image);
-    } catch (err) {
-      console.warn("改图模型拉取失败", err.message);
+    const request=++reworkModelRequest,select=$("reworkModelSel");
+    select.disabled=true;select.innerHTML='<option value="">正在读取模型…</option>';syncActionControls();
+    let rows=[];
+    try{
+      const data=await api(`/api/models?provider=${encodeURIComponent(providerName)}&refresh=false`);
+      if(request!==reworkModelRequest||$("reworkProvider").value!==providerName)return;
+      rows=(data.models||[]).filter(m=>m.image);
+    }catch(err){
+      if(request!==reworkModelRequest||$("reworkProvider").value!==providerName)return;
+      toast("bad",`改图模型读取失败：${err.message}`);
     }
-    select.innerHTML = "";
-    if (!rows.length) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "（这个接口没有可用的图像模型）";
-      select.appendChild(option);
-    }
-    for (const model of rows) {
-      const option = document.createElement("option");
-      option.value = model.id;
-      option.textContent = model.id;
-      select.appendChild(option);
-    }
-    const keep = rows.find((m) => m.id === preferred) ? preferred : (rows[0] ? rows[0].id : "");
-    select.value = keep;
-    select.disabled = false;
-    select.onchange = () => renderReworkHint();
-    renderReworkHint();
+    if(request!==reworkModelRequest||$("reworkProvider").value!==providerName)return;
+    select.replaceChildren();
+    if(!rows.length){const option=document.createElement("option");option.value="";option.textContent="（这个接口没有可用的图像模型）";select.appendChild(option);}
+    for(const model of rows){const option=document.createElement("option");option.value=model.id;option.textContent=model.id;select.appendChild(option);}
+    select.value=rows.some(m=>m.id===preferred)?preferred:(rows[0]?.id||"");
+    select.disabled=false;
+    select.onchange=()=>{renderReworkHint();syncActionControls();};
+    renderReworkHint();syncActionControls();
   }
 
   function reworkChoice() {
@@ -1969,7 +1944,7 @@
     const switched = (meta.provider && provider !== meta.provider)
       || (meta.model && model !== meta.model);
     const size = currentSize() || meta.size;
-    const info = model ? priceOf(model, size) : { unit: null };
+    const info = model ? priceOf(model, size, provider) : { unit: null };
     const priceText = info.unit !== null && info.unit !== undefined
       ? `预计 ${money(info.unit * Math.max(1, count), state.pricing.currency)}`
         + `（${money(info.unit, state.pricing.currency)}/张）`
@@ -1978,31 +1953,27 @@
     if (!switched) head = `沿用 ${model || "原模型"}`;
     else if (meta.model) head = `换模型重画：${meta.model} → ${model || "未选"}`;
     else head = `换成 ${model || "未选"} 重画`;
-    hint.textContent = `${head} · ${count} 张 · 成品作为参考图 · ${priceText}`;
+    hint.textContent = `${head} · ${count} 张 · 回溯原图与成品对照 · ${priceText}`;
     hint.dataset.state = switched ? "switch" : "same";
   }
 
-  async function streamHarness(payload) {
-    const res = await fetch("/api/harness/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok || !res.body) throw new Error(`harness 连接失败 HTTP ${res.status}`);
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let index;
-      while ((index = buffer.indexOf("\n\n")) >= 0) {
-        const frame = buffer.slice(0, index);
-        buffer = buffer.slice(index + 2);
-        handleFrame(frame);
-      }
-    }
+  async function streamHarness(payload){
+    const res=await fetch("/api/harness/stream",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(!res.ok||!res.body)throw new Error(`AI 连接失败 HTTP ${res.status}`);
+    window.AIWorkflow?.phase('processing','对话已连接，等待 AI 返回本轮分析。');
+    const reader=res.body.getReader(),decoder=new TextDecoder();let buffer="";
+    function drain(){buffer=buffer.replace(/\r\n/g,"\n");let index;while((index=buffer.indexOf("\n\n"))>=0){const frame=buffer.slice(0,index);buffer=buffer.slice(index+2);handleFrame(frame);}}
+    try{
+      while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});drain();}
+      buffer+=decoder.decode();drain();if(buffer.trim())handleFrame(buffer);
+      if(!state.harnessStreamDone&&!state.harnessSubmittedJob)throw new Error("AI 流式连接提前结束，尚未收到本轮完成确认");
+    }finally{reader.releaseLock();}
+  }
+
+  function acceptHarnessJob(jobId){
+    const id=String(jobId||"");if(!id||state.harnessSubmittedJob===id)return;
+    state.harnessSubmittedJob=id;window.AIWorkflow?.submitted(id);
+    watchJob(id);loadHistory();loadGate();toast("ok","AI 已创建任务，可查看生成进度");
   }
 
   function handleFrame(frame) {
@@ -2015,6 +1986,8 @@
     if (!data) return;
     let payload;
     try { payload = JSON.parse(data); } catch (_) { return; }
+    if(event==="error")throw new Error(String(payload.error||payload.text||"AI 返回了错误"));
+    if(event==="meta")window.AIWorkflow?.phase('processing','服务端已开始处理本轮需求，工具将按需执行。');
 
     if (event === "delta") {
       hideTyping();
@@ -2026,6 +1999,7 @@
       state.streamedText += payload.text || "";
       state.assistantText += payload.text || "";
       pushTypeText(payload.text || "");
+      window.AIWorkflow?.stream(payload.text||"");
     } else if (event === "message") {
       hideTyping();
       flushType(true);
@@ -2036,6 +2010,7 @@
       if (text && text.trim() !== state.streamedText.trim()) {
         chatBubble("assistant", text);
         state.assistantText += (state.assistantText ? "\n" : "") + text;
+        window.AIWorkflow?.stream(text);
       }
       state.streamedText = "";
     } else if (event === "tool") {
@@ -2044,9 +2019,11 @@
       if (state.streamBubble) state.streamBubble.classList.remove("streaming");
       state.streamBubble = null;
       toolStart(payload.name);
+      window.AIWorkflow?.tool(payload.name,'running');
       showTyping();           // 工具跑完还要再想一轮 → 继续转圈
     } else if (event === "result") {
       toolEnd(payload.name, String(payload.text || ""));
+      window.AIWorkflow?.tool(payload.name,'result',String(payload.text||""));
       showTyping();
     } else if (event === "prompt") {
       hideTyping();
@@ -2055,34 +2032,16 @@
       state.streamBubble = null;
       state.composedPrompt = payload.prompt || "";
       state.requirements = payload.requirements || "";
-      $("harnessApply").disabled = state.harnessMode === "rework"
-        ? !state.composedPrompt
-        : !state.requirements;
-      if (payload.job_id) {
-        watchJob(payload.job_id);
-        loadHistory();
-        closeHarness();          // 定价/用量等任务跑完再刷，别在这儿抢带宽和事件循环
-        toast("ok", "harness 已提交任务");
-      }
+      state.harnessHasResult=true;syncActionControls();
+      if(payload.job_id)acceptHarnessJob(payload.job_id);
     } else if (event === "done") {
+      state.harnessStreamDone=true;
       hideTyping();
       flushType(true);
       if (state.streamBubble) state.streamBubble.classList.remove("streaming");
       state.streamBubble = null;
     } else if (event === "job") {
-      if (payload.job_id) {
-        watchJob(payload.job_id);
-        loadHistory();
-        closeHarness();          // 定价/用量等任务跑完再刷，别在这儿抢带宽和事件循环
-        toast("ok", "harness 已提交任务");
-      }
-    } else if (event === "done") {
-      flushType(true);
-      if (state.streamBubble) state.streamBubble.classList.remove("streaming");
-      state.streamBubble = null;
-      state.streamedText = "";
-      $("harnessSend").disabled = false;
-      state.harnessBusy = false;
+      if(payload.job_id)acceptHarnessJob(payload.job_id);
     }
   }
 
@@ -2096,8 +2055,8 @@
       const choice = reworkChoice();
       payload.job_id = state.reworkSourceJob;
       payload.task_ids = state.reworkTargets;
-      payload.provider = choice.provider || $("provider").value;
-      payload.model = choice.model || currentModel();
+      payload.provider=choice.provider;
+      payload.model=choice.model;
     } else {
       payload.draft_id = state.draftId;
       const head = primaryStyle();
@@ -2111,62 +2070,83 @@
       payload.quality = $("quality").value;
       payload.output_format = currentOutputFormat();
     }
+    payload.subject=$("subject").value;
+    payload.size=currentSize();payload.quality=$("quality").value;payload.output_format=currentOutputFormat();
+    payload.send_reference=true;payload.shape_lock="master";
     payload.pattern_mode = currentPatternMode();
     payload.history = state.harnessHistory.slice(-10);
     return payload;
   }
 
-  async function sendHarnessMessage() {
-    if (state.harnessBusy) return;
-    const text = ($("harnessInput").value || "").trim();
-    if (!text) { toast("bad", "先写一句需求，或直接点「按默认生成」"); return; }
-    chatBubble("user", text);
-    state.harnessHistory.push({ role: "user", content: text });
-    state.assistantText = "";
-    $("harnessInput").value = "";
-    state.harnessBusy = true;
-    $("harnessSend").disabled = true;
-    $("harnessSend").classList.add("loading");
-    $("harnessApply").disabled = true;
-    showTyping();
-    try {
+  async function sendHarnessMessage(){
+    const blocked=submissionBlockedReason()||harnessModelBlockedReason();if(blocked){toast("bad",blocked);return;}
+    if(state.harnessSubmittedJob){closeHarness();return;}
+    if(harnessContextChanged()){window.AIWorkflow?.phase('stale');toast("bad","本轮素材或设定已变化，请关闭后重新点击生成");return;}
+    if(state.harnessMode!=="rework"){
+      const reason=startBlockedReason();if(reason){toast("bad",reason);return;}
+      if(!state.draftId){window.AIWorkflow?.error("素材尚未准备完成，请重新点击生成。");return;}
+    }
+    const text=($("harnessInput").value||"").trim();if(!text){toast("bad","请先补充或确认本轮要求");return;}
+    chatBubble("user",text);state.harnessHistory.push({role:"user",content:text});state.assistantText="";$("harnessInput").value="";
+    state.harnessBusy=true;state.harnessStreamDone=false;state.harnessHasResult=false;
+    state.composedPrompt="";state.requirements="";
+    window.AIWorkflow?.phase('connecting');updateSummary();$("harnessSend").classList.add("loading");showTyping();
+    try{
       await streamHarness(harnessPayload(text));
-    } catch (err) {
-      hideTyping();
-      toast("bad", `harness 出错：${err.message}`);
-    } finally {
-      hideTyping();
-      state.harnessBusy = false;
-      $("harnessSend").disabled = false;
-      $("harnessSend").classList.remove("loading");
-      const answer = state.assistantText.trim();
-      if (answer) state.harnessHistory.push({ role: "assistant", content: answer });
-      state.harnessHistory = state.harnessHistory.slice(-12);
-      state.assistantText = "";
+      if(!state.harnessSubmittedJob){
+        const prepared=state.harnessHasResult&&!!(state.harnessMode==="rework"?state.composedPrompt:state.requirements);
+        window.AIWorkflow?.phase(prepared?'ready':'waiting');
+      }
+    }catch(err){
+      flushType(true);
+      if(!state.harnessSubmittedJob){state.composedPrompt="";state.requirements="";state.harnessHasResult=false;window.AIWorkflow?.error(`AI 连接未完成：${err.message}。请保留本轮对话；若可能已开工，先查看任务记录，勿重复提交。`);toast("bad",`AI 连接提示：${err.message}`);}
+    }finally{
+      hideTyping();state.harnessBusy=false;$("harnessSend").classList.remove("loading");
+      const answer=state.assistantText.trim();if(answer)state.harnessHistory.push({role:"assistant",content:answer});
+      state.harnessHistory=state.harnessHistory.slice(-12);state.assistantText="";updateSummary();
     }
   }
 
   async function harnessDefaultAction() {
+    if(state.harnessBusy||state.busy)return;
+    if(state.harnessSubmittedJob){closeHarness();return;}
     if (state.harnessMode === "rework") { closeHarness(); return; }
-    await createJob("");
+    $("briefInput").value="";state.pendingBrief="";
+    await createJob("",{fromHarness:true});
   }
 
   function briefText() {
     return ($("briefInput") ? $("briefInput").value : "").trim();
   }
 
+  async function beginGeneration(){
+    const blocked=startBlockedReason();if(blocked){toast("bad",blocked);return;}
+    const brief=briefText();
+    if(!brief){state.pendingBrief="";await createJob("");return;}
+    const phase=window.AIWorkflow?.snapshot()?.phase;
+    if(state.harnessMode==="intake"&&!state.harnessSubmittedJob&&!harnessContextChanged()&&['ready','waiting'].includes(phase)){openDrawer("harness");return;}
+    state.pendingBrief=brief;
+    if(!await openHarness("intake",[]))return;
+    await sendHarnessMessage();
+  }
+
   async function harnessApplyAction() {
+    if(state.harnessBusy||state.busy)return;
+    if(state.harnessSubmittedJob){closeHarness();return;}
+    if(harnessContextChanged()){window.AIWorkflow?.phase('stale');toast("bad","请按当前素材和设定重新分析");return;}
+    if(state.harnessMode!=="rework"&&!state.requirements){toast("bad","请先完成 AI 需求对齐");return;}
     if (state.harnessMode === "rework") { await submitRework(); return; }
-    await createJob(state.requirements);
+    await createJob(state.requirements,{fromHarness:true});
   }
 
   async function submitRework() {
+    const blocked=submissionBlockedReason()||harnessModelBlockedReason();if(blocked){toast("bad",blocked);return;}
+    if(state.harnessSubmittedJob){closeHarness();return;}
     if (!state.reworkTargets.length) { toast("bad", "没有选中成品"); return; }
     const instruction = ($("harnessInput").value || "").trim() || state.requirements ||
       "按 harness 分析结果调整";
     const choice = reworkChoice();
-    const provider = choice.provider || $("provider").value;
-    const model = choice.model || currentModel();
+    const provider=choice.provider,model=choice.model;
     if (!provider || !model) { toast("bad", "请选择改图用的接口和模型"); return; }
     const form = new FormData();
     for (const id of state.reworkTargets) form.append("task_ids", id);
@@ -2177,30 +2157,71 @@
     form.append("quality", $("quality").value);
     form.append("output_format", currentOutputFormat());
     form.append("pattern_mode", currentPatternMode());
+    form.append("subject",$("subject").value);
     if (state.composedPrompt) form.append("prompt_override", state.composedPrompt);
     form.append("start", "true");
+    const sourceJob=state.reworkSourceJob,count=state.reworkTargets.length;
+    state.busy=true;updateSummary();
+    window.AIWorkflow?.phase('submitting');
     $("harnessApply").disabled = true;
     $("harnessApply").classList.add("loading");
     $("harnessApply").textContent = "提交中…";
     try {
-      const data = await api(`/api/jobs/${state.reworkSourceJob}/rework`, { method: "POST", body: form });
-      closeHarness();
+      const data = await api(`/api/jobs/${sourceJob}/rework`, { method: "POST", body: form });
+      state.harnessSubmittedJob=data.job.id;window.AIWorkflow?.submitted(data.job.id);
       watchJob(data.job.id, data.job);
       loadHistory();
       loadGate();
       setTimeout(loadPricing, 1500);
-      toast("ok", `已提交 ${state.reworkTargets.length} 张返工`);
+      toast("ok", `已提交 ${count} 张返工`);
     } catch (err) {
-      toast("bad", `提交返工失败：${err.message}`);
+      toast("bad", `提交返工未确认：${err.message}。请先查看任务记录，避免重复提交。`);
+      window.AIWorkflow?.error(`提交返工未确认：${err.message}。请先查看任务记录，勿重复提交。`);
     } finally {
       $("harnessApply").classList.remove("loading");
-      $("harnessApply").disabled = false;
+      state.busy=false;
       $("harnessApply").textContent = "确认返工";
+      updateSummary();
     }
   }
 
   /* ------------------------------------------------------------------ bind */
+  function submissionBlockedReason(){
+    if(state.busy)return "正在提交，请等待服务器确认";
+    if(state.harnessBusy)return "需求分析仍在进行，请等待本轮分析结束";
+    if(state.harnessOpening)return "正在准备 AI 创作素材，请稍候";
+    if(state.jobLoading)return "正在切换任务，请等待读取完成";
+    return "";
+  }
+  function harnessModelBlockedReason(){
+    if(state.harnessMode==="rework"){
+      if($("reworkModelSel").disabled)return "改图模型正在读取，请稍候";
+      if(!$("reworkProvider").value||!$("reworkModelSel").value)return "请选择改图用的接口和模型";
+    }else if($("model").disabled)return "模型列表正在读取，请稍候";
+    return "";
+  }
+  function syncActionControls(){
+    const locked=Boolean(submissionBlockedReason()),modelBlocked=Boolean(harnessModelBlockedReason()),submitted=!!state.harnessSubmittedJob,stale=harnessContextChanged();
+    if(stale&&!submitted)window.AIWorkflow?.phase('stale');
+    $("harnessSend").disabled=locked||modelBlocked||submitted||stale;
+    $("harnessDefault").disabled=locked||submitted;
+    $("harnessApply").disabled=locked||modelBlocked||submitted||stale||!(state.harnessMode==="rework"?state.composedPrompt:state.requirements);
+    ["retryBtn","retryLimitedBtn"].forEach(id=>$(id).disabled=locked);
+    state.cards.forEach(entry=>{
+      entry.rework.disabled=locked||entry.status!=="done";
+      if(entry.retry)entry.retry.disabled=locked;
+    });
+    $("cancelBtn").disabled=state.jobLoading;
+    $("feishuSyncBtn").disabled=state.jobLoading||Boolean(state.syncingJob);
+    $("downloadBtn").setAttribute("aria-disabled",String(state.jobLoading));
+    syncSelection(true);
+  }
+
   function startBlockedReason() {
+    const locked=submissionBlockedReason();if(locked)return locked;
+    if(state.job&&!TERMINAL.includes(state.job.status))return "本轮任务仍在运行，请等待完成或取消";
+    if(state.files.some(entry=>entry.loading))return "原图正在读取，请稍候";
+    if($("model").disabled)return "模型列表正在读取，请稍候";
     if (!state.files.length) return "请先上传至少一张原图";
     if (!totalColors()) return "请至少选择一个颜色";
     if (!currentModel()) return "请选择模型";
@@ -2211,6 +2232,9 @@
   function bind() {
     const drop = $("drop");
     const input = $("fileInput");
+    document.addEventListener("paste",pasteImages);
+    const pasteHint=document.createElement("p");pasteHint.id="clipboardHint";pasteHint.className="hint";pasteHint.textContent="支持 Ctrl+V / ⌘V 粘贴图片；同件多角度请保留 item / view 文件名。";
+    drop.after(pasteHint);drop.setAttribute("aria-describedby",[drop.getAttribute("aria-describedby"),pasteHint.id].filter(Boolean).join(" "));
     bindStyleList();
     drop.addEventListener("click", () => input.click());
     input.addEventListener("change", () => { addFiles(input.files); input.value = ""; });
@@ -2245,24 +2269,19 @@
       updateSummary();
     });
     $("modelManual").addEventListener("input", () => {
+      store(`modelManual.${$("provider").value}`,$("modelManual").value);
       renderModelLabels();
       updateSummary();
     });
 
-    $("startBtn").addEventListener("click", () => {
-      const reason = startBlockedReason();
-      if (reason) { toast("bad", reason); return; }
-      const brief = ($("briefInput") ? $("briefInput").value : "").trim();
-      state.pendingBrief = brief;
-      openHarness("intake", []);
-    });
+    $("startBtn").addEventListener("click",beginGeneration);
     $("previewBtn").addEventListener("click", showPrompt);
     $("cancelBtn").addEventListener("click", cancelJob);
     $("retryBtn").addEventListener("click", retryJob);
     if ($("retryLimitedBtn")) $("retryLimitedBtn").addEventListener("click", retryLimited);
     $("feishuSyncBtn").addEventListener("click", async () => {
-      const jobId = state.jobId || (state.job && state.job.id);
-      if (!jobId) return;
+      const jobId=state.jobId;
+      if(state.jobLoading||!jobId||state.job?.id!==jobId)return;
       state.syncingJob = jobId;
       if (state.job) renderJob(state.job);
       $("feishuSyncBtn").classList.add("loading");
@@ -2272,7 +2291,7 @@
           data.rows ? "ok" : "bad",
           data.rows ? `已补写 ${data.rows} 行到飞书` : "写入 0 行（检查飞书配置或权限）"
         );
-        if (state.job) {
+        if(state.job?.id===jobId&&!state.jobLoading){
           state.job.params.feishu_rows = data.rows || state.job.params.feishu_rows;
           state.job.params.feishu_table = data.table || state.job.params.feishu_table;
           renderJob(state.job);
@@ -2285,30 +2304,15 @@
       }
     });
     $("selAll").addEventListener("change", (event) => {
+      if(state.jobLoading)return;
       const ready = (state.job?.tasks || []).filter((t) => t.out);
       state.selected = event.target.checked ? new Set(ready.map((t) => t.id)) : new Set();
       syncSelection();
     });
     $("batchReworkBtn").addEventListener("click", () => openHarness("rework", [...state.selected]));
     $("batchExportBtn").addEventListener("click", exportSelection);
-    $("usageChip").addEventListener("click", async () => {
-      await loadPricing();      // 用户主动点，强制刷新一次用量
-      if (!state.usage) return;
-      const today = state.usage.today || {};
-      const total = state.usage.total || {};
-      toast(
-        "ok",
-        `今日 ${today.images || 0} 张 ${money(today.cost, state.usage.currency)} · ` +
-        `累计 ${total.images || 0} 张 ${money(total.cost, state.usage.currency)} · ` +
-        `${state.usage.jobs || 0} 个任务`
-      );
-    });
+    $("usageChip").addEventListener("click",()=>window.WorkbenchUI.showUsage(()=>api("/api/usage")));
 
-    $("openHarnessBtn").addEventListener("click", () => {
-      if (state.jobId && state.selected.size) { openHarness("rework", [...state.selected]); return; }
-      if (!state.files.length) { toast("bad", "先上传原图，或先在右侧选中成品再改图"); return; }
-      openHarness("intake", []);
-    });
 
     $("harnessSend").addEventListener("click", sendHarnessMessage);
     $("harnessInput").addEventListener("keydown", (event) => {
@@ -2347,13 +2351,11 @@
       withLoading($("accountsReload"), loadAccounts, "读取中…")
     );
     $("logoutBtn").addEventListener("click", logout);
-    $("usageChip").addEventListener("click", () => {
-      if (state.session && state.session.admin) showAccounts();
-    });
 
     // 成品卡用事件委托：卡片是增量更新的，不再每次轮询重复绑定监听
     const grid = $("gridImgs");
     grid.addEventListener("change", (event) => {
+      if(state.jobLoading)return;
       const input = event.target.closest("input[data-task]");
       if (!input) return;
       if (input.checked) state.selected.add(input.dataset.task);
@@ -2361,6 +2363,7 @@
       syncSelection();
     });
     grid.addEventListener("click", (event) => {
+      if(state.jobLoading){event.preventDefault();return;}
       const rework = event.target.closest("[data-rework]");
       if (rework) {
         event.preventDefault();
@@ -2398,6 +2401,7 @@
     // 切回标签页时立刻追一次进度（后台是完全不轮询的）
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
+        ++state.pollEpoch;state.pollController?.abort();
         if (state.pollTimer) { clearTimeout(state.pollTimer); state.pollTimer = null; }
         return;
       }
@@ -2430,10 +2434,7 @@
   function openLightbox(url, title) {
     const dialog = $("lightbox");
     if (!dialog) { window.open(url, "_blank", "noopener"); return; }
-    $("largeImage").src = url;
-    $("lightboxTitle").textContent = title || "成品大图";
-    const link = $("sampleDownload");
-    if (link) link.href = `${url}${url.includes("?") ? "&" : "?"}download=true`;
+    window.WorkbenchUI.openLightbox(url,title);
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
   }
@@ -2464,25 +2465,20 @@
 
     const upload = $("railUpload");
     if (upload) upload.addEventListener("click", () => $("fileInput").click());
-    const chat = $("railChat");
-    if (chat) chat.addEventListener("click", () => $("openHarnessBtn").click());
     const usage = $("railUsage");
     if (usage) usage.addEventListener("click", () => showAccounts());
     const avatarBtn = $("railAvatar");
     if (avatarBtn) {
-      avatarBtn.addEventListener("click", () => {
-        const who = state.session ? (state.session.display || state.session.account) : "未登录";
-        toast("ok", `${who} · 右上角 × 可退出登录`);
-      });
+      avatarBtn.addEventListener("click",()=>window.WorkbenchUI.toggleProfile(avatarBtn));
     }
     // 顶栏的「账号用量 / 管理后台」按权限显示，图标栏跟着同步
     const syncRail = () => {
       const adminHidden = $("adminLink") ? $("adminLink").hidden : true;
       const usageHidden = $("accountsBtn") ? $("accountsBtn").hidden : true;
       if ($("railAdmin")) $("railAdmin").hidden = adminHidden;
-      if ($("railUsage")) $("railUsage").hidden = usageHidden;
-      const name = $("whoName") ? $("whoName").textContent.trim() : "";
-      if (avatarBtn && name) avatarBtn.textContent = name.slice(0, 1).toUpperCase();
+      if($("railUsage"))$("railUsage").hidden=true;
+      const name=$("whoName")?$("whoName").textContent.trim():"";
+      if(avatarBtn&&name)avatarBtn.title=`${name} · 个人菜单`;
     };
     ["adminLink", "accountsBtn", "whoChip"].forEach((id) => {
       const el = $(id);
@@ -2530,7 +2526,9 @@
       direct.addEventListener("click", async () => {
         const reason = startBlockedReason();
         if (reason) { toast("bad", reason); return; }
-        await withLoading(direct, () => createJob(""), "提交中…");
+        $("briefInput").value="";state.pendingBrief="";
+        await withLoading(direct,()=>createJob(""),"提交中…");
+        updateSummary();
       });
     }
 
@@ -2552,7 +2550,7 @@
     }
 
     // 鼠标跟随光斑（只在精细指针 + 未开启减弱动效时）
-    if (window.matchMedia("(pointer: fine)").matches
+    if (false && window.matchMedia("(pointer: fine)").matches
       && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       let waiting = false;
       document.addEventListener("pointermove", (event) => {
@@ -2598,5 +2596,5 @@
     }
   }
 
-  boot();
+  boot().catch(err=>{document.body.classList.remove("booting");toast("bad",`初始化失败：${err.message}`);});
 })();

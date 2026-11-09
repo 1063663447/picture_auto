@@ -1,20 +1,10 @@
-"""原图主体判定：这一单是「平铺/挂拍的空衣服」还是「真人上身」。
+"""Output-subject choices and original-upload lineage.
 
-为什么必须判：提示词里那句 *keep the same person, face, hair, skin, hands* 对真人图是对的，
-对**纯衣服**的平铺图却等于在邀请模型补一个模特上去 —— 实测同一批里就出现过
-「深酒红那张忽然变成女生穿着卖」，其余几张还是平铺。所以：
-
-* 提示词层面（主修复，``prompts.SUBJECT_CLAUSE``）：改成**中性**表述 ——
-  「原图是平铺就保持平铺，原图是真人就保持同一个人，绝不新增原图没有的人」。
-  这句对两种原图都成立，也就不再存在「邀请」。
-* 判定层面（加强，本模块）：皮肤像素几乎为零 → 铁定没有真人（平铺/挂拍），
-  这时再叠 ``NO_PERSON_CLAUSE`` + ``NEGATIVE_NO_PERSON``，并对成品做一次复查。
-
-判定只用**「皮肤证据是否缺席」**这一个方向：缺席是可靠的（没有皮肤就一定没人）；
-有皮肤则不可靠（米色/杏色/木地板都像皮肤），所以"有皮肤"直接按「真人/不确定」处理，
-走中性提示词，不额外禁止 —— 宁可少禁，也不要把模特图的人擦掉。
-
-纯 Pillow 实现（项目里没有 numpy）。
+Skin pixels can suggest a visible wearer but their absence cannot establish an
+empty garment: back views, hoods, gloves, crops and grayscale images may expose
+no skin. Auto therefore preserves the original presentation when uncertain;
+only an explicit garment choice can require removing a wearer. The lightweight
+skin heuristic remains useful for diagnostics and optional output warnings.
 """
 
 from __future__ import annotations
@@ -27,6 +17,7 @@ GARMENT = "garment"
 PERSON = "person"
 AUTO = "auto"
 KINDS = (AUTO, GARMENT, PERSON)
+AUTO_POLICY = "preserve-original-v2"
 LABELS = {
     AUTO: "自动判断",
     GARMENT: "只有衣服（平铺/挂拍）",
@@ -36,10 +27,9 @@ LABELS = {
 #: 判定前缩到这个边长：2.5 万个像素以内，纯 Python 也够快
 WORK_EDGE = 160
 
-#: 皮肤像素占比低于它就断言「图里没有真人」。
-#: 真人图里脸/手/手臂加起来远超 0.4%，所以这个阈值几乎不会误伤。
+# Skin evidence is only a hint for keeping a visible wearer, never proof that
+# an image without skin contains no person.
 SKIN_ABSENT = 0.004
-#: 最大连通皮肤块同样要接近零，才认定「没有真人」
 BLOB_ABSENT = 0.002
 
 #: 成品复查：原图是空衣服，成品里却有大片「原背景区域变成皮肤色」→ 疑似又画了个人
@@ -177,17 +167,132 @@ def measure(source: "str | Path | Image.Image") -> dict:
 
 
 def detect(source: "str | Path | Image.Image", override: str = "") -> str:
-    """返回 garment / person。
-
-    只有「皮肤证据完全缺席」才判 garment；其余一律 person（走中性提示词，不多禁）。
-    """
-    forced = normalise(override)
-    if forced in {GARMENT, PERSON}:
-        return forced
+    """Explicit choices win; absent skin leaves the source-preserving auto rule."""
+    selected = normalise(override)
+    if selected != AUTO:
+        return selected
     stats = measure(source)
-    if stats["skin"] <= SKIN_ABSENT and stats["blob"] <= BLOB_ABSENT:
-        return GARMENT
-    return PERSON
+    if stats["skin"] > SKIN_ABSENT or stats["blob"] > BLOB_ABSENT:
+        return PERSON
+    return AUTO
+
+
+def choice(job) -> str:
+    """Read the operator choice separately from a resolved batch summary.
+
+    Old planned jobs did not retain this distinction. Their aggregate is not
+    evidence of an explicit override; retain their per-task decisions instead.
+    """
+    params = job.params
+    if "subject_choice" in params:
+        return normalise(params["subject_choice"])
+    if job.tasks or "subjects" in params:
+        return AUTO
+    return normalise(params.get("subject"))
+
+
+def load_lineage_job(job, job_id):
+    """Load a sibling saved job for offline runner lineage; reject path escapes."""
+    from .job import Job
+
+    name = str(job_id or "")
+    if not job.root or not name or any(c in name for c in ("/", "\\", ":", "\x00")) or name in {".", ".."}:
+        raise KeyError(name)
+    base = Path(job.root).parent.resolve()
+    path = (base / name / "job.json").resolve()
+    if path.parent.parent != base:
+        raise KeyError(name)
+    return Job.load(path)
+
+
+def task_kind(job, task, get_job=None, *, max_depth: int = 16,
+              _seen: frozenset = frozenset()) -> str:
+    """Resolve stable task/ancestor evidence before looking at original pixels.
+
+    Rework inputs are generated results and must never become subject evidence.
+    Missing or ambiguous lineage falls back to a saved task decision, then auto.
+    The existing conservative detector is used only on a true original upload.
+    """
+    from .sources import job_image_path, original_uploads
+
+    key = (job.id, task.id)
+    if max_depth <= 0 or key in _seen:
+        return AUTO
+    seen = _seen | {key}
+    forced = choice(job)
+    if forced != AUTO:
+        return forced
+    params = job.params
+    decisions = params.get("task_subjects") or {}
+    saved = normalise(decisions.get(task.id)) if isinstance(decisions, dict) else AUTO
+    trusted = params.get("subject_policy") == AUTO_POLICY
+    rework = params.get("kind") == "rework" or params.get("mode") == "rework" or params.get("source_job")
+    if trusted and isinstance(decisions, dict) and task.id in decisions:
+        return saved
+    if not rework and saved != AUTO and (saved != GARMENT or trusted):
+        return saved
+
+    def lookup(job_id):
+        if get_job is not None:
+            try:
+                return get_job(job_id)
+            except Exception as exc:  # missing upstream jobs are optional lineage
+                raise KeyError(job_id) from exc
+        return load_lineage_job(job, job_id)
+
+    rework = params.get("kind") == "rework" or params.get("mode") == "rework" or params.get("source_job")
+    if rework:
+        try:
+            parent = lookup(params.get("source_job"))
+            mapping = params.get("source_task_map") or {}
+            exact = mapping.get(task.id) if isinstance(mapping, dict) else None
+            candidates = [t for t in parent.tasks if t.id == exact] if exact else []
+            if not exact:
+                def base_color(color):
+                    while color.endswith("-v2"):
+                        color = color[:-3]
+                    return color
+                permitted = params.get("source_tasks") or []
+                candidates = [t for t in parent.tasks if t.id in permitted and t.item == task.item
+                              and base_color(t.color) == base_color(task.color)
+                              and (not task.view or t.view == task.view)
+                              and (not task.garment or t.garment == task.garment)]
+            if len(candidates) == 1:
+                inherited = task_kind(parent, candidates[0], lookup, max_depth=max_depth - 1, _seen=seen)
+                if inherited != AUTO:
+                    return inherited
+            if len(candidates) > 1:
+                inherited = {task_kind(parent, t, lookup, max_depth=max_depth - 1, _seen=seen)
+                             for t in candidates}
+                if len(inherited) == 1 and AUTO not in inherited:
+                    return inherited.pop()
+                # Conflicting possible parents cannot establish this task's subject.
+                saved = normalise(task.subject)
+                return saved if saved != GARMENT or trusted else AUTO
+        except (KeyError, OSError, ValueError, TypeError):
+            pass
+        # Local original copies survive removal of upstream jobs. The first is
+        # this task's canvas; later related views must not override its subject.
+        originals = original_uploads(job, task, lookup, max_depth=max_depth)
+        if originals:
+            upload = originals[0]
+            try:
+                origin = lookup(upload.job_id)
+                original_task = next(t for t in origin.tasks if t.id == upload.task_id)
+                inherited = task_kind(origin, original_task, lookup, max_depth=max_depth - 1, _seen=seen)
+                if inherited != AUTO:
+                    return inherited
+            except (KeyError, OSError, ValueError, TypeError, StopIteration):
+                pass
+            return detect(upload.path)
+    saved = saved if saved != AUTO else normalise(task.subject)
+    if saved != AUTO and (saved != GARMENT or trusted):
+        return saved
+    if not rework:
+        original = job_image_path(job, task.source)
+        if original is not None:
+            return detect(original)
+    return AUTO
 
 
 def _border_color(image: Image.Image) -> tuple[int, int, int]:

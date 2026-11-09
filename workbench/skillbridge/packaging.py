@@ -13,6 +13,7 @@ import sys
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 # staging 下只应有「每个 item 一个目录」；这些是缓存目录，绝不能进 ZIP
@@ -50,6 +51,14 @@ def _fallback_zip(staging_dir: Path, output_dir: Path, batch_name: str) -> Packa
     )
 
 
+def _script_path(path: Path) -> str:
+    """Keep Windows copy/ZIP work valid in deep extracted package folders."""
+    text = str(path.resolve())
+    if sys.platform == "win32" and not text.startswith("\\\\?\\"):
+        return "\\\\?\\UNC\\" + text[2:] if text.startswith("\\\\") else "\\\\?\\" + text
+    return text
+
+
 async def package_outputs(
     *,
     script: Path,
@@ -58,6 +67,8 @@ async def package_outputs(
     batch_name: str,
     max_bytes: int,
     expected_per_item: int | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    timeout_sec: float = 900,
 ) -> PackageResult:
     if not script.is_file():
         result = _fallback_zip(staging_dir, output_dir, batch_name)
@@ -66,11 +77,11 @@ async def package_outputs(
 
     command = [
         sys.executable,
-        str(script),
+        _script_path(script),
         "--staging-dir",
-        str(staging_dir),
+        _script_path(staging_dir),
         "--output-dir",
-        str(output_dir),
+        _script_path(output_dir),
         "--batch-name",
         batch_name,
         "--max-bytes",
@@ -79,15 +90,49 @@ async def package_outputs(
     if expected_per_item:
         command += ["--expected-images-per-item", str(expected_per_item)]
 
+    process = None
+    readers: list[asyncio.Task] = []
+    async def stop_child() -> None:
+        if process is not None and process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            await process.wait()
+        for reader in readers:
+            if not reader.done():
+                reader.cancel()
+        if readers:
+            await asyncio.gather(*readers, return_exceptions=True)
     try:
         process = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=900)
-    except (OSError, asyncio.TimeoutError) as exc:
-        result = _fallback_zip(staging_dir, output_dir, batch_name)
+        lines: list[bytes] = []
+        async def read_progress() -> None:
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                lines.append(line)
+                if on_progress is not None:
+                    on_progress(line.decode("utf-8", "replace").strip())
+        readers = [asyncio.create_task(read_progress()), asyncio.create_task(process.stderr.read())]
+        async def finish() -> bytes:
+            await process.wait()
+            await readers[0]
+            return await readers[1]
+        stderr = await asyncio.wait_for(finish(), timeout=timeout_sec)
+        stdout = b"".join(lines)
+    except asyncio.CancelledError:
+        await stop_child()
+        raise
+    except asyncio.TimeoutError:
+        await stop_child()
+        return PackageResult(ok=False, error="图片已生成，校验打包超时；原始成品仍可单张下载或批量导出")
+    except OSError as exc:
+        await stop_child()
+        result = await asyncio.to_thread(_fallback_zip, staging_dir, output_dir, batch_name)
         result.info["note"] = f"打包脚本执行失败（{exc}），已使用内置 ZIP 打包"
         return result
 

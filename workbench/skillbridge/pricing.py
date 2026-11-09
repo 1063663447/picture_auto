@@ -85,10 +85,12 @@ class Pricer:
         path: Path | None = None,
         currency: str = "",
         provider_prices: dict[str, dict[str, float]] | None = None,
+        provider_fixed_prices: dict[str, float] | None = None,
     ) -> None:
         #: 按接口覆盖单价：{"a6api": {"gpt-image-2.5-sunburst": 0.65}}
         #: 同一个模型名在不同网关卖的价格不一样（实测差 17 倍），所以覆盖要挂在接口上
         self.provider_prices: dict[str, dict[str, float]] = dict(provider_prices or {})
+        self.provider_fixed_prices = dict(provider_fixed_prices or {})
         self.path = path or DEFAULT_PRICING
         self.currency = "USD"
         self.currency_override = (currency or "").strip().upper()
@@ -188,6 +190,9 @@ class Pricer:
 
     def price(self, model: str, size: str | None = None, provider: str = "") -> Price:
         """单价。传了 provider 就先看该接口的覆盖价（同模型不同网关价格不同）。"""
+        fixed = self.provider_fixed_prices.get(provider)
+        if fixed is not None:
+            return Price(model=model, unit=float(fixed), currency=self.currency)
         override = (self.provider_prices.get(provider) or {}).get(model) if provider else None
         entry = override if override is not None else self.raw.get(model)
         tier = tier_for(size, self.tier_mp)
@@ -328,10 +333,20 @@ class UsageLedger:
         self._save()
         return entry
 
-    def by_account(self) -> list[dict]:
+    def _scoped_entries(self, account: str | None = None) -> list[dict]:
+        """None selects all accounts; an empty account selects anonymous usage."""
+        if account is None:
+            return self.entries
+        name = (account or "anonymous").casefold()
+        return [
+            entry for entry in self.entries
+            if str(entry.get("account") or "anonymous").casefold() == name
+        ]
+
+    def by_account(self, account: str | None = None) -> list[dict]:
         """按账号聚合：做了多少张、花了多少钱、最近生成了什么。"""
         buckets: dict[str, dict] = {}
-        for entry in self.entries:
+        for entry in self._scoped_entries(account):
             name = str(entry.get("account") or "anonymous")
             bucket = buckets.setdefault(
                 name,
@@ -379,14 +394,15 @@ class UsageLedger:
             rows.append(bucket)
         return sorted(rows, key=lambda item: -item["images"])
 
-    def summary(self) -> dict:
+    def summary(self, account: str | None = None) -> dict:
+        entries = self._scoped_entries(account)
         today = time.strftime("%Y-%m-%d")
         total_images = 0
         total_cost = 0.0
         unpriced = 0
         day_images = 0
         day_cost = 0.0
-        for entry in self.entries:
+        for entry in entries:
             images = int(entry.get("images") or 0)
             cost = entry.get("cost")
             total_images += images
@@ -403,7 +419,7 @@ class UsageLedger:
             "today": {"images": day_images, "cost": round(day_cost, 4)},
             "total": {"images": total_images, "cost": round(total_cost, 4)},
             "unpriced_images": unpriced,
-            "jobs": len(self.entries),
-            "accounts": self.by_account(),
-            "recent": list(reversed(self.entries[-20:])),
+            "jobs": len(entries),
+            "accounts": self.by_account(account),
+            "recent": list(reversed(entries[-20:])),
         }

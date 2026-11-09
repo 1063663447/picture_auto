@@ -1,20 +1,22 @@
 # 生图工作台 · 项目交接文档
 
-> 版本：**8.0.1**（`web/index.html` 的 `?v=` 号）· 最后更新 2026-11-05
+> 版本：**9.4.1 · 印墨与图案露底布料分离**（`web/index.html` 的 `?v=` 号）· 最后更新 2026-11-07
 > 仓库：`https://github.com/1063663447/picture_auto`（分支 `main`）
 > 目录：`E:\picture_auto`（`workbench/` = 工作台本体，`apparel-style-recolor/` = 生图 skill）
+> 工作流修复沿用 [`CHANGELOG_WORKFLOW_9.4.0.md`](CHANGELOG_WORKFLOW_9.4.0.md)；当前图案补丁和分发版本为 9.4.1，旧包保留作历史，不包含最新修复。
+> 9.4.1 针对圣诞人物腿部／图案周边黑块，区分真实黑墨与露底布料，允许原图纠正基准图黑块；专项及验证边界见 [`CHANGELOG_ARTWORK_9.4.1.md`](CHANGELOG_ARTWORK_9.4.1.md)。9.4.0 为上一版。
 
 ---
 
 ## 1. 这是什么
 
-给服装电商用的**本地生图工作台**：上传一张衣服原图 → 选款式（10 款）× 颜色（最多 10 色）→ 一次提交，
+给服装电商用的**本地生图工作台**：上传一张衣服原图 → 选款式（10 个业务款＋3 个通用款）× 颜色 → 一次提交，
 工作台把「客户原图 + 款式表里的官方效果图」一起发给图片模型，逐色出图、按款式分目录打包，
 并记录到飞书多维表格（成品记录 / 账号 / 定价 / 并发队列）。
 
 - 单个 FastAPI 服务 + 纯静态前端（无构建步骤），跑在本机 `127.0.0.1:8787`
 - 后端约 **1 万行 Python**（`workbench/skillbridge/`），前端 `app.js` 约 2.6k 行
-- 金额全部按人民币、3 位小数；单价以后台真实计费为准（当前 `gpt-image-2.5-sunburst` = **¥0.005978/张**）
+- 金额按人民币、3 位小数展示；当前工作台计价策略以接口配置为准，保留历史账本，不重新核价历史任务。
 
 **现在能做的事**
 
@@ -31,6 +33,16 @@
 | 账号/配额（飞书账号表）、管理员看板（曲线/柱状图）、用量计费 | ✅ |
 | 对话式需求沟通（DeepSeek agent + 流式输出，可看图） | ✅ |
 | 飞书导出（成品记录表 + ZIP）、完成通知 | ✅ |
+
+**9.0.0 正式网页**：纯黑＋深紫毛玻璃、屏幕平面粒子与微光、左右框对齐、异步上传预览、真实提交占位／闪卡显影、独立滚动画廊、完整大图与头像菜单。已保留本节全部业务；新增提交互斥、任务切换／轮询竞态、模型恢复和个人用量隔离修复。完整文件清单、真实单图费用、验证边界和回退说明见 [`CHANGELOG_BLACKGLASS_9.0.0.md`](CHANGELOG_BLACKGLASS_9.0.0.md)。
+
+**9.1.0 调整**：主备接口角色命名与默认项、工作台计价策略、保留全部动效的滚动优化、项目完成总耗时、需求非空先走 harness、只有衣服的强优先级与主体透传。详见 [`CHANGELOG_BLACKGLASS_9.1.0.md`](CHANGELOG_BLACKGLASS_9.1.0.md)；9.0.0 中的默认接口／计价描述作为历史记录。
+
+**9.1.1 修复**：改图 harness 同时读取原始上传图和当前成品，连续返工保留原图来源；普通生成／基准派生／返工保留同画布正反面及各自图案，修正尺寸提示与附件编号。已有真实在线对照和一张双面返工验证，见 [`CHANGELOG_BLACKGLASS_9.1.1.md`](CHANGELOG_BLACKGLASS_9.1.1.md)。
+
+**9.2.0 正式主题与AI窗口**：采用用户选定的石墨银紫（主黑副紫），移除重复“需求沟通”入口；非空需求自动进入居中AI创作工作室，真实阶段、流式文字、工具记录、恢复会话和任务回执可见；空需求继续默认生成。详见 [`CHANGELOG_GRAPHITE_AI_9.2.0.md`](CHANGELOG_GRAPHITE_AI_9.2.0.md)。
+
+**9.3.0 主体与分发**：原图模特在多色、基准派生、重试和连续返工中保持原任务主体；移除三处指定主题／计价文案。新增 Windows x64 内部便携包，自带 Python／依赖／Three.js 与已配置 API，双击自动检查、离线优先修复、国内源下载进度和自动打开。真实一张酒红色返工已恢复模特；详见 [`CHANGELOG_PORTABLE_9.3.0.md`](CHANGELOG_PORTABLE_9.3.0.md)。
 
 ---
 
@@ -82,11 +94,13 @@ workbench/
 │   ├── packaging.py  (91)   2MB 压缩 + ZIP
 │   └── providers/           接口适配：openai_compat / ark / gemini / fal / local_recolor / mock
 ├── web/                     前端（无构建）
-│   ├── index.html           主界面（版本号在这里）
-│   ├── app.js     (104KB)   全部交互
-│   ├── admin.html/admin.js  管理看板（SVG 曲线/柱状图）
-│   ├── aurora.css           主题「星雾 AURORA」（后加载，权重高于 style.css）
-│   └── style.css / glass.css 旧主题（可回退）
+│   ├── index.html           BLACK GLASS 正式首页（资源版本 9.0.0）
+│   ├── app.js               真实业务交互、共享提交锁、任务轮询与模型选择
+│   ├── blackglass-ui.js     展示模块：布局、显影、筛选、灯箱、头像菜单
+│   ├── blackglass.css       正式业务适配与加载态
+│   ├── blackglass/          本地视觉层、平面粒子、Three.js 依赖及授权
+│   ├── admin.html/admin.js  独立管理看板（SVG 曲线/柱状图）
+│   └── style.css / glass.css / aurora.css 旧基础与主题资源保留
 ├── library/                 款式库
 │   ├── styles.json          10 款式 / 49 色（含 fit 版型描述、effect 效果图字段）
 │   ├── refs/<slug>/<color>.jpg    颜色参考图（小色卡）
@@ -155,9 +169,10 @@ workbench/
 - **千万不要**给闸门表增删行；provider 对象按名字共享，**不要**在单任务里 `close()`
 
 ### 4.7 价格与用量
-`pricing.json` 是默认价目；`providers.<name>.model_prices` 可**按接口覆盖单价**（a6api 就是用它写的
-`gpt-image-2.5-sunburst: 0.005978`）。后台「今日 N 张 · ¥X」与飞书定价表都读 `UsageLedger`。
-**约定：单价以后台消费记录为准，不要自己估。**
+`pricing.json` 是默认价目；`providers.<name>.model_prices` 可按模型覆盖，`fixed_unit_price` 可按接口统一覆盖所有模型／档位，优先级最高。网页预估、harness、配额及新用量记录必须使用同一接口策略；历史账本保持原金额。
+后台「今日 N 张 · ¥X」及账号汇总读取 `UsageLedger`。不要把上游实际价格重新覆盖工作台配置的接口级固定策略。
+
+9.0.0 起 `/api/usage` 是**当前认证账号的个人用量**（管理员本人也只看自己）；今日／累计、recent、accounts 均同范围过滤。管理员全员汇总继续通过管理看板／账号接口读取，不要把个人抽屉绑定到全员定价用量。
 
 ### 4.8 命名与打包（客户明确要求）
 - 成品名：`{款式英文码}_{色号}[_补充]_{YYYYMMDD+job尾4位}.png`，例 `24CXCR_WH[0]_202611052219.png`
@@ -208,11 +223,21 @@ workbench/
 
 ---
 
+## 6.5 备用接口（65535）的模型与报价
+
+- 网关 `/v1/models` 现有 36 个 id、27 个图片模型；工作台只给有报价的 8 个显示单价，其余显示「未定价」。
+- 2026-11-09 新增 **`gpt-image-2.6-flare` / `gpt-image-2.6-sunburst`，按次 ¥0.038/张**（报价口径，与 2.5 系列同价），
+  已各跑 1 张真机验证（`data/test/model-26/`）。见 `CHANGELOG_MODELS_9.4.2.md`。
+- **价格解析顺序：接口级 `model_prices` → 飞书「模型定价」表 → `pricing.json`**。
+  飞书表存在时会把本地价目整份替换掉，所以新增模型**必须**在 `config.json` 的接口 `model_prices` 里也写一份，
+  否则飞书刷新后会回落到「未定价」。
+- 主接口 a6api 用 `fixed_unit_price=0.038` 覆盖所有模型；备用接口不设 fixed，按模型逐条给价。
+
 ## 7. 关键数据（实测，引用时注意日期 2026-11）
 
 | 项 | 数字 |
 |---|---|
-| a6api（sunburst）单价 | **¥0.005978/张**（以 65535/a6api 后台消费记录为准） |
+| 当前工作台计价 | 以接口配置为准；旧上游成本数据仅作历史实测，不能用于覆盖当前策略 |
 | a6api 单张耗时 | 1 并发 22.4s；10 并发 22–25s（wall 39s）；30 并发 p50 33 / p95 39.6（wall 75s）；100 并发 p50 51 / p95 84 / max 130（wall 246s） |
 | 并发甜点 | 单批 **20–30 张**；再往上只是尾巴变长 |
 | 版型漂移（修前） | 同款 3 色轮廓相似度只有 0.3–0.6 |
@@ -233,6 +258,8 @@ python tools/check_shape_lock.py    # 同款多色基准派生
 python tools/check_multi_style.py   # 多款式任务 + 导出分层
 python tools/check_thumb_package.py # 打包不再被缓存目录搞挂
 python tools/check_gate.py / check_feishu_gate.py   # 并发闸门 / 队列
+python tools/check_blackglass_static.py # 正式资源、DOM、业务路由、无模拟接线
+python tools/check_usage_scope.py       # 临时双账号账本／认证 HTTP，用量隔离
 ```
 
 **会花钱（真接口，用前确认）**
@@ -306,6 +333,7 @@ python tools/make_shape_compare.py       # 生成版型 A/B 对照图
 
 | 提交 | 内容 |
 |---|---|
+| `9.0.0（本轮工作区，未提交）` | BLACK GLASS 正式网页改造、交互性能与提交／轮询安全、个人用量账号隔离；见独立改动记录 |
 | `9d9d6f6` | 效果图真正决定版型（RESHAPE + fit + 首轮关 `input_fidelity`） |
 | `e331935` | 修 UI：款式面板不再被效果图缩略撑变形 |
 | `046b961` | 生图改为「原图 + 效果图」双参考，版型一致性内置、去掉界面开关 |
@@ -323,6 +351,10 @@ python tools/make_shape_compare.py       # 生成版型 A/B 对照图
 
 ## 13. 文档索引
 
+- [`CHANGELOG_GRAPHITE_AI_9.2.0.md`](CHANGELOG_GRAPHITE_AI_9.2.0.md)：当前石墨银紫正式主题、AI动效弹窗、异步交互修复与回归结果
+- [`CHANGELOG_BLACKGLASS_9.1.1.md`](CHANGELOG_BLACKGLASS_9.1.1.md)：原图／成品双来源、正反面构图保留、真实返工样本及验证边界
+- [`CHANGELOG_BLACKGLASS_9.1.0.md`](CHANGELOG_BLACKGLASS_9.1.0.md)：当前六项需求调整、滚动优化数据、禁人物边界与回归结果
+- [`CHANGELOG_BLACKGLASS_9.0.0.md`](CHANGELOG_BLACKGLASS_9.0.0.md)：本次正式网页改造文件清单、业务保留、真实接口与回归结果、启用／回退及已知限制
 - `workbench/README.md`（85KB）：**主手册**，逐版本记录了做法、实测数据和踩坑过程，遇到细节先翻它
 - `workbench/deploy/`：飞书接入、Cloudflare 隧道、闸门 Worker 的部署说明
 - `apparel-style-recolor/SKILL.md`：生图规范原文（提示词模板 / 负面词 / 打包与核对规则）

@@ -1,7 +1,7 @@
 {
   "skill_root": "../apparel-style-recolor",
   "data_dir": "data",
-  "default_provider": "terra",
+  "default_provider": "a6api",
   "library": {
     "enabled": true,
     "dir": "library",
@@ -83,7 +83,7 @@
   "providers": {
     "terra": {
       "type": "openai_compat",
-      "label": "65535 网关",
+      "label": "备用接口",
       "enabled": true,
       "base_url": "https://sub-proxy-us.65535.space/v1",
       "model": "gpt-image-2",
@@ -102,7 +102,11 @@
       "show_in_ui": true,
       "max_concurrency": 20,
       "global_concurrency": 20,
-      "model_prices": {}
+      "model_prices": {
+        "gpt-image-2.6-flare": 0.038,
+        "gpt-image-2.6-sunburst": 0.038
+      },
+      "note": "备用接口（65535 网关）；要排队走飞书闸门。gpt-image-2.6-flare / gpt-image-2.6-sunburst 按次 0.038（报价）、并发仍在网关侧限流。"
     },
     "terra-nano": {
       "type": "openai_compat",
@@ -228,7 +232,7 @@
     },
     "a6api": {
       "type": "openai_compat",
-      "label": "a6api 备用（gpt-image-2.5-sunburst）",
+      "label": "主接口",
       "enabled": true,
       "base_url": "https://api.a6api.vip/v1",
       "model": "gpt-image-2.5-sunburst",
@@ -248,9 +252,10 @@
       "max_concurrency": 0,
       "global_concurrency": 0,
       "gate_limit": 0,
-      "note": "后台消费记录：每次 ¥0.005978（模型价格），实测 100 并发 100/100、0 限流；网关自身推理约 45s，100 并发时排队会让单张等待到 80~130s（建议单批 ≤30）",
+      "note": "主接口；不限并发，超大批次的尾部等待可能增加。",
+      "fixed_unit_price": 0.038,
       "model_prices": {
-        "gpt-image-2.5-sunburst": 0.005978
+        "gpt-image-2.5-sunburst": 0.038
       },
       "unlimited": true,
       "skip_gate": true

@@ -129,19 +129,25 @@ def main() -> int:
         all(LOCK_MARK in t.prompt or ROLES_MARK in t.prompt for t in tasks[1:]),
         "跟随任务的提示词含版型约束", show,
     )
+    def roles_for(clause, task):
+        return prompts.enforce_subject_rule(clause, task.subject).removeprefix(prompts.NO_PERSON_CLAUSE).strip()
     check(
-        prompts.MASTER_EFFECT_CLAUSE not in tasks[0].prompt,
+        roles_for(prompts.MASTER_EFFECT_CLAUSE, tasks[0]) not in tasks[0].prompt,
         "基准任务不套「照基准改色」的约束（它按原图+效果图生成）", show,
     )
     check(
-        prompts.EFFECT_CLAUSE in tasks[0].prompt,
+        roles_for(prompts.EFFECT_CLAUSE, tasks[0]) in tasks[0].prompt,
         "基准任务带「原图 + 该色效果图」的角色说明", show,
     )
     derived_prompt = tasks[1].prompt
     check(
-        prompts.MASTER_EFFECT_CLAUSE in derived_prompt
-        or prompts.SILHOUETTE_LOCK_CLAUSE in derived_prompt,
-        "版型约束原文完整注入（效果图优先）", show,
+        roles_for(prompts.MASTER_EFFECT_CLAUSE, tasks[1]) in derived_prompt
+        or roles_for(prompts.SILHOUETTE_LOCK_CLAUSE, tasks[1]) in derived_prompt,
+        "适合输出主体的完整版型约束已注入（效果图优先）", show,
+    )
+    check(
+        all(t.subject != "garment" or t.prompt.startswith(prompts.NO_PERSON_CLAUSE) for t in tasks),
+        "只有衣服任务以禁人物规则开头，仍保留双参考和版型约束", show,
     )
     check(
         "print" in derived_prompt.lower(),

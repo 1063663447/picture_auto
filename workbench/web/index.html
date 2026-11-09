@@ -1,17 +1,24 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-tone="obsidian" data-finish="graphite">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=8.0.1" />
-<link rel="stylesheet" href="/aurora.css?v=8.0.1" />
+<link rel="stylesheet" href="/style.css?v=9.4.1" />
+<link rel="stylesheet" href="/aurora.css?v=9.4.1" />
+<link rel="stylesheet" href="/blackglass/layout.css?v=9.4.1" />
+<link rel="stylesheet" href="/blackglass/type.css?v=9.4.1" />
+<link rel="stylesheet" href="/blackglass/motion.css?v=9.4.1" />
+<link rel="stylesheet" href="/blackglass/frame.css?v=9.4.1" />
+<link rel="stylesheet" href="/blackglass/glass.css?v=9.4.1" />
+<link rel="stylesheet" href="/blackglass.css?v=9.4.1" />
+<link rel="stylesheet" href="/graphite.css?v=9.4.1" />
+<link rel="stylesheet" href="/ai-workflow.css?v=9.4.1" />
 </head>
-<body>
+<body class="flow-shell booting">
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
-<div class="ambient" aria-hidden="true"></div>
-<div class="cursor-glow" aria-hidden="true"></div>
+<canvas class="prism-renderer" id="prismCanvas" aria-hidden="true"></canvas>
 
 <svg style="display:none" aria-hidden="true">
   <defs>
@@ -48,11 +55,10 @@
     <button class="nav-icon on" type="button" data-view="gallery" aria-label="成品画廊" title="成品画廊"><svg><use href="#i-image"/></svg></button>
     <button class="nav-icon" type="button" id="railUpload" aria-label="上传原图" title="上传原图"><svg><use href="#i-upload"/></svg></button>
     <button class="nav-icon" type="button" data-view="logs" aria-label="运行日志与历史" title="运行日志与历史"><svg><use href="#i-clock"/></svg></button>
-    <button class="nav-icon" type="button" id="railChat" aria-label="需求沟通" title="需求沟通"><svg><use href="#i-chat"/></svg></button>
     <div class="rail-bottom">
-      <button class="nav-icon" type="button" id="railUsage" aria-label="账号用量" title="账号用量" hidden><svg><use href="#i-users"/></svg></button>
+      <button class="nav-icon" type="button" id="railUsage" aria-label="账号用量" hidden><svg><use href="#i-users"/></svg></button>
       <a class="nav-icon" id="railAdmin" href="/admin" aria-label="管理后台" title="管理后台" hidden><svg><use href="#i-shield"/></svg></a>
-      <button class="avatar" type="button" id="railAvatar" aria-label="账号与退出" title="账号">A</button>
+      <button class="avatar profile-trigger" type="button" id="railAvatar" aria-label="打开个人菜单" title="个人菜单" aria-expanded="false" aria-controls="profileMenu"><img src="/blackglass/avatar.svg" alt="个人头像" width="38" height="38" /><span class="avatar-status" aria-hidden="true"></span></button>
     </div>
   </aside>
 
@@ -62,52 +68,40 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"><svg><use href="#i-spark"/></svg></span>
         <span>生图工作台</span>
-        <small>IMAGE WORKBENCH</small>
       </div>
-      <nav class="toplinks">
-        <button type="button" class="current" data-view="gallery">创作空间</button>
-        <button type="button" data-view="logs">任务记录</button>
-        <button type="button" id="feishuBtn">飞书历史</button>
-        <button type="button" id="openHarnessBtn">需求沟通</button>
-      </nav>
+      <nav class="toplinks" aria-label="工作区"><span class="workspace-tag"><i></i>创作空间</span></nav>
       <div class="top-right">
-        <span class="status"><i class="dot"></i><span id="healthLine">—</span></span>
+        <span class="status"><i class="dot"></i><span id="healthLine">正在连接…</span></span>
         <span class="tag warn" id="skillWarn" hidden></span>
-        <button class="subtle" type="button" id="usageChip" title="累计用量与花费">
-          <svg><use href="#i-coins"/></svg><span id="usageText">今日 0 张</span>
-        </button>
-        <button class="subtle" type="button" id="accountsBtn" hidden>账号用量</button>
-        <a class="subtle" id="adminLink" href="/admin" hidden>管理后台</a>
-        <span class="who-chip" id="whoChip" hidden>
-          <b id="whoName">—</b>
-          <button class="who-out" type="button" id="logoutBtn" aria-label="退出登录" title="退出登录"><svg width="12" height="12"><use href="#i-x"/></svg></button>
-        </span>
+        <a class="subtle admin-top" id="adminLink" href="/admin" hidden><svg><use href="#i-shield"/></svg>管理后台</a>
+        <button class="subtle ambience-toggle" id="ambienceToggle" type="button" aria-pressed="false" title="暂停或恢复背景粒子">✧ 微光开启</button>
       </div>
     </header>
 
+    <div class="flow-bar"><div class="flow-context"><span class="session-pill"><i></i><span id="connectionLabel">正在连接服务</span></span><span class="flow-context-text" id="workspaceSummary">准备原图与款色，开始创作</span></div></div>
+    <div class="mobile-tabs" aria-label="工作区切换"><button type="button" data-mobile-pane="config" aria-pressed="true" class="active">配置 <span id="mobileStyleCount">— 款</span></button><button type="button" data-mobile-pane="results" aria-pressed="false">画布 <span id="mobileDoneCount">0 张</span></button><button type="button" class="mobile-profile profile-trigger" id="mobileProfile" aria-label="打开个人菜单" aria-controls="profileMenu" aria-expanded="false"><img src="/blackglass/avatar.svg" alt="个人头像" width="26" height="26" /></button></div>
     <div class="workspace">
       <!-- --------------------------------------------------------- 控制台 -->
-      <aside class="controls glass">
-        <section>
-          <h2 class="section-label">原始素材<small>01 / SOURCE</small></h2>
+      <aside class="controls glass" aria-label="创作配置">
+        <section class="source-section">
+          <h2 class="section-label">原始素材 <span class="hint" id="fileCount">未选择</span></h2>
           <div class="upload" id="drop" role="button" tabindex="0" aria-label="上传原图">
             <input type="file" id="fileInput" multiple accept="image/png,image/jpeg,image/webp" hidden />
             <span style="display:grid;gap:1px;min-width:0">
-              <strong>拖拽或点击上传</strong>
-              <span>一张图 = 一个 item</span>
-              <em>多角度：<code>item-01_view-01.png</code> / <code>item-01_view-02.png</code></em>
+              <strong>拖入或上传原图</strong>
+              <span>支持多张、多角度</span>
             </span>
             <span class="plus" aria-hidden="true">+</span>
           </div>
           <div class="thumbs" id="thumbs"></div>
-          <p class="hint" id="fileCount">未选择</p>
+          <details class="upload-help"><summary>多角度命名规则</summary><p>同件衣服的不同角度请使用 <code>item-01_view-01.png</code>、<code>item-01_view-02.png</code>；不同 item 分别出图。</p></details>
         </section>
 
         <div class="divider"></div>
 
-        <section>
-          <h2 class="section-label">款式与色彩<small>02 / STYLE</small></h2>
-          <div class="style-list" id="styleList"></div>
+        <section class="styles-section">
+          <h2 class="section-label">款式与色彩 <span class="section-count" id="styleCount">加载中…</span></h2>
+          <div class="style-list" id="styleList" aria-label="已选款式"><div class="sk" style="height:138px"></div><div class="sk" style="height:58px"></div></div>
           <button class="add-style" type="button" id="addStyle">
             <svg><use href="#i-plus"/></svg>添加款式
           </button>
@@ -116,14 +110,14 @@
 
         <div class="divider"></div>
 
-        <section>
-          <h2 class="section-label">生成设定<small>03 / GENERATE</small></h2>
+        <section class="settings-section">
+          <details id="settingsDetails"><summary class="settings-toggle" aria-label="展开生成设定"><span class="settings-title"><svg><use href="#i-spark"/></svg><span>生成设定<small>模型、尺寸与质量</small></span></span><span class="settings-meta" id="settingsSummary">加载中…</span><span class="settings-cta">调整参数 <span class="chevron" aria-hidden="true">⌄</span></span></summary><div class="settings-body">
           <label class="field">
             <span class="lbl">生图接口 <span id="providerState"></span></span>
             <select id="provider"></select>
           </label>
           <label class="field">
-            <span class="lbl">模型（含单价）</span>
+            <span class="lbl">模型与单价</span>
             <select id="model"></select>
             <input type="text" id="modelManual" placeholder="手填模型名" hidden />
           </label>
@@ -150,7 +144,7 @@
           </label>
           <div class="row2">
             <label class="field">
-              <span class="lbl">分辨率档位（定单价）</span>
+              <span class="lbl">分辨率</span>
               <select id="sizeTier">
                 <option value="1K">1K · 1024 级</option>
                 <option value="2K">2K · 2048 级</option>
@@ -158,7 +152,7 @@
               </select>
             </label>
             <label class="field">
-              <span class="lbl">质量（不改价格）</span>
+              <span class="lbl">质量</span>
               <select id="quality">
                 <option value="high">high · 细节最好</option>
                 <option value="medium">medium</option>
@@ -172,11 +166,12 @@
             <svg><use href="#i-shield"/></svg>
             <span>接口调用会真实计费，建议先小批量验证效果</span>
           </div>
+          </div></details>
         </section>
 
         <div class="divider"></div>
         <div class="copy-row">
-          <button class="btn btn-ghost" type="button" id="previewBtn"><svg><use href="#i-doc"/></svg>查看本轮提示词</button>
+          <button class="btn btn-ghost" type="button" id="previewBtn"><svg><use href="#i-doc"/></svg>提示词预览 <span aria-hidden="true">↗</span></button>
         </div>
       </aside>
 
@@ -186,11 +181,11 @@
           <div class="canvas-left">
             <div class="view-tabs">
               <button class="view-tab active" type="button" data-view="gallery">成品画廊<span class="count" id="galleryCount">0</span></button>
-              <button class="view-tab" type="button" data-view="logs">运行日志</button>
+              <button class="view-tab" type="button" data-view="logs">日志与记录</button>
             </div>
             <div class="job-strip">
               <b id="jobTitle">尚未开始</b>
-              <span id="jobStage">选择原图与颜色后开始生成</span>
+              <span id="jobStage" role="status">选择原图与颜色后开始生成</span>
               <span class="queue-chip" id="queueChip" hidden></span>
             </div>
           </div>
@@ -211,14 +206,15 @@
             <div class="kpi"><div class="k">本次花费</div><div class="v" id="kpiCost">—</div></div>
           </div>
 
-          <div style="margin:0 0 14px">
+          <div class="progress-wrap">
             <div class="progress" role="progressbar" aria-labelledby="progressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><i></i></div>
             <div class="progress-meta">
-              <span id="progressLabel">0 / 0</span>
+              <span><span id="progressLabel">0 / 0</span><span id="jobDuration" hidden aria-live="polite"></span></span>
               <span id="progressStats">等待开始</span>
             </div>
           </div>
 
+          <div class="gallery-filters" aria-label="筛选成品"><div class="filter-tabs"><button type="button" class="active" data-filter="all" aria-pressed="true">全部 <span>0</span></button><button type="button" data-filter="done" aria-pressed="false">已完成 <span>0</span></button><button type="button" data-filter="running" aria-pressed="false">生成中 <span>0</span></button><button type="button" data-filter="queued" aria-pressed="false">待处理 <span>0</span></button><button type="button" data-filter="failed" aria-pressed="false">异常 <span>0</span></button></div><div class="gallery-density"><button type="button" id="toggleDensity" aria-pressed="false" title="切换紧凑网格"><svg><use href="#i-image"/></svg><span>紧凑</span></button></div></div>
           <div class="toolbar" id="resultToolbar" hidden>
             <label class="check"><input type="checkbox" id="selAll" /><span>全选成品</span></label>
             <span class="count" id="selCount">已选 0 张</span>
@@ -227,6 +223,7 @@
             <button class="btn btn-ghost btn-sm" type="button" id="batchExportBtn" disabled><svg><use href="#i-download"/></svg>批量导出</button>
           </div>
 
+          <div class="gallery-scroll" id="galleryScroll" tabindex="0" aria-label="结果画廊，可独立滚动">
           <div class="gallery grid-imgs" id="gridImgs"></div>
 
           <div class="empty" id="emptyState">
@@ -235,9 +232,11 @@
             <span style="font-size:10.5px">左侧选好原图与颜色，点「开始生成」</span>
           </div>
 
+          <div id="filterEmpty" hidden><svg><use href="#i-image"/></svg><span>当前筛选下还没有图片</span><button type="button" id="clearFilter">查看全部</button></div>
           <div class="canvas-foot">
             <span><i class="dot"></i><span>成品图保存在本机 workbench/data/jobs</span></span>
-            <span>飞书多维表格同步留痕</span>
+            <span id="viewportHint">逐张回填，完成后可提前查看</span>
+          </div>
           </div>
         </div>
 
@@ -249,35 +248,16 @@
           <div class="glass" style="padding:14px">
             <div class="section-label">
               <span>历史任务</span>
-              <button class="tiny-button" type="button" id="feishuHistoryBtn">飞书历史 · 打包下载 ↗</button>
+              <button class="tiny-button" type="button" id="feishuHistoryBtn" hidden>飞书历史 · 打包下载 ↗</button>
             </div>
             <div class="history" id="history"></div>
           </div>
         </div>
 
         <div class="composer glass">
-          <div class="composer-head">
-            <svg><use href="#i-spark"/></svg>
-            告诉我，这次的灵感是什么？
-            <span class="brief-tag">CREATIVE BRIEF</span>
-          </div>
-          <textarea id="briefInput" rows="2" aria-label="本次生成需求"
-            placeholder="例如：图案必须原样不动，只换面料底色，光线柔和自然，背景别动…"></textarea>
-          <div class="composer-bottom">
-            <div class="quick-prompts" id="briefChips"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-ghost" type="button" id="directStartBtn">直接开工</button>
-              <button class="btn btn-primary" type="button" id="startBtn" disabled>
-                <svg><use href="#i-spark"/></svg><span>开始生成</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="tip-strip">
-          <svg><use href="#i-spark"/></svg>
-          <span><strong>灵感不止一种形态。</strong> 用一组颜色，探索作品的不同表达。</span>
-          <button type="button" id="randomBrief">换个灵感 ↗</button>
+          <div class="composer-head"><svg><use href="#i-spark"/></svg><label for="briefInput">创作需求</label><span class="brief-tag">Ctrl + Enter 生成</span><button type="button" id="randomBrief" title="填入一条需求示例">换个灵感 ↻</button></div>
+          <textarea id="briefInput" rows="1" aria-label="本次生成需求" placeholder="留空按默认生成；填写后先通过 AI 沟通对齐，再生成…"></textarea>
+          <div class="composer-bottom"><div class="quick-prompts" id="briefChips"></div><div class="generate-actions"><button type="button" class="ai-resume" id="aiResumeBtn" hidden><i aria-hidden="true"></i><span id="aiResumeLabel">AI 整理中 · 查看</span></button><details class="more-actions"><summary aria-label="更多生成操作" title="更多生成操作">···</summary><div><button class="btn btn-ghost" type="button" id="directStartBtn">忽略需求，按默认生成</button></div></details><button class="btn btn-primary" type="button" id="startBtn" disabled><svg><use href="#i-spark"/></svg><span>开始生成</span></button></div></div>
         </div>
       </section>
     </div>
@@ -289,12 +269,12 @@
 </div>
 
 <!-- ---------------------------------------------------------- 大图灯箱 -->
-<dialog class="lightbox" id="lightbox">
+<dialog class="lightbox" id="lightbox" aria-labelledby="lightboxTitle">
   <div class="lightbox-head">
     <span id="lightboxTitle">成品大图</span>
     <button class="iconbtn" type="button" id="closeModal" aria-label="关闭大图"><svg><use href="#i-x"/></svg></button>
   </div>
-  <img id="largeImage" alt="成品大图" />
+  <div class="lightbox-stage" id="lightboxStage"><div class="image-loading" role="status">正在读取原图…</div><img id="largeImage" alt="成品大图" decoding="async" /><button class="lightbox-prev" type="button" id="lightboxPrev" aria-label="上一张">‹</button><button class="lightbox-next" type="button" id="lightboxNext" aria-label="下一张">›</button></div>
   <div class="lightbox-foot">
     <span id="lightboxSub">原图尺寸 · 可下载保存</span>
     <a id="sampleDownload" download>下载这张 ↓</a>
@@ -313,41 +293,43 @@
   <div class="drawer-foot"><span class="tip">改图返工时会以成品为参考图，并保留这些约束。</span></div>
 </section>
 
-<!-- ---------------------------------------------------------- 需求沟通 -->
+<!-- -------------------------------------------------------- AI 创作工作室 -->
 <div class="scrim" id="harnessScrim" hidden></div>
-<aside class="drawer" id="harnessDrawer" hidden aria-modal="true" role="dialog" aria-label="需求沟通">
+<section class="drawer ai-dialog" id="harnessDrawer" hidden aria-modal="true" role="dialog" aria-labelledby="harnessTitle" data-ai-phase="preparing">
   <div class="drawer-head">
     <span class="avatar"><svg><use href="#i-spark"/></svg></span>
-    <div class="who"><b id="harnessTitle">需求沟通</b><span id="harnessSub">DeepSeek 可看图、可查价、可直接开工</span></div>
-    <button class="btn btn-quiet btn-icon" type="button" id="harnessClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
+    <div class="who"><div class="ai-eyebrow"><i></i>AI STUDIO / LIVE WORKFLOW</div><b id="harnessTitle">AI 创作工作室</b><span id="harnessSub">素材、需求和执行约束在这里对齐</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="harnessClose" aria-label="收起 AI 工作窗口" title="收起后可继续查看本轮进度"><svg><use href="#i-x"/></svg></button>
+  </div>
+  <div class="ai-workflow">
+    <div class="ai-workflow-main"><div class="ai-orb" aria-hidden="true"><span>✧</span></div><div class="ai-stage-copy"><strong id="aiPhaseLabel" role="status" aria-live="polite">正在准备素材</strong><p id="aiPhaseDetail">整理原图、款色和本轮设定，不会提前提交生图任务。</p></div><output class="ai-elapsed" id="aiElapsed">已用时 0s</output></div>
+    <ol class="ai-pipeline" aria-label="AI 工作阶段"><li data-ai-step="prepare" data-state="active"><i>01</i><span>素材准备</span></li><li data-ai-step="align"><i>02</i><span>AI 对齐</span></li><li data-ai-step="confirm"><i>03</i><span>确认需求</span></li><li data-ai-step="submit"><i>04</i><span>提交生图</span></li></ol>
+    <div class="ai-progress" id="aiProgress" role="progressbar" aria-label="实际处理阶段" aria-valuetext="正在准备素材" aria-busy="true"></div>
+    <div class="ai-live-metrics"><span class="ai-signal" id="aiSignal">等待服务端响应</span><span id="aiCharacterCount">等待流式内容</span><span id="aiToolCount">工具按需执行</span></div>
   </div>
   <div class="chat" id="chatLog" aria-live="polite"></div>
   <div class="drawer-foot">
     <div class="quick" id="quickChips"></div>
-    <!-- 改图可以换模型：成品当参考图交给另一个模型重画 -->
     <div class="rework-model" id="reworkModel" hidden>
       <div class="row2">
-        <label class="field">
-          <span class="lbl">改图接口</span>
-          <select id="reworkProvider"></select>
-        </label>
-        <label class="field">
-          <span class="lbl">改图模型</span>
-          <select id="reworkModelSel"></select>
-        </label>
+        <label class="field"><span class="lbl">改图接口</span><select id="reworkProvider"></select></label>
+        <label class="field"><span class="lbl">改图模型</span><select id="reworkModelSel"></select></label>
       </div>
-      <p class="hint" id="reworkModelHint">成品会作为参考图交给这个模型重画</p>
+      <p class="hint" id="reworkModelHint">将对照原始上传图与当前成品，保留已确认的颜色和版型</p>
     </div>
     <div class="input-row">
-      <textarea id="harnessInput" rows="2" placeholder="直接问它：这图能改吗？多少钱？图案会漂吗？"></textarea>
-      <button class="btn btn-primary btn-icon" type="button" id="harnessSend" aria-label="发送" style="height:44px;width:44px"><svg><use href="#i-send"/></svg></button>
+      <textarea id="harnessInput" rows="2" placeholder="补充或确认本轮要求，Ctrl + Enter 发送…" aria-label="补充 AI 创作要求"></textarea>
+      <button class="btn btn-primary btn-icon" type="button" id="harnessSend" aria-label="发送补充要求"><svg><use href="#i-send"/></svg></button>
     </div>
+    <div class="ai-receipt" id="aiReceipt" hidden>服务端已确认任务 <code id="aiReceiptId"></code>，无需再次提交。</div>
     <div class="drawer-actions" id="harnessActions">
       <button class="btn btn-ghost" type="button" id="harnessDefault">按默认生成</button>
-      <button class="btn btn-primary" type="button" id="harnessApply" disabled>按分析结果生成</button>
+      <button class="btn btn-primary" type="button" id="harnessApply" disabled>确认并生成</button>
+      <button class="btn btn-primary" type="button" id="aiViewResults" hidden>查看生成进度 ↗</button>
     </div>
+    <p class="ai-footer-note">阶段依据实际请求与服务端事件显示；图像生成会计费，网络异常不会自动重发。</p>
   </div>
-</aside>
+</section>
 
 <!-- ---------------------------------------------------------- 飞书历史 -->
 <div class="scrim" id="feishuScrim" hidden></div>
@@ -392,8 +374,20 @@
   </div>
 </aside>
 
+<section class="profile-card" id="profileMenu" aria-labelledby="profileTitle" hidden>
+  <div class="profile-header"><img src="/blackglass/avatar.svg" alt="个人头像" width="44" height="44" /><div><b id="profileTitle">个人空间</b><span class="who-chip" id="whoChip" hidden><span id="whoName">—</span><small id="whoRole">成员</small></span></div><button class="iconbtn" id="profileClose" type="button" aria-label="关闭个人菜单"><svg><use href="#i-x"/></svg></button></div>
+  <div class="profile-overview"><span><i></i>创作会话</span><span id="profileSession">正在连接</span></div>
+  <div class="profile-options"><button class="profile-option" id="feishuBtn" type="button"><span class="profile-option-icon"><svg><use href="#i-clock"/></svg></span><span><b>飞书历史</b><small>查看记录与成品</small></span><span class="profile-arrow" aria-hidden="true">↗</span></button><button class="profile-option" id="usageChip" type="button"><span class="profile-option-icon"><svg><use href="#i-coins"/></svg></span><span><b>用量与花费</b><small id="usageText">读取中…</small></span><span class="profile-arrow" aria-hidden="true">↗</span></button><button class="profile-option" id="accountsBtn" type="button" hidden><span class="profile-option-icon"><svg><use href="#i-users"/></svg></span><span><b>账号与成员</b><small>查看全员用量与配额</small></span><span class="profile-arrow" aria-hidden="true">↗</span></button></div>
+  <div class="profile-footer"><button id="logoutBtn" type="button"><svg><use href="#i-arrow"/></svg>退出登录</button></div>
+</section>
+<div class="scrim" id="usageScrim" hidden></div><aside class="drawer" id="usageDrawer" hidden aria-modal="true" role="dialog" aria-label="我的用量"><div class="drawer-head"><span class="avatar"><svg><use href="#i-coins"/></svg></span><div class="who"><b>我的用量与花费</b><span>按工作台用量记录计价</span></div><button class="btn btn-quiet btn-icon" id="usageClose" type="button" aria-label="关闭用量"><svg><use href="#i-x"/></svg></button></div><div class="chat" id="usageBody"></div><div class="drawer-foot"><button class="btn btn-ghost" id="usageReload" type="button">刷新用量</button></div></aside>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/app.js?v=8.0.1"></script>
+<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.4.1"></script>
+<script src="/blackglass/atmosphere.js?v=9.4.1"></script>
+<script src="/blackglass/effects.js?v=9.4.1"></script>
+<script src="/blackglass-ui.js?v=9.4.1"></script>
+<script src="/ai-workflow.js?v=9.4.1"></script>
+<script src="/app.js?v=9.4.1"></script>
 </body>
 </html>

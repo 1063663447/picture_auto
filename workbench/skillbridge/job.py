@@ -17,6 +17,7 @@ VIEW_ONLY = re.compile(r"^view[-_]?(\d+)$", re.I)
 UNSAFE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 TERMINAL = {"done", "failed", "skipped", "canceled"}
+JOB_TERMINAL = {"done", "partial", "failed", "canceled"}
 
 
 def safe_name_part(text: str, fallback: str = "") -> str:
@@ -190,6 +191,7 @@ class Job:
     log: list[dict] = field(default_factory=list)
     cancel_requested: bool = field(default=False, repr=False)
     total: int = 0
+    finished_at: float | None = None
 
     # -- runtime-only ------------------------------------------------------- #
     root: Path | None = field(default=None, repr=False)
@@ -213,6 +215,12 @@ class Job:
         )
         return stats
 
+    @property
+    def duration(self) -> float | None:
+        if self.status in JOB_TERMINAL and self.finished_at is not None:
+            return round(max(0.0, self.finished_at - self.created_at), 2)
+        return None
+
     def as_dict(
         self, *, with_tasks: bool = True, with_log: bool = True, with_prompts: bool = False
     ) -> dict:
@@ -228,6 +236,8 @@ class Job:
             "error": self.error,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "finished_at": self.finished_at,
+            "duration": self.duration,
             "stats": stats,
             "progress": round(
                 100.0 * (stats["done"] + stats["skipped"] + stats["failed"] + stats["canceled"])
@@ -286,6 +296,10 @@ class Job:
 
     def save(self) -> None:
         self.updated_at = time.time()
+        if self.status in JOB_TERMINAL:
+            self.finished_at = self.finished_at or self.updated_at
+        else:
+            self.finished_at = None
         payload = self.as_dict(with_tasks=True, with_log=True, with_prompts=True)
         payload["zip_rel"] = self.zip_rel
         payload["dir_rel"] = self.dir_rel
@@ -305,6 +319,10 @@ class Job:
             stage=payload.get("stage", ""),
             created_at=payload.get("created_at") or time.time(),
             updated_at=payload.get("updated_at") or time.time(),
+            finished_at=(
+                payload.get("finished_at") or payload.get("updated_at")
+                if payload.get("status") in JOB_TERMINAL else None
+            ),
             batch_name=payload.get("batch_name", ""),
             zip_rel=payload.get("zip_rel"),
             dir_rel=payload.get("dir_rel"),

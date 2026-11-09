@@ -119,12 +119,14 @@ def compose_template(
             "KEEP UNCHANGED — everything the request does not mention stays identical."
         )
     garment = str(subject or "").strip().lower() == "garment"
-    return REWORK_TEMPLATE.format(
+    prompt = REWORK_TEMPLATE.format(
         change=" ".join(change),
         keep=keep,
         subject_keep=SUBJECT_KEEP_GARMENT if garment else SUBJECT_KEEP_NEUTRAL,
         original_prompt=original_prompt or "(none)",
-    ) + (" " + prompts.NO_PERSON_CLAUSE if garment else "")
+    )
+    # Attachment roles are rebound by service/runner once the available originals are known.
+    return prompts.build_rework_reference_prompt(prompt, subject, original_count=0)
 
 
 def signature(text: str) -> str:
@@ -227,8 +229,6 @@ async def compose(
 ) -> tuple[str, str]:
     """Return (prompt, refiner_used)."""
     refiner = (refiner or "template").strip().lower()
-    garment = str(subject or "").strip().lower() == "garment"
-    tail = (" " + prompts.NO_PERSON_CLAUSE) if garment else ""
     if refiner == "llm" and cfg:
         model = str(cfg.get("model") or "").strip()
         key = str((env or {}).get(str(cfg.get("api_key_env") or ""), "")).strip()
@@ -242,7 +242,7 @@ async def compose(
                     api_key=key,
                     pattern_mode=pattern_mode,
                 )
-                return f"{prompt}{tail}".strip(), "llm"
+                return prompts.build_rework_reference_prompt(prompt, subject, original_count=0), "llm"
             except Exception:  # noqa: BLE001 - fall back, never block a rework
                 return compose_template(
                     instruction, original_prompt, pattern_mode=pattern_mode, subject=subject

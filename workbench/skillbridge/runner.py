@@ -9,7 +9,7 @@ import random
 import shutil
 import time
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from PIL import Image
 
@@ -20,6 +20,7 @@ from .gate import GateBusy
 from .packaging import package_outputs
 from .providers.base import EditRequest, Provider, ProviderError, sniff_extension
 from .skill import ColorRef, GarmentType, Skill
+from .sources import original_uploads
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 # 被网关/并发限制打回来的错误特征（用于「一键重试被限流的图」）
@@ -134,10 +135,18 @@ class JobRunner:
             self.pattern_mode = (
                 prompts.detect_pattern_mode(self.extra_requirements) or "preserve"
             )
+        if self.pattern_mode == "preserve":
+            params["artwork_policy"] = "ink-and-cloth-v1"
         self.pattern_brief = str(params.get("pattern_brief") or "").strip()
-        # 主体：garment（原图只有衣服）/ person（真人上身）/ auto（按原图判断）。
-        # 判不准就按 person 走中性提示词，见 subject.detect
-        self.subject_override = subject_mod.normalise(params.get("subject"))
+        from .output_policy import edits_people, person_selection
+        requirements = [str(params.get(key) or "").strip() for key in ("subject_edit", "extra_requirements", "instruction")]
+        self.output_requirement = "；".join(dict.fromkeys(text for text in requirements if text))
+        if edits_people(self.output_requirement):
+            params["subject_edit"] = person_selection(self.output_requirement)
+        # Persist the operator choice before plan() replaces subject with a batch summary.
+        # Legacy summaries cannot override saved per-task classifications on reload.
+        self.subject_override = subject_mod.choice(job)
+        params.setdefault("subject_choice", self.subject_override)
         # 出图后发现「又画了个人」要不要自动重画一次（默认只警告，不偷偷多花钱）
         self.retry_on_person = bool(params.get("retry_on_person", False))
         # 版型一致性（内部固定行为，界面上没有开关）：先出基准色，其余颜色基于它改色；
@@ -145,7 +154,7 @@ class JobRunner:
         self.shape_lock = str(params.get("shape_lock") or "master").strip().lower() != "off"
         if str(params.get("mode") or "") == "two_phase":
             self.shape_lock = False      # 两段式本身就是「先改款再换色」，不再套第二层
-        self.negative = prompts.full_negative(self.skill, self.pattern_mode)
+        self.negative = prompts.full_negative(self.skill, self.pattern_mode, subject=self.subject_override)
         # 多款式时每个款式有各自的袖口工艺（平口/螺纹），否定词必须按款取，
         # 不能共用第一款的：否则长袖 T 恤会拿到卫衣的否定、或者反过来
         self._negatives: dict[str, str] = {}
@@ -283,32 +292,47 @@ class JobRunner:
         return entries
 
     def subject_for(self, path: Path) -> str:
-        """这张原图有没有真人：判不准按 person（中性提示词，不多禁）。"""
+        """Explicit output choice wins; uncertain uploads retain their actual subject."""
         return subject_mod.detect(path, self.subject_override)
+
+    def _apply_task_subject(self, task: Task) -> None:
+        """Resolve original task/lineage evidence, never a damaged generated subject."""
+        kind = subject_mod.task_kind(self.job, task)
+        task.subject = kind
+        self.job.params.setdefault("task_subjects", {})[task.id] = kind
+        if self.mode == "rework":
+            kinds = [subject_mod.normalise(t.subject) for t in self.job.tasks]
+            self.job.params["subject"] = kinds[0] if len(set(kinds)) == 1 else subject_mod.AUTO
+            self.job.params["subjects"] = {k: kinds.count(k) for k in subject_mod.KINDS}
+        task.prompt = prompts.enforce_composition_rule(prompts.enforce_subject_rule(task.prompt, kind))
 
     def plan(self) -> None:
         sources = self._sources()
         if not sources:
             raise ValueError("没有可处理的输入图片")
-        # 每张原图先判主体：纯衣服平铺图绝不能拿到「保持同一个人」那句
+        # Missing skin cannot distinguish empty clothes from a covered/cropped wearer.
         subjects = {str(path): self.subject_for(path) for _item, _view, path in sources}
-        counts = {"garment": 0, "person": 0}
+        counts = {kind: 0 for kind in subject_mod.KINDS}
         for kind in subjects.values():
             counts[kind] = counts.get(kind, 0) + 1
-        self.job.params["subject"] = (
-            "garment" if counts.get("garment") and not counts.get("person") else "person"
-        )
+        kinds = set(subjects.values())
+        self.job.params["subject"] = next(iter(kinds)) if len(kinds) == 1 else subject_mod.AUTO
         self.job.params["subjects"] = dict(counts)
         if counts.get("garment"):
             self.job.add_log(
-                f"主体判定：{counts['garment']} 张是纯衣服（平铺/挂拍），已禁止添加人物；"
+                f"输出主体：{counts['garment']} 张按只有衣服处理（移除原有人物/模特并禁止新增）；"
                 f"{counts.get('person', 0)} 张按真人/不确定处理"
+            )
+        if counts.get("auto"):
+            self.job.add_log(
+                f"主体按原图保留：{counts['auto']} 张无明确露肤证据，不据此移除模特或改变背景；"
+                "平铺保持平铺，穿着保持穿着"
             )
         tasks: list[Task] = []
         for garment, colors in self.selections:
             for item, view, path in sources:
                 base = f"{item}-{view}" if view else item
-                subject = subjects.get(str(path), "person")
+                subject = subjects.get(str(path), subject_mod.AUTO)
                 # 版型锁定：同款同图的第一个颜色当基准，其余颜色以它为参考图只改色，
                 # 否则每色独立生成 → 袖长/衣宽/下摆每次都漂，客户一眼看出「不是同一件」
                 lock = self.shape_lock and len(colors) > 1
@@ -371,6 +395,8 @@ class JobRunner:
                         )
                     )
         self.job.tasks = tasks
+        self.job.params["task_subjects"] = {task.id: task.subject for task in tasks}
+        self.job.params["subject_policy"] = subject_mod.AUTO_POLICY
         self.job.total = len(tasks)
         if any(task.master_task for task in tasks):
             self.job.add_log(
@@ -432,8 +458,9 @@ class JobRunner:
                 self._save(force=True)
                 return
 
+            self.job.params["generation_finished_at"] = time.time()
             self.job.status = "packaging"
-            self.job.stage = "校验并打包"
+            self.job.stage = f"图片处理完成 {self.job.counts()['finished']}/{len(self.job.tasks)}，校验并打包"
             self._save(force=True)
             await self._package()
 
@@ -455,9 +482,11 @@ class JobRunner:
             self.job.add_log(self.job.stage, level="warn" if stats["failed"] else "info")
         except asyncio.CancelledError:
             self._mark_unfinished_canceled()
-            self.job.status = "canceled"
-            self.job.stage = "已取消"
-            self.job.add_log("任务被中断", level="warn")
+            stats = self.job.counts()
+            packing_only = stats["done"] > 0 and not any(stats[k] for k in ("pending", "queued", "running", "canceled"))
+            self.job.status = "partial" if packing_only else "canceled"
+            self.job.stage = "图片生成完成，打包已取消；原始成品可下载" if packing_only else "已取消"
+            self.job.add_log(self.job.stage, level="warn")
             self._save(force=True)
             raise
         except Exception as exc:  # noqa: BLE001 - surfaced to the UI
@@ -518,13 +547,81 @@ class JobRunner:
         """Every task already carries its reference image and its revised prompt."""
         await self._gather(self.job.tasks, self._execute_rework_task)
 
+    def _job_image_path(self, relative: object, *, original: bool = False) -> Path | None:
+        """Resolve a saved job-relative image, never an arbitrary/escaping filesystem path."""
+        if not isinstance(relative, str) or not relative.strip() or "\x00" in relative or ":" in relative:
+            return None
+        text = relative.replace("\\", "/")
+        posix, windows = PurePosixPath(text), PureWindowsPath(text)
+        if posix.is_absolute() or windows.is_absolute() or windows.drive or ".." in posix.parts:
+            return None
+        if original and (not posix.parts or posix.parts[0].lower() != "originals"):
+            return None
+        try:
+            root = self.root.resolve()
+            path = (root / text).resolve()
+            path.relative_to(root)
+            if path.suffix.lower() not in IMAGE_SUFFIXES or not path.is_file():
+                return None
+            return path
+        except (OSError, ValueError, RuntimeError):
+            return None
+
+    def _rework_originals(self, task: Task, source: Path) -> list[Path]:
+        """Use this task's original copies, or recorded ancestry for a legacy rework."""
+        mapping = self.job.params.get("original_sources")
+        entries = mapping.get(task.id, []) if isinstance(mapping, dict) else []
+        if not isinstance(entries, list):
+            return []
+        originals: list[Path] = []
+        seen = {source.resolve()}
+        if not entries and self.job.params.get("source_job") and mapping is None:
+            uploads = original_uploads(
+                self.job, task, lambda job_id: subject_mod.load_lineage_job(self.job, job_id)
+            )
+            for upload in uploads:
+                path = upload.path.resolve()
+                if path not in seen and path.suffix.lower() in IMAGE_SUFFIXES:
+                    originals.append(path)
+                    seen.add(path)
+        for relative in entries:
+            path = self._job_image_path(relative, original=True)
+            if path is None:
+                self.job.add_log(f"{task.id} 原始上传参考缺失或路径不安全，已跳过", level="warn")
+            elif path not in seen:
+                originals.append(path)
+                seen.add(path)
+        return originals
+
     async def _execute_rework_task(self, task: Task) -> None:
-        source = self.root / task.source
-        if not source.is_file():
-            self._set_status(task, "failed", error="参考图缺失")
+        self._apply_task_subject(task)
+        source = self._job_image_path(task.source)
+        if source is None:
+            self._set_status(task, "failed", error="参考图缺失或路径不安全")
             return
+        originals = self._rework_originals(task, source)
+        capacity = max(1, int(getattr(self.provider, "max_images", 1) or 1))
+        images = [source, *originals[:capacity - 1]]
+        if capacity == 1:
+            self.job.add_log(
+                f"{task.id} 接口仅支持 1 张输入，原始上传未附加；仅编辑当前成品，不增加生成调用",
+                level="warn",
+            )
+        elif not originals:
+            self.job.add_log(
+                f"{task.id} 未找到可用原始上传，仅编辑当前成品；无法据缺失原图恢复未见视角",
+                level="warn",
+            )
+        elif len(images) - 1 < len(originals):
+            self.job.add_log(
+                f"{task.id} 受接口 {capacity} 图上限限制，已附加前 {len(images) - 1}/{len(originals)} 张原始上传",
+                level="warn",
+            )
+        task.prompt = prompts.build_rework_reference_prompt(
+            task.prompt, task.subject, original_count=len(images) - 1
+        )
         request = EditRequest(
-            images=[source],
+            images=images,
             prompt=task.prompt,
             negative=self.negative_for(self.garment_for_task(task), task.subject),
             size=self._resolve_size(source),
@@ -555,10 +652,13 @@ class JobRunner:
                 async with lock:
                     styled[f"{item}|{view}"] = out
                 return
+            original_task = next(t for t in self.job.tasks if (t.item, t.view, t.source) == entry[0])
+            self._apply_task_subject(original_task)
+            kind = original_task.subject
             request = EditRequest(
                 images=[path],
-                prompt=prompts.build_style_only(self.garment, subject=self.subject_for(path)),
-                negative=self.negative_for(self.garment, self.subject_for(path)),
+                prompt=prompts.build_style_only(self.garment, subject=kind),
+                negative=self.negative_for(self.garment, kind),
                 size=self._resolve_size(path),
                 quality=str(self.job.params.get("quality") or "high"),
                 seed=self.job.params.get("seed"),
@@ -566,7 +666,7 @@ class JobRunner:
                 input_fidelity=self.input_fidelity,
             )
             try:
-                data = await self._guarded_call(request)
+                data = await self._guarded_call(request, subject=kind)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 out.write_bytes(data)
                 async with lock:
@@ -680,7 +780,9 @@ class JobRunner:
 
     def negative_for(self, garment: GarmentType | None, subject: str = "") -> str:
         """按款式+主体取否定词（袖口工艺、是否禁人都可能不同），结果缓存。"""
-        kind = subject_mod.normalise(subject) if subject else ""
+        kind = self.subject_override
+        if kind not in {subject_mod.GARMENT, subject_mod.PERSON}:
+            kind = subject_mod.normalise(subject) if subject else ""
         key = f"{(garment.slug if garment is not None else '')}|{kind}"
         cached = self._negatives.get(key)
         if cached is None:
@@ -689,6 +791,7 @@ class JobRunner:
         return cached
 
     async def _execute_color_task(self, task: Task, *, source_override: Path | None = None) -> None:
+        self._apply_task_subject(task)
         garment = self.garment_for_task(task)
         color = garment.color(task.color)
         if color is None:
@@ -721,6 +824,24 @@ class JobRunner:
                     level="warn",
                 )
                 self._save()
+        request_prompt = task.prompt
+        original = self._job_image_path(task.source) if source_override is not None else None
+        capacity = max(1, int(getattr(self.provider, "max_images", 1) or 1))
+        if original is not None and original != source.resolve() and len(images) < capacity:
+            # Keep effect/color IMAGE 2 in place; the upload is IMAGE 3 when that slot exists.
+            # No crop, rewrite or extra generation call: attach the original file unchanged.
+            images.append(original)
+            request_prompt += " " + prompts.original_upload_reference_clause(len(images), task.subject)
+            if self.pattern_mode == "preserve":
+                request_prompt += (
+                    " ORIGINAL ARTWORK DETAIL AUTHORITY: the attached unchanged original upload, "
+                    "not a generated master or preview, is the source of truth for retained subjects' "
+                    "letters, logos, small print, line edges, texture and local sharpness. Never "
+                    "inherit blurred, simplified, redrawn or altered artwork from IMAGE 1. Keep "
+                    "the original's exact design, letter shapes, spacing and colors without "
+                    "inventing fine detail or digital sharpening; retain approved cut and target "
+                    "fabric color. This does not restore people explicitly removed by the operator."
+                )
         # 带着效果图重塑版型时不能开 input_fidelity=high：高保真会把原图的版型（宽松/落肩）
         # 钉死，效果图就白给了（实测同一条提示词，开=原样搬过来，关=真的变成效果图的紧身版型）。
         # 派生任务（参考图是基准成品）要保形，仍然用原来的设置。
@@ -729,8 +850,8 @@ class JobRunner:
             override = str(self.provider.setting("input_fidelity_with_effect", "") or "").strip()
             fidelity = override or None
         request = EditRequest(
-            images=images,
-            prompt=task.prompt,
+            images=images[:capacity],
+            prompt=request_prompt,
             negative=self.negative_for(garment, task.subject),
             size=self._resolve_size(source),
             quality=str(self.job.params.get("quality") or "high"),
@@ -741,7 +862,7 @@ class JobRunner:
         await self._attempt(task, request)
 
     def _person_alert(self, task: Task, data: bytes) -> dict:
-        """原图是空衣服，成品里却冒出人 → 记警告（可选自动重画，见 retry_on_person）。"""
+        """仅保留现有背景新增皮肤启发式警告；不是人体检测，也不保证检查穿着原图。"""
         if subject_mod.normalise(task.subject) != subject_mod.GARMENT:
             return {"alert": False, "skin": 0.0}
         source = self.root / task.source
@@ -849,12 +970,27 @@ class JobRunner:
         # 立刻落盘一份排队数据：不然要等别的任务完成才刷新，界面上会「看不到排队」
         self._save(force=True)
 
-    async def _guarded_call(self, request: EditRequest, task: Task | None = None) -> bytes:
+    async def _guarded_call(self, request: EditRequest, task: Task | None = None,
+                            *, subject: str = "") -> bytes:
         """Every API call passes the rpm gate, the shared provider cap, and the job cap.
 
         配了全局阀门（Cloudflare）时先要一张牌再发请求，回来立刻还牌 —— 同一把 Key
         在多台电脑上跑，总并发也不会超过接口能吃的额度。
         """
+        # Final request boundary also covers saved briefs, rework, both phases and retries.
+        if task is not None:
+            self._apply_task_subject(task)
+            subject = task.subject
+        elif self.subject_override != subject_mod.AUTO:
+            subject = self.subject_override
+        request = replace(
+            request,
+            prompt=prompts.enforce_composition_rule(prompts.enforce_subject_rule(request.prompt, subject)),
+            negative=prompts.enforce_subject_negative(request.negative or "", subject),
+        )
+        prompt, negative = prompts.apply_output_policy(request.prompt, request.negative or "", subject, self.output_requirement)
+        prompt, negative = prompts.enforce_artwork_topology(prompt, negative, self.pattern_mode)
+        request = replace(request, prompt=prompt, negative=negative)
         await self.limiter.acquire()
         lease = None
         if self.gate is not None:
@@ -983,6 +1119,12 @@ class JobRunner:
             and stats["canceled"] == 0
             else None
         )
+        def package_progress(line: str) -> None:
+            if not line.startswith("PACKAGING "):
+                return
+            self.job.stage = "图片生成完成，校验打包 " + line[len("PACKAGING "):]
+            self.job.params["packaging_progress"] = line[len("PACKAGING "):]
+            self._save(force=True)
         result = await package_outputs(
             script=self.skill.root / "scripts" / "package_outputs.py",
             staging_dir=self.staging_dir,
@@ -990,6 +1132,7 @@ class JobRunner:
             batch_name=self.job.batch_name or self.garment.batch_name,
             max_bytes=self.skill.max_bytes,
             expected_per_item=expected,
+            on_progress=package_progress,
         )
         batch = self.job.batch_name or self.garment.batch_name
         self.job.batch_name = batch

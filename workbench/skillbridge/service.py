@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 
 from . import feishu as feishu_mod
-from . import refine
+from . import prompts, refine
 from . import subject as subject_module
 from .config import WORKBENCH_DIR, load_config, load_env
 from .gate import GateConfig, RemoteGate
@@ -24,6 +24,8 @@ from .providers import build_providers
 from .providers.base import Provider
 from .runner import JobRunner
 from .skill import ColorRef, GarmentType, Skill, load_skill
+from .sources import job_image_path, original_uploads
+from .output_policy import edits_people, person_selection
 
 SAFE_NAME = re.compile(r"[^0-9A-Za-z._\-\u4e00-\u9fff]+")
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -101,6 +103,11 @@ class Workbench:
                 }
                 for name, cfg in (self.config.get("providers") or {}).items()
                 if (cfg or {}).get("model_prices")
+            },
+            provider_fixed_prices={
+                name: float(cfg["fixed_unit_price"])
+                for name, cfg in (self.config.get("providers") or {}).items()
+                if (cfg or {}).get("fixed_unit_price") is not None
             },
         )
         self.usage = UsageLedger(self.data_dir, self.pricer)
@@ -190,6 +197,8 @@ class Workbench:
         ]
         if not visible:  # fallback so the UI is never empty
             visible = list(self.providers.values())
+        preferred = str(self.config.get("default_provider") or "")
+        visible.sort(key=lambda provider: provider.name != preferred)
         rows = []
         for provider in visible:
             info = provider.info()
@@ -199,6 +208,10 @@ class Workbench:
                 info["model_prices"] = {
                     str(k): float(v) for k, v in overrides.items() if v is not None
                 }
+            fixed = provider.cfg.get("fixed_unit_price")
+            if fixed is not None:
+                info["fixed_unit_price"] = float(fixed)
+            info["default"] = provider.name == preferred
             rows.append(info)
         return rows
 
@@ -269,7 +282,31 @@ class Workbench:
                 "provider": cfg.provider,
             })
             return payload
-        gate = self.gate_for(self.get_provider(None))
+        # 默认接口若标了 unlimited（主接口 a6api 就是），gate_for() 会返回 None；
+        # 旧代码直接 gate.status() → AttributeError → /api/gate 500，界面「队列」胶囊一直是坏的。
+        # 现在：默认接口没闸门就退到任一「要排队」的接口（如备用接口 65535），都没有就明确
+        # 回 enabled=false，绝不抛 500。
+        provider = self.get_provider(None)
+        gate = self.gate_for(provider)
+        if gate is None:
+            for name, candidate in self.providers.items():
+                candidate_gate = self.gate_for(candidate)
+                if candidate_gate is not None:
+                    payload["fallback_provider"] = name
+                    payload["reason"] = (
+                        f"{provider.name if provider is not None else '主接口'} 不限并发、不排队；"
+                        f"这里显示的是 {name} 的队列"
+                    )
+                    provider, gate = candidate, candidate_gate
+                    break
+        if gate is None:
+            payload.update({
+                "ok": False,
+                "enabled": False,
+                "error": "所有接口都不走闸门（不限并发、不排队）",
+                "provider": provider.name if provider is not None else cfg.provider,
+            })
+            return payload
         status = await gate.status()
         payload.update(status.as_dict())
         payload["config"] = cfg.public()
@@ -311,18 +348,29 @@ class Workbench:
         except OSError:
             pass
 
+    def _priced_models(self, payload: dict, provider_name: str) -> dict:
+        result = dict(payload)
+        rows = []
+        for original in payload.get("models") or []:
+            row = dict(original)
+            price = self.pricer.price(str(row["id"]), str(self.defaults().get("size")), provider_name)
+            row.update(price=price.unit, price_label=price.label(), currency=price.currency)
+            rows.append(row)
+        result["models"] = rows
+        return result
+
     def _offline_models(self, provider_name: str, reason: str) -> dict:
         """网关 /models 抖动时：先用上次成功的快照，再退回 pricing.json 的模型名。"""
         snapshot = self._read_models_cache(provider_name)
         if snapshot and snapshot.get("models"):
-            payload = dict(snapshot)
+            payload = self._priced_models(snapshot, provider_name)
             payload["cached"] = True
             payload["degraded"] = f"{reason}（使用上次拉取的快照）"
             self._model_cache[provider_name] = (time.time(), payload)
             return payload
         rows = []
         for model_id in sorted(self.pricer.raw):
-            price = self.pricer.price(model_id, str(self.defaults().get("size")))
+            price = self.pricer.price(model_id, str(self.defaults().get("size")), provider_name)
             rows.append(
                 {
                     "id": model_id,
@@ -353,7 +401,7 @@ class Workbench:
         provider = self._get_provider_any(name)
         cached = self._model_cache.get(provider.name)
         if cached and not refresh and time.time() - cached[0] < MODEL_CACHE_TTL:
-            payload = dict(cached[1])
+            payload = self._priced_models(cached[1], provider.name)
             payload["cached"] = True
             return payload
 
@@ -377,7 +425,7 @@ class Workbench:
                 }
             )
         for model in models:
-            price = self.pricer.price(model["id"], str(self.defaults().get("size")))
+            price = self.pricer.price(model["id"], str(self.defaults().get("size")), provider.name)
             model["price"] = price.unit
             model["price_label"] = price.label()
             model["currency"] = price.currency
@@ -575,6 +623,7 @@ class Workbench:
             "pattern_brief": " ".join((pattern_brief or "").split()),
             # 主体：auto（按原图判）/ garment（纯衣服平铺）/ person（真人上身）
             "subject": subject_module.normalise(subject),
+            "subject_choice": subject_module.normalise(subject),
             "retry_on_person": bool(retry_on_person),
             # 版型锁定：master（先出基准色再改色，同款各色版型一致）/ off（每色独立生成）
             # 版型一致性（内部行为，界面无开关）：先出基准色，其余颜色以它为参考图只改色。
@@ -586,7 +635,7 @@ class Workbench:
                 else "master"
             ),
             "account": str(account or ""),
-            "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto")),
+            "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto"), provider_obj.name),
         }
 
         batch_name = (
@@ -665,6 +714,7 @@ class Workbench:
                 chosen_model,
                 len(job.tasks),
                 str(job.params.get("size") or "auto"),
+                provider_obj.name,
             )
         except WorkbenchError:
             shutil.rmtree(root, ignore_errors=True)
@@ -721,17 +771,17 @@ class Workbench:
             shutil.rmtree(self.drafts_dir / draft_id, ignore_errors=True)
 
     # --------------------------------------------------------------- pricing --
-    def pricing_payload(self) -> dict:
+    def pricing_payload(self, account: str | None = None) -> dict:
         self.pricer.refresh_from_feishu(self.feishu_config)
         payload = self.pricer.table()
-        payload["usage"] = self.usage.summary()
+        payload["usage"] = self.usage.summary(account=account)
         payload["default_model"] = str(
-            (self.providers.get("terra") or next(iter(self.providers.values()))).cfg.get("model") or ""
+            (self.providers.get(str(self.config.get("default_provider") or "")) or next(iter(self.providers.values()))).cfg.get("model") or ""
         )
         return payload
 
-    def usage_payload(self) -> dict:
-        return self.usage.summary()
+    def usage_payload(self, account: str | None = None) -> dict:
+        return self.usage.summary(account=account)
 
     def record_usage(self, job: Job) -> dict | None:
         stats = job.counts()
@@ -1203,8 +1253,8 @@ class Workbench:
         return total
 
 
-    def estimate_for(self, model: str, count: int, size: str | None = None) -> dict:
-        return self.pricer.estimate(model, count, size or str(self.defaults().get("size") or "auto"))
+    def estimate_for(self, model: str, count: int, size: str | None = None, provider: str = "") -> dict:
+        return self.pricer.estimate(model, count, size or str(self.defaults().get("size") or "auto"), provider or str(self.config.get("default_provider") or ""))
 
     # ------------------------------------------------------------------- run  #
     def ui_flags(self) -> dict:
@@ -1253,6 +1303,7 @@ class Workbench:
             or (source_model and chosen_model and chosen_model != source_model)
         )
         rework_mode = _resolve_pattern_mode(pattern_mode, instruction)
+        subject_choice = subject_module.normalise(subject)
 
         job_id = new_job_id()
         root = self.job_dir(job_id)
@@ -1264,21 +1315,44 @@ class Workbench:
         tasks: list[Task] = []
         briefs: list[str] = []
         refiners: set[str] = set()
+        original_sources: dict[str, list[str]] = {}
+        original_source_meta: dict[str, dict] = {}
+        source_task_map: dict[str, str] = {}
+        copied_originals: dict[Path, str] = {}
+        missing_originals: list[str] = []
         for index, task in enumerate(selected, start=1):
-            original = source_root / str(task.out)
-            if not original.is_file():
+            original = job_image_path(source_job, task.out)
+            if original is None:
                 continue
             folder = task.item or f"item-{index:02d}"
             target_dir = root / "inputs" / folder
             target_dir.mkdir(parents=True, exist_ok=True)
-            stem = f"{folder}_v2" if not task.view else f"{folder}-{task.view}_v2"
+            stem = f"{index:03d}-{SAFE_NAME.sub('_', original.stem)}"
             target = target_dir / f"{stem}{original.suffix or '.png'}"
             target.write_bytes(original.read_bytes())
+            task_id = f"{task.id}-v2"
+            origin_refs = []
+            for upload in original_uploads(source_job, task, self.get_job):
+                copied = copied_originals.get(upload.path)
+                if copied is None:
+                    destination = root / "originals" / f"{len(copied_originals)+1:03d}-{SAFE_NAME.sub('_', upload.path.name)}"
+                    destination.parent.mkdir(exist_ok=True)
+                    destination.write_bytes(upload.path.read_bytes())
+                    copied = destination.relative_to(root).as_posix()
+                    copied_originals[upload.path] = copied
+                    original_source_meta[copied] = {"job_id": upload.job_id, "task_id": upload.task_id,
+                                                    "item": upload.item, "view": upload.view, "name": upload.name}
+                origin_refs.append(copied)
+            original_sources[task_id] = origin_refs
+            source_task_map[task_id] = task.id
+            if not origin_refs:
+                missing_originals.append(task.id)
 
-            # 改图的主体跟**参考图**一致：源任务判定过就直接继承，否则现判一次
-            task_subject = subject_module.normalise(subject or getattr(task, "subject", ""))
-            if not task_subject:
-                task_subject = subject_module.detect(target)
+            # Explicit output choice wins. Auto inherits the original task/lineage
+            # decision before considering original uploads, never this damaged result.
+            task_subject = subject_choice if subject_choice != subject_module.AUTO else (
+                subject_module.task_kind(source_job, task, self.get_job)
+            )
 
             if prompt_override.strip():
                 prompt, used = prompt_override.strip(), "harness"
@@ -1296,16 +1370,20 @@ class Workbench:
             if model_switched:
                 # 参考图是上一个模型出的：明确交底，别让新模型把它当素材重新生成
                 prompt = f"{prompt}{refine.SWITCH_MODEL_CLAUSE}".strip()
+            available_originals = min(len(origin_refs), max(0, int(provider_obj.max_images or 1) - 1))
+            prompt = prompts.build_rework_reference_prompt(prompt, task_subject, available_originals)
             new_task = Task(
-                id=f"{folder}__{task.color}-v2",
+                id=task_id,
                 item=folder,
-                view="",
+                view=task.view,
                 color=f"{task.color}-v2",
                 color_hex=task.color_hex,
                 color_name=f"{task.color_name}·改图",
                 source=str(target.relative_to(root)).replace("\\", "/"),
                 prompt=prompt,
                 subject=task_subject,
+                garment=task.garment or garment.slug,
+                garment_name=task.garment_name or garment.display_name,
             )
             tasks.append(new_task)
             briefs.append(
@@ -1355,14 +1433,22 @@ class Workbench:
             "instruction": instruction,
             "refiner": ",".join(sorted(refiners)) or "template",
             "source_job": source_job_id,
-            "source_tasks": [t.id for t in selected],
+            "source_tasks": list(source_task_map.values()),
+            "source_task_map": source_task_map,
+            "original_sources": original_sources,
+            "original_source_meta": original_source_meta,
             "source_provider": source_provider,
             "source_model": source_model,
             "model_switched": model_switched,
             "brief": briefs[0] if briefs else "",
             "account": str(account or source_job.params.get("account") or ""),
             "pattern_mode": rework_mode,
-            "subject": str(tasks[0].subject or "person") if tasks else "person",
+            "subject_choice": subject_choice,
+            "subject_edit": next((person_selection(str(source_job.params.get(key))) for key in ("subject_edit", "extra_requirements", "instruction") if edits_people(str(source_job.params.get(key) or ""))), ""),
+            "task_subjects": {task.id: task.subject for task in tasks},
+            "subject_policy": subject_module.AUTO_POLICY,
+            "subject": tasks[0].subject if len({t.subject for t in tasks}) == 1 else "auto",
+            "subjects": {kind: sum(t.subject == kind for t in tasks) for kind in subject_module.KINDS},
         }
 
         params["estimate"] = self.pricer.estimate(
@@ -1394,6 +1480,8 @@ class Workbench:
                 f"{provider_obj.name} / {chosen_model or '默认'}（成品作为参考图交给新模型）",
                 level="warn",
             )
+        if missing_originals:
+            job.add_log(f"{len(missing_originals)} 张成品的原始上传图无法追溯；本轮仅能使用当前成品，不假定已看到原图", level="warn")
         job.add_log(f"用户需求：{instruction}")
         job.save()
         self.jobs[job_id] = job

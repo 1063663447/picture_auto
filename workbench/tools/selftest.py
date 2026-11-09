@@ -405,7 +405,8 @@ def main() -> int:
     check("无需求时仍保留图案锁", "PRINT LOCK" in no_req["prompt"])
 
     rework = asyncio.run(collect("rework", "把图案改小 10%"))
-    check("返工提示词是 REVISION REQUEST", rework["prompt"].startswith("REVISION REQUEST"))
+    check("返工提示词保留 REVISION REQUEST", "REVISION REQUEST" in rework["prompt"])
+    check("返工提示词保留原始画布规则", "ORIGINAL UPLOAD COMPOSITION" in rework["prompt"])
     check("返工提示词含需求", "10%" in rework["prompt"])
 
     print("\n[9] 输入校验")

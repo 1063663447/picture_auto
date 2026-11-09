@@ -1,0 +1,134 @@
+/* Selected direction: pure black canvas with translucent, deep-amethyst glass. */
+:root[data-tone="obsidian"] {
+  --tone-bg: #000;
+  --tone-rail: #0b080f;
+  --tone-panel: #181020;
+  --tone-raised: #2b1c37;
+  --tone-card: #1e1528;
+  --tone-inset: #0e0914;
+  --tone-fg: #f2edf7;
+  --tone-muted: #c8bbd3;
+  --tone-subtle: #ad9abb;
+  --tone-accent: #c7a9dc;
+  --tone-metal: #bca5cd;
+  --tone-button: #4d305f;
+  --tone-button-end: #68467c;
+  --tone-glow: 159 112 189;
+  --tone-halo: 101 61 127;
+  --tone-line: #bea0d332;
+  --tone-edge: #b595cb61;
+}
+:root[data-tone="obsidian"],
+:root[data-tone="obsidian"] body.flow-shell { background: #000; }
+:root[data-tone="obsidian"] body.flow-shell::before {
+  background: radial-gradient(ellipse 350px 240px at 9% 48%, #55276a16, transparent 75%),
+    radial-gradient(ellipse 390px 210px at 93% 83%, #6b367b12, transparent 75%);
+}
+:root[data-tone="obsidian"] body.flow-shell::after {
+  background: radial-gradient(ellipse 430px 170px at 31% 9%, #65338114, transparent 72%);
+  opacity: .45;
+}
+:root[data-tone="obsidian"] .flow-shell .rail {
+  background: rgba(12, 8, 18, .86);
+  border-right-color: #bb97d329;
+}
+:root[data-tone="obsidian"] .flow-shell .workspace > .controls,
+:root[data-tone="obsidian"] .flow-shell .workspace > .canvas {
+  /* Keep the same glass in a stationary backing layer, not on the scrolling-content ancestor. */
+  isolation: isolate;
+  background: none;
+  border-color: #bc9bd248;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: inset 0 1px 0 #e7d6f110, inset 0 -1px 0 #bb8fce08, 0 12px 34px #0009;
+}
+:root[data-tone="obsidian"] .flow-shell .workspace > .controls::before,
+:root[data-tone="obsidian"] .flow-shell .workspace > .canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  /* Retain the original top hairline as well as the exact amethyst translucency. */
+  background: linear-gradient(90deg, transparent, #c7a1dd80, transparent) 50% 0 / 70% 1px no-repeat,
+    linear-gradient(145deg, #dec9f206, transparent 45%), rgba(27, 17, 38, .77);
+  -webkit-backdrop-filter: blur(12px) saturate(112%);
+  backdrop-filter: blur(12px) saturate(112%);
+}
+:root[data-tone="obsidian"] .flow-shell .style-block {
+  background: rgba(12, 8, 19, .77);
+  border-color: #b897cc2b;
+}
+:root[data-tone="obsidian"] .flow-shell .style-block.expanded {
+  background: linear-gradient(130deg, #b888d00b, transparent 65%), rgba(43, 28, 55, .86);
+  border-color: #c09bd35e;
+}
+:root[data-tone="obsidian"] .flow-shell .kpis {
+  background: linear-gradient(110deg, #b991d009, transparent), rgba(36, 24, 46, .76);
+  border-color: #c09fd72d;
+}
+:root[data-tone="obsidian"] .flow-shell .composer {
+  background: linear-gradient(115deg, #bc8cd60b, transparent 70%), rgba(43, 28, 55, .86);
+  border-color: #c5a4d664;
+  box-shadow: inset 0 1px 0 #ecdafa0e, 0 5px 25px #0004;
+}
+:root[data-tone="obsidian"] .flow-shell .settings-toggle {
+  background: linear-gradient(125deg, #ad7dca0e, transparent 70%), rgba(50, 31, 64, .9);
+  border-color: #c49cd579;
+}
+:root[data-tone="obsidian"] .profile-card,
+:root[data-tone="obsidian"] .palette-studio {
+  background: linear-gradient(145deg, #b28dcb0a, transparent), rgba(30, 19, 43, .96);
+  border-color: #c1a0d45e;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+:root[data-tone="obsidian"] .card-back {
+  background: radial-gradient(ellipse at 17% 4%, #8358a32a, transparent 58%),
+    linear-gradient(145deg, #291b35, #100a18 76%);
+}
+:root[data-tone="obsidian"] .st-running .card-back {
+  background: radial-gradient(ellipse at 17% 4%, #aa73c338, transparent 58%),
+    linear-gradient(145deg, #32203f, #150c20 76%);
+}
+:root[data-tone="obsidian"] .prism-renderer { mix-blend-mode: screen; opacity: 1; }
+:root[data-tone="obsidian"] .flow-shell .workspace > .controls::after,
+:root[data-tone="obsidian"] .flow-shell .workspace > .canvas::after {
+  height: 1px;
+  opacity: .8;
+  background: linear-gradient(90deg, transparent, #c09bd8, #8a5ca6, transparent);
+}
+:root[data-tone="obsidian"] #lightbox::backdrop { background: #000e; }
+@media (max-width: 760px) {
+  :root[data-tone="obsidian"] .flow-shell .workspace > .controls::before,
+  :root[data-tone="obsidian"] .flow-shell .workspace > .canvas::before {
+    -webkit-backdrop-filter: blur(8px) saturate(108%);
+    backdrop-filter: blur(8px) saturate(108%);
+  }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-tone="obsidian"] .flow-shell .workspace > .controls::before,
+  :root[data-tone="obsidian"] .flow-shell .workspace > .canvas::before { background-color: #1b1225; }
+}
+
+/* Both regions already clip overflow. Bound their paint invalidations without clipping
+   the composer, upload help, settings popover or other menus outside these scrollports. */
+.flow-shell .style-list,
+.flow-shell .gallery-scroll {
+  contain: layout paint style;
+  isolation: isolate;
+}
+/* The shot has an explicit aspect ratio. Skip its image/foil subtree offscreen,
+   not the variable-height card: a guessed 330/255px card height shifts grid rows
+   and scrollbar positions when images enter the viewport or density changes. */
+.flow-shell .cardimg {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+.flow-shell .cardimg .shot {
+  content-visibility: auto;
+  contain-intrinsic-size: none;
+}

@@ -256,11 +256,14 @@ def create_archive(
 
     final_dir.mkdir()
     recompressed_count = 0
+    total_files = sum(1 for item_dir in item_dirs for path in item_dir.iterdir() if path.is_file())
+    processed = 0
     for item_dir in item_dirs:
         destination = final_dir / item_dir.name
         destination.mkdir()
         for source in sorted(item_dir.iterdir()):
             target = destination / source.name
+            print(f"PACKAGING {processed}/{total_files} {source.name}", flush=True)
             if source.is_file() and source.suffix.lower() in IMAGE_EXTENSIONS:
                 if copy_or_compress_image(source, target, max_bytes):
                     recompressed_count += 1
@@ -268,6 +271,9 @@ def create_archive(
                 shutil.copy2(source, target)
             else:
                 shutil.copytree(source, target)
+            if source.is_file():
+                processed += 1
+                print(f"PACKAGING {processed}/{total_files} {source.name}", flush=True)
 
     packaged_images = [
         path
@@ -279,6 +285,7 @@ def create_archive(
         names = ", ".join(str(path.relative_to(final_dir)) for path in oversized)
         raise ValueError(f"Packaged images are still too large: {names}")
 
+    print(f"PACKAGING {processed}/{total_files} ZIP", flush=True)
     with zipfile.ZipFile(
         zip_path, "w", compression=zipfile.ZIP_DEFLATED
     ) as archive:

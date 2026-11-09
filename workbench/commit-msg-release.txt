@@ -1,0 +1,46 @@
+release: 9.0.0→9.4.2 全部入库（第三方界面/工作流重做 + 复核修复 + 备用接口新增 2.6 双模型）
+
+这一提交把此前散落在工作树里、一直没提交的全部改动一次性入库，并附带本次复核的三处改动。
+
+一、第三方 AI 的 9.0.0→9.4.1（工作树里原本未提交）
+- 9.0.0 界面重做：BLACK GLASS 纯黑+深紫毛玻璃、Three.js 平面粒子（本地 vendor）、闪卡翻面显影、
+  灯箱、头像菜单；修 6 处前端竞态（提交互斥、切任务旧卡片、返工模型乱序、重复 watch、
+  /api/usage 显示全员、手填模型被覆盖）
+- 9.1.0 主/备接口（默认改 a6api，65535 降为备用）、接口级固定单价、项目总耗时、需求分流、主体优先级
+- 9.1.1 原图/成品双来源：新增 skillbridge/sources.py、harness_media.py，返工同时带当前成品+原始上传图
+- 9.2.0 GRAPHITE 石墨银紫主题 + 居中「AI 创作工作室」（真实 SSE 阶段，非假进度）
+- 9.3.0 人物一致性（原图有真人必须保住人、区分 subject_choice 与批次汇总）+ 便携包（portable/、tools/build_internal_portable.py）
+- 9.4.0 Ctrl+V 粘贴上传、打包阶段状态与取消清理、AI 读取完整款色上下文（harness_context.py）、
+        取消「皮肤缺席=纯衣服」的自动硬禁（改为 auto 保留原图，仅显式选「只有衣服」才硬禁）
+- 9.4.1 图案黑块：区分真实印墨与露底布料（PRINT INK VS EXPOSED FABRIC）
+- 8 份 CHANGELOG 与对应回归脚本一并入库
+
+二、复核后修掉的两个问题
+- /api/gate 500：9.1.0 把默认接口换成 unlimited 的 a6api 后，service.gate_status() 里
+  gate_for() 返回 None 仍调用 status()，每次开页面都 500、队列胶囊永久失效。
+  改为「默认接口没闸门就退到任一要排队的接口（现显示 terra 队列）」，都没有则明确 enabled=false。
+- tools/check_primary_workflow.py 变红：9.4.0 让 harness 逐任务读 source/garment/color_hex/rgb/
+  file_code/job.id，fixture 还是 9.1.0 的字段集 → 5 个用例 AttributeError。
+  补齐 fixture 为真实 Task/ColorRef/Job 字段，现 9 个用例 OK。
+
+三、本次新增：备用接口（65535）加入 gpt-image-2.6-flare / gpt-image-2.6-sunburst
+- 按次报价 ¥0.038/张（与 2.5 系列同价），-eco / -native 变体保持 null（未定价）
+- 写两处：pricing.json.models + config.json providers.terra.model_prices
+  （价格优先级是 接口覆盖 → 飞书「模型定价」表 → pricing.json，飞书表没有 2.6 的行，
+   只改 pricing.json 会在飞书刷新后回落成「未定价」）
+- 真机各跑 1 张（10 弹力短袖·深酒红，原图带 06 印花）：都成功，1024×1024、约 1.6MB，
+  版型贴合效果图、印花与袖标保留、无人物 → data/test/model-26/
+- 文档：README 接口表更新为主/备 + 新增一节；HANDOVER 增加 §6.5；新增 CHANGELOG_MODELS_9.4.2.md
+
+四、工程项
+- .gitignore 拦住三类不该进仓库的产物：releases/（3 个 87MB 便携包，共 262MB）、
+  ui-sandbox/live-3d-v1/（含完整 workbench 与 data 的副本，207MB）、validation/
+  （GitHub 单文件 100MB 硬限，否则直接推不上去）
+- 新增 REVIEW_9.4.1.md：对第三方 7 轮改动的逐项复核结论、发现的问题、需拍板的 3 件事
+
+五、验证
+- 离线：selftest / check_effect_ref / check_no_person / check_cuff / check_shape_lock /
+  check_primary_workflow / check_gate / check_multi_style / check_thumb_package / check_feishu_gate 全绿
+- 线上：/api/health 200、/api/models?provider=terra 返回 36 个模型且 2.6 两个显示 ¥0.038、
+  /api/gate 200（in_use 0 / limit 15）、/api/preview garment 模式含 NO PERSON
+- 浏览器实开 8787 验证新版界面渲染与交互正常

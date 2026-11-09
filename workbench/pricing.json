@@ -1,15 +1,22 @@
 {
   "currency": "CNY",
   "unit": "per_call",
-  "note": "按 65535 网关控制台（每次调用报价）逐项核对：单价保留三位小数（0.150 / 0.038 / 15.000）；标记「1K / 2K / 其他分辨率」的模型按输出分辨率分档，档位由所选尺寸的像素数自动判定（≤1.6MP→1K，≤4.2MP→2K，更大→4K/其他）。gpt-image-2-native 是按 token 计价（输入 15/1M、输出 60/1M），无法按张折算，故保持 null。控制台未展示的变体同样 null（界面显示「未定价」，不计入预估）。",
-  "updated": "2026-11-04",
-  "tier_mp": { "1K": 1.6, "2K": 4.2 },
+  "note": "按 65535 网关控制台（每次调用报价）逐项核对：单价保留三位小数（0.150 / 0.038 / 15.000）；标记「1K / 2K / 其他分辨率」的模型按输出分辨率分档，档位由所选尺寸的像素数自动判定（≤1.6MP→1K，≤4.2MP→2K，更大→4K/其他）。gpt-image-2-native 是按 token 计价（输入 15/1M、输出 60/1M），无法按张折算，故保持 null。控制台未展示的变体同样 null（界面显示「未定价」，不计入预估）。2026-11-09 新增 gpt-image-2.6-flare / gpt-image-2.6-sunburst：按次 0.038（报价口径，与 2.5 同价）。",
+  "updated": "2026-11-09",
+  "tier_mp": {
+    "1K": 1.6,
+    "2K": 4.2
+  },
   "models": {
     "gpt-image-2": 0.038,
     "gpt-image-2-n": 0.038,
     "gpt-image-2-eco": 0.15,
     "gpt-image-2-auto": {
-      "tiers": { "1K": 0.045, "2K": 0.065, "4K": 0.095 },
+      "tiers": {
+        "1K": 0.045,
+        "2K": 0.065,
+        "4K": 0.095
+      },
       "other": 0.095
     },
     "gpt-image-2-native": null,
@@ -28,16 +35,30 @@
     "gemini-nano-banana-2.1": 0.15,
     "grok-imagine-image": 0.042,
     "grok-imagine-image-2.0": {
-      "tiers": { "1K": 0.1, "2K": 0.12 },
+      "tiers": {
+        "1K": 0.1,
+        "2K": 0.12
+      },
       "other": 0.16
     },
     "grok-imagine-image-quality": {
-      "tiers": { "1K": 0.1, "2K": 0.14 },
+      "tiers": {
+        "1K": 0.1,
+        "2K": 0.14
+      },
       "other": 0.16
     },
     "seedvr2-7b": {
-      "tiers": { "1K": 0.006 },
+      "tiers": {
+        "1K": 0.006
+      },
       "other": 0.008
-    }
+    },
+    "gpt-image-2.6-flare": 0.038,
+    "gpt-image-2.6-sunburst": 0.038,
+    "gpt-image-2.6-flare-eco": null,
+    "gpt-image-2.6-sunburst-eco": null,
+    "gpt-image-2.6-flare-native": null,
+    "gpt-image-2.6-sunburst-native": null
   }
 }

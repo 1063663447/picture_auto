@@ -29,6 +29,7 @@ from typing import AsyncIterator
 import httpx
 
 from . import prompts, refine
+from .harness_context import describe_context, target_requirements
 
 #: 用户明确要改图案时，这个话题的结论要换一套说法（不再说"照抄原图"）
 ARTWORK_TOPIC = "图案/文字保真"
@@ -73,8 +74,8 @@ def looks_like_question(text: str) -> bool:
 
 LOCKS = [
     "服装款式与剪裁",
-    "人物身份、表情、姿势、手部",
-    "背景、道具、机位、构图、裁切",
+    "未被明确要求编辑的人物身份、脸部、身体、表情、姿势、手部",
+    "未被明确要求修改的背景、道具、机位、构图、裁切（指定删除人物处自然补全背景）",
     "光线方向、噪点与分辨率",
 ]
 ARTWORK_LOCK = "印花/文字/logo 的字形、字距、大小、位置与浮雕材质"
@@ -101,6 +102,7 @@ def analyze_local(
     garment: str = "",
     color: str = "",
     count: int = 0,
+    batch_context: dict | None = None,
 ) -> HarnessResult:
     """Deterministic analyst: readable analysis + merged requirement clause."""
     instruction = " ".join((instruction or "").split())
@@ -112,7 +114,7 @@ def analyze_local(
             hits.append((label, note))
 
     # 用户要求改印花时，默认的「印花锁死」必须明确撤销，否则分析结论会自相矛盾
-    pattern_mode = prompts.detect_pattern_mode(instruction) or "preserve"
+    pattern_mode = prompts.detect_pattern_mode(instruction) or ((batch_context or {}).get("settings") or {}).get("pattern_mode") or "preserve"
     artwork_unlocked = pattern_mode != "preserve"
     if artwork_unlocked and instruction:
         hits = [
@@ -148,9 +150,12 @@ def analyze_local(
         lines.append("")
         for label, note in hits:
             lines.append(f"· {label}：{note}")
-    if garment or color:
-        lines.append("")
-        lines.append(f"· 目标：{garment} / {color}，套用该款式的内置规范与色值。")
+    if batch_context:
+        lines.extend(["", describe_context(batch_context)])
+        lines.append("· 原图颜色与目标色不冲突；按每款全部已选颜色分别生成，不将首色用于整批。")
+        lines.append("· 人物保留是默认值；如明确指定只保留男人/删除另一人，仅编辑所指人物，保留其余脸、身体及背景。")
+    elif garment or color:
+        lines.extend(["", f"· 目标：{garment} / {color}，套用该款式的内置规范与色值。"])
     lines.append("")
     if artwork_unlocked:
         lines.append(
@@ -193,7 +198,7 @@ def analyze_local(
             )
         else:
             lines.append(
-                "→ 结论：要求已拆成具体约束写进提示词的对应位置（人物/背景/光线等仍锁死），"
+                "→ 结论：要求已写进提示词的对应位置；只编辑指定对象，未指定的人物/背景/光线保持，"
                 "不是把原话贴在末尾。"
             )
     else:
@@ -226,9 +231,11 @@ async def stream(
     env: dict | None = None,
     chunk_size: int = 14,
     delay: float = 0.012,
+    batch_context: dict | None = None,
+    target_prompts: list[dict] | None = None,
 ) -> AsyncIterator[dict]:
     """Yield {event, data} frames: meta → delta* → prompt → done."""
-    yield {"event": "meta", "data": {"mode": mode, "count": count}}
+    yield {"event": "meta", "data": {"mode": mode, "count": count, "batch_context": batch_context or {}}}
 
     cfg = llm_cfg or {}
     model = str(cfg.get("model") or "").strip()
@@ -248,6 +255,7 @@ async def stream(
                 base_url=str(cfg.get("base_url") or ""),
                 model=model,
                 api_key=key,
+                batch_context=batch_context,
             ):
                 yield {"event": "delta", "data": {"text": chunk}}
             result = analyze_local(
@@ -257,6 +265,7 @@ async def stream(
                 garment=garment,
                 color=color,
                 count=count,
+                batch_context=batch_context,
             )
             result.refiner = "llm"
         except Exception as exc:  # noqa: BLE001 - degrade to the local analyst
@@ -274,6 +283,7 @@ async def stream(
             garment=garment,
             color=color,
             count=count,
+            batch_context=batch_context,
         )
         text = result.analysis
         for start in range(0, len(text), chunk_size):
@@ -288,6 +298,10 @@ async def stream(
             "requirements": result.requirements,
             "refiner": result.refiner,
             "topics": result.topics,
+            "batch_context": batch_context or {},
+            "target_prompts": target_requirements(target_prompts or [], result.requirements,
+                                                   pattern_mode=result.pattern_mode,
+                                                   subject=((batch_context or {}).get("settings") or {}).get("subject_resolved", "")),
         },
     }
     yield {"event": "done", "data": {"ok": True}}
@@ -304,6 +318,7 @@ async def _stream_llm(
     base_url: str,
     model: str,
     api_key: str,
+    batch_context: dict | None = None,
 ) -> AsyncIterator[str]:
     system = (
         "你是服装电商改图工作台的助理。用中文、简短、口语化地说明你会怎么改："
@@ -315,6 +330,7 @@ async def _stream_llm(
         f"本次图片数量：{count}\n"
         f"操作员需求：{instruction or '（无）'}\n"
         f"原始规范提示词（节选）：{base_prompt[:400]}"
+        f"\n{describe_context(batch_context or {})}"
     )
     body = {
         "model": model,

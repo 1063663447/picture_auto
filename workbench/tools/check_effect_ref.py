@@ -196,18 +196,20 @@ def main() -> int:
     master4, derived4 = job4.tasks[0], job4.tasks[1]
     check(master4.master and not master4.master_task, "第一个颜色是基准色", show)
     check(derived4.master_task == master4.id, "其余颜色跟随基准", show)
-    check(prompts.MASTER_EFFECT_CLAUSE in derived4.prompt, "跟随任务的提示词含「基准+效果图」分工", show)
+    roles4 = prompts.enforce_subject_rule(prompts.MASTER_EFFECT_CLAUSE, derived4.subject).removeprefix(prompts.NO_PERSON_CLAUSE).strip()
+    check(roles4 in derived4.prompt, "跟随任务的提示词含适合输出主体的完整「基准+效果图」分工", show)
+    check(derived4.subject != "garment" or derived4.prompt.startswith(prompts.NO_PERSON_CLAUSE), "只有衣服时禁人物规则优先于参考图角色", show)
     check("IMAGE 2 is the official product photo" in derived4.prompt, "写明第 2 张是效果图（定颜色）", show)
     asyncio.run(runner4.run())
     check(len(provider4.requests) == 2, "两次请求（基准 + 跟随）", show)
     if len(provider4.requests) == 2:
         images = provider4.requests[1].images
-        check(len(images) == 2, f"跟随请求带 2 张图（实际 {len(images)}）", show)
+        check(len(images) == 3, f"跟随请求带基准、效果、原图共 3 张（实际 {len(images)}）", show)
         check(
             provider4.requests[1].input_fidelity == "high",
             "跟随基准的任务仍用 input_fidelity=high（保形）", show,
         )
-        if len(images) == 2:
+        if len(images) == 3:
             check(Path(images[0]).name == Path(master4.out or "").name, "第 1 张是基准成品", show)
             pink = garment4.color("pink")
             check(
@@ -215,6 +217,7 @@ def main() -> int:
                 and Path(images[1]).name == pink.effect.name,
                 "第 2 张是该色效果图", show,
             )
+            check(Path(images[2]).read_bytes() == (runner4.root / derived4.source).read_bytes(), "第 3 张是未修改的原始上传画布", show)
 
     print()
     if FAILURES:

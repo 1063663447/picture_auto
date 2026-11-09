@@ -29,10 +29,44 @@ PRESERVE_CLAUSE = (
     "crop, lighting, depth of field, resolution, and image quality."
 )
 
+PERSON_CLAUSE = (
+    "KEEP ORIGINAL PERSON — HIGHEST-PRIORITY OUTPUT RULE (subject=person / 保留原人物): "
+    "the customer's ORIGINAL UPLOAD alone defines the wearer count, identity, body, face, hair, "
+    "skin, hands, pose and scene. Preserve every original person and all visible body parts in "
+    "the same positions, proportions and framing. Never remove the original wearer, turn a worn "
+    "garment into empty clothing, replace the wearer with a mannequin, or copy a reference model. "
+    "Style/effect and color references control ONLY their permitted garment properties, NEVER "
+    "wearer count, person, anatomy, pose or scene; an empty reference does not mean an empty output. "
+    "If a current result, approved master or intermediate has lost or changed the original person, "
+    "restore that same person from an attached original upload while retaining approved garment "
+    "cut, target color, construction and intentional artwork changes. Original-person recovery "
+    "overrides current/master pixel locks, inherited carrier-removal instructions and context. "
+    "Apply the following only to real people already visible in the original upload: "
+    + PRESERVE_CLAUSE + " "
+    "Do not invent people, unseen faces or body parts absent from the original upload; when the "
+    "original is empty or uncertain, preserve its actual visible subject without adding a model. "
+    "Without an attached original, preserve available person evidence and never claim to recover "
+    "an unseen identity. This subject rule outranks all reference roles and default/operator "
+    "context below. Preserve the entire originally visible head, neck, hair, arms, hands, torso, "
+    "trousers, legs and feet within the original framing: never keep only a floating garment "
+    "or torso, hide the head under a hood, amputate limbs, erase trousers, zoom or crop out "
+    "original body regions. A reference product shot never determines the canvas or crop."
+)
+_LEGACY_PERSON_CLAUSE = PERSON_CLAUSE.split("context below.", 1)[0] + "context below."
+
+NEGATIVE_PERSON = (
+    "Do not remove, erase, replace, duplicate or invent the original wearer; do not change their "
+    "identity, face, hair, skin, hands, body proportions or pose. Do not turn a person into empty "
+    "clothing or a mannequin. Do not copy a reference carrier or let an empty style/effect/color "
+    "reference erase the original person. Do not retain a current/master omission when an "
+    "attached original shows that person. Do not add people or body parts absent from the "
+    "original upload."
+)
+
 #: **主体中立**约束：原图有模特就保持同一个模特，原图是平铺就保持平铺，且绝不新增
 #: 原图没有的人和身体部位。这一条对两种原图都成立 —— 以前直接写 "keep the same person,
 #: face, hair, skin, hands" 是在**邀请**模型给纯衣服平铺图补一个模特（实测出现过）。
-SUBJECT_CLAUSE = (
+_LEGACY_SUBJECT_CLAUSE = (
     "SUBJECT — the source image alone decides what the subject is, so do not change it. If the "
     "source shows the garment on a person, keep that same person: same face, hair, skin tone, "
     "hands, pose, body proportions, pants and shoes. If the source shows the garment on its own "
@@ -41,34 +75,126 @@ SUBJECT_CLAUSE = (
     "head, no hair, no neck, no hands, no arms, no legs, no feet, no skin, no body, no stylist, and "
     "no extra body part or limb."
 )
+SUBJECT_CLAUSE = (
+    "SUBJECT — the source image alone decides what the subject is — HIGHEST-PRIORITY OUTPUT RULE: "
+    "the customer's ORIGINAL UPLOAD controls actual wearer presence, presentation, pose, framing "
+    "and background, never a style/effect/color reference or an imperfect generated master. "
+    "Preserve the same visible subject and scene. A back-facing, hooded, fully covered, gloved, "
+    "grayscale or cropped wearer is still a wearer even when NO skin, face or hands are visible. "
+    "Keep that worn presentation, body silhouette, garment drape and original background; never "
+    "extract it into empty clothing, a flat lay, ghost mannequin or a white product background. "
+    "Keep covered or cropped anatomy covered or cropped; do not invent a face, head, skin or limbs. "
+    "If the original contains only flat-lay or hanging clothes, keep those clothes empty with "
+    "the same backdrop and no added person or body parts. If a current result or approved master "
+    "lost the original wearer or scene, recover only the actually visible content from an "
+    "attached original while keeping approved garment cut, construction, target color and "
+    "intentional artwork changes. Without an attached original, preserve the visible edit target "
+    "without inventing missing anatomy or claiming recovery. Empty reference garments cannot "
+    "override the original subject or backdrop; this rule outranks current/master pixel locks."
+)
+NEGATIVE_SUBJECT = (
+    "Do not change the original upload's wearer presence, worn/flat-lay presentation, pose or "
+    "background. Do not remove a covered, back-facing or cropped wearer because no skin is visible. "
+    "Do not replace an original worn scene with an empty garment, ghost mannequin, flat lay or "
+    "white studio backdrop. Do not copy a reference carrier or backdrop. Do not add a person "
+    "where the original shows empty clothes, or invent covered/cropped faces, skin or limbs."
+)
 
-#: 原图 = 纯衣服（判定为 garment）时替换掉 PRESERVE_CLAUSE 的硬约束。
+#: garment 是输出要求，不是「原图已经没人」的假设；也适用于真人原图和有人的基准图。
 NO_PERSON_CLAUSE = (
-    "NO PERSON — the source photo shows the garment on its own, so the output must contain ONLY "
-    "the garment. No mannequin, no human model, no face, no head, no neck, no hair, no arms, no "
-    "hands, no fingers, no legs, no feet, no skin, and no body of any kind inside, behind or around "
-    "the garment. The garment must stay empty and hollow: the neckline opening shows the backdrop "
-    "or the dark inside of the collar, never a neck or a chest; the sleeves and body are empty, "
-    "never filled out by a body; nothing holds, wears, lifts or touches the garment — no hands, no "
-    "hanger held by a person, no stylist, no model posing. Keep the source's flat-lay or "
-    "ghost-mannequin presentation, camera angle, framing, crop, background, props, lighting, depth "
-    "of field, resolution and image quality exactly as they are."
+    "NO PERSON — HIGHEST-PRIORITY OUTPUT RULE (subject=garment / 只有衣服 禁止加人): "
+    "the output must contain ONLY empty garments in ALL original garment views, regardless of "
+    "who or what appears in ANY input image. This rule overrides source-subject, scene, pose, "
+    "pixel-preservation and operator/context defaults below. If the source or approved master "
+    "has a wearer, extract the "
+    "garment and REMOVE the original wearer completely; do not preserve that person or mannequin. "
+    "No human, model, mannequin, dress form, face, head, hair, neck, chest, torso, body, skin, "
+    "arms, hands, fingers, legs or feet may remain anywhere, including reflections and shadows. "
+    "Each garment view stays empty and hollow: the neckline shows backdrop or the dark inside "
+    "of the collar, never a neck or a chest; sleeves and body contain no body or mannequin. Nothing "
+    "wears, holds, lifts or touches it. Reconstruct garment areas occluded by the wearer as "
+    "natural empty fabric following the target cut and construction, not a body-shaped fill; "
+    "preserve visible artwork, material and garment-detail locks. Keep an already unoccupied "
+    "flat-lay or hanger presentation; otherwise present all extracted garment views without a "
+    "carrier and restore the exposed backdrop without human shadows or reflections. Preserve "
+    "camera, lighting and nonhuman scene details only where compatible with complete carrier removal. "
+    "REFERENCE CARRIERS ARE FORBIDDEN — IMAGE 2 humans and mannequins are forbidden carriers, "
+    "not output subjects. Transfer ONLY the permitted garment cut, color and construction, "
+    "never the carrier, anatomy, pose, face, body, skin, hands or legs. This exclusion applies "
+    "to ALL references: source IMAGE 1, style/effect IMAGE 2, approved master and color references "
+    "when those roles are present, and to original uploads in any image slot. "
+    "A color-only reference supplies ONLY garment fabric color, never its cut or construction."
+)
+
+# Saved v9.1 prompts can still contain the previous, singular output rule.
+_LEGACY_NO_PERSON_CLAUSE = (
+    NO_PERSON_CLAUSE.replace(
+        "ONLY empty garments in ALL original garment views", "ONLY the empty garment"
+    ).replace("Each garment view stays empty and hollow", "The garment stays empty and hollow")
+    .replace("present all extracted garment views without a carrier", "present the extracted garment alone")
+    .replace(
+        "color references when those roles are present, and to original uploads in any image slot. ",
+        "color references. ",
+    )
+)
+
+# Canvas composition is independent of garment cut/color and of the operator's pattern policy.
+_LEGACY_COMPOSITION_CLAUSE = (
+    "ORIGINAL UPLOAD COMPOSITION — preserve the ORIGINAL UPLOAD canvas, not a reference product "
+    "photo's composition. Keep ALL original garment views and garments: the exact view count, "
+    "front/back/side identities, relative scale, positions, orientation, spacing, overlap and "
+    "relative arrangement in the same canvas and framing. A front-and-back upload must remain "
+    "front AND back together; never collapse it into a single front-only garment, merge views, "
+    "drop a garment, or crop out a side. If the original upload contains only one view, keep "
+    "only that view; do NOT invent a back view, unseen side or extra garment. Preserve each "
+    "side's own unique artwork and placement, never copy the front graphic onto the back or "
+    "replace a missing side's design with a reference design. Explicit operator artwork changes "
+    "and pattern variants still apply on their intended sides; this composition rule does not "
+    "revoke them. A style/effect reference controls ONLY permitted garment cut, fabric color, "
+    "cuffs and construction, NEVER the upload's layout, view count or missing artwork. When a "
+    "current result, approved master or intermediate pass has lost an original view, restore "
+    "that view from an attached original upload instead of preserving the omission; retain "
+    "approved revised color/cut/details, not the original fabric color. No-person output rules "
+    "remain higher priority than preserving carriers or human scene content."
+)
+COMPOSITION_CLAUSE = _LEGACY_COMPOSITION_CLAUSE.replace(
+    "No-person output rules remain higher priority than preserving carriers or human scene content.",
+    "The selected output-subject rule remains higher priority than composition and scene defaults.",
+)
+
+NEGATIVE_COMPOSITION = (
+    "Do not collapse a multi-view or multi-garment original upload into one front-only garment; "
+    "do not drop, merge, crop out, swap or rearrange original views, change the garment/view "
+    "count, lose front/back identities, overlap or relative arrangement, or copy a style/effect "
+    "reference's single-view layout. If the original has only one view, do not invent a back, "
+    "unseen side or extra garment. Unless artwork changes were explicitly requested, do not "
+    "omit each side's unique artwork, swap front/back designs or duplicate the front print on "
+    "the back. Do not restore original fabric color over an approved revised color."
+)
+
+GARMENT_PRESERVE_CLAUSE = (
+    "Preserve the garment details and photographic quality; preserve only nonhuman background, "
+    "props, camera and lighting compatible with extracting an empty garment. Reconstruct the "
+    "garment and exposed backdrop wherever a wearer or mannequin must be removed."
 )
 
 #: 成品复查发现"又画了个人"时，追加重画用的强化句。
 NO_PERSON_REINFORCE = (
-    " HARD RULE, THE PREVIOUS ATTEMPT FAILED THIS — the image must contain the empty garment "
-    "ONLY: absolutely no person, no face, no head, no hair, no hands, no arms, no legs, no skin "
-    "and no body anywhere in the frame, not even in shadow or out of focus."
+    " HARD RULE, THE PREVIOUS ATTEMPT FAILED THIS — the image must contain ONLY empty garments "
+    "in ALL original garment views: absolutely no person, no face, no head, no hair, no hands, "
+    "no arms, no legs, no skin and no body anywhere in the frame, not even in shadow or out of focus."
 )
 
-#: 原图是纯衣服时追加的否定词。
+#: garment 输出的否定词不以原图/参考图已经无人为前提。
 NEGATIVE_NO_PERSON = (
     "No person, no human being, no model, no woman, no man, no child, no face, no portrait, no "
     "selfie, no headshot, no head, no hair, no neck, no skin, no skin tone, no arms, no hands, no "
     "fingers, no legs, no feet, no body, no torso, no shoulder wearing the shirt, no one wearing "
-    "the garment, no model posing, no stylist or assistant, no reflection of a person, no mannequin "
-    "with a head, no filled-out garment silhouette, no body shape showing through the fabric."
+    "the garment, no model posing, no stylist or assistant, no reflection or shadow of a person, "
+    "no mannequin of any kind, no dress form, no filled-out garment silhouette, no body shape "
+    "showing through the fabric. Do not retain the original wearer or copy any human or mannequin "
+    "from IMAGE 1, IMAGE 2, a style/effect reference, an approved master or a color reference. "
+    "Do not preserve body pixels, pose, skin, hands or legs from any input."
 )
 
 
@@ -76,14 +202,14 @@ def preserve_clause(subject: str = "") -> str:
     """按主体给出"保持不变"的那一段。
 
     * ``garment``（判定为纯衣服）→ NO_PERSON_CLAUSE，明确禁止画人。
-    * ``person``（真人上身）→ PRESERVE_CLAUSE，锁住原人物。
+    * ``person``（真人上身）→ PERSON_CLAUSE，最高优先级锁住原人物。
     * 空/auto（不确定）→ SUBJECT_CLAUSE，中立表述，既不邀请也不擦除。
     """
     kind = str(subject or "").strip().lower()
     if kind == "garment":
         return NO_PERSON_CLAUSE
     if kind == "person":
-        return PRESERVE_CLAUSE
+        return PERSON_CLAUSE
     return SUBJECT_CLAUSE
 
 
@@ -129,6 +255,46 @@ MATERIAL_CLAUSE = (
     "no sticker or decal look, no synthetic 3D render, no uniform flat fill, no crisp digital "
     "edges, no pasted-on artwork."
 )
+
+# Ink support and exposed cloth are separate, even inside a graphic's bounds.
+ARTWORK_TOPOLOGY_CLAUSE = (
+    "PRINT INK VS EXPOSED FABRIC — preserve the original printed shapes and their negative "
+    "spaces separately. The graphic's rectangular bounding box is NOT a solid decal or ink "
+    "mask. Cloth visible between a printed character's legs, around shoes, between separate "
+    "figures, inside open letter counters and around the graphic remains fabric: recolor "
+    "those gaps to this task's target fabric colour with the same folds and lighting. Never "
+    "turn the original dark cloth, antialiasing fringe, gap or transparent-looking area into "
+    "new black ink, a black rectangle, an outline halo, a drop-shadow blob or a connecting "
+    "bridge. Preserve genuine black ink exactly where it exists in the ORIGINAL UPLOAD, "
+    "including boots, eyes, antlers, outlines and lettering; do NOT remove all dark pixels "
+    "or recolor genuine black ink to the fabric colour. Printed characters' coloured trousers, "
+    "separate legs, cuffs, shoes, small details and silhouette boundaries retain their original "
+    "ink colours, shapes, spacing and separation unless explicitly edited by the operator. "
+    "A dark gap between legs is NOT an extension of a boot, and a red printed trouser leg "
+    "must not become a wider black leg. If an attached original shows that an approved master "
+    "invented a black patch, widened a dark feature or filled exposed cloth, correct ONLY that "
+    "artifact from the original ink boundaries; the master's pixel lock does not protect "
+    "fabric/ink segmentation errors. Keep the approved garment cut, target fabric colour, "
+    "retained people and scene. Without an attached original, preserve evidenced ink shapes "
+    "without claiming unseen details were recovered. No global de-blackening or pasted artwork."
+)
+NEGATIVE_ARTWORK_TOPOLOGY = (
+    "No new black matte, rectangular patch, black border, halo, shadow blob or merged bridge "
+    "around or between printed details; no dark cloth trapped as ink inside the graphic. "
+    "Do not merge separate printed legs/shoes, expand black boots into coloured trousers, "
+    "erase negative-space gaps, or lose small ink features. Preserve original legitimate "
+    "black ink; do not use a blanket remove-black rule or invent highlights to hide defects."
+)
+
+
+def enforce_artwork_topology(prompt: str, negative: str, pattern_mode: str = "preserve") -> tuple[str, str]:
+    """Idempotent final-boundary rule; never freezes requested replacement/variant artwork."""
+    body = " ".join((prompt or "").replace(ARTWORK_TOPOLOGY_CLAUSE, "").split())
+    neg = " ".join((negative or "").replace(NEGATIVE_ARTWORK_TOPOLOGY, "").split())
+    if (pattern_mode or "preserve").strip().lower() == "preserve":
+        return body + " " + ARTWORK_TOPOLOGY_CLAUSE, neg + " " + NEGATIVE_ARTWORK_TOPOLOGY
+    return body, neg
+
 
 #: 袖口/下摆工艺 —— 图片模型最爱的错：把长袖 T 恤画成卫衣的罗纹袖口。
 #: 平口（T 恤系）：袖口和下摆都是**同布平车折边**，没有罗纹/松紧/收口；
@@ -278,7 +444,7 @@ COLOR_HINT_TEMPLATE = (
 
 #: **效果图**（款式表里每个颜色一张官方平铺产品图）随原图一起发送时的角色说明。
 #: 有了这张图，版型/工艺/颜色都有权威依据，同款各色天然一致，不再需要「先出基准色」那套流程。
-EFFECT_CLAUSE = (
+_LEGACY_EFFECT_CLAUSE = (
     "REFERENCE ROLES — two images are attached and they have different jobs. IMAGE 1 is the "
     "customer's own photo: it defines the scene (person or flat lay, background, props, camera "
     "angle, framing, lighting) and it owns the printed artwork — the lettering, numbers, logo, "
@@ -301,6 +467,16 @@ EFFECT_CLAUSE = (
     "and only changing its colour is a failure. What carries over from IMAGE 1 is only the scene "
     "and the artwork: the printed lettering, numbers, logo, patches and chest script move onto the "
     "rebuilt garment with the same relative placement, proportion and photographic relief."
+)
+
+EFFECT_CLAUSE = _LEGACY_EFFECT_CLAUSE.replace(
+    "two images are attached and they have different jobs.",
+    "the attached images have different jobs.",
+) + (
+    " IMAGE 2 controls ONLY garment cut, fabric color, cuffs and construction, NEVER the "
+    "ORIGINAL UPLOAD canvas composition, number of garments/views, front/back arrangement, "
+    "overlap or each side's artwork. Apply its construction to ALL original garment views; "
+    "do not copy its single-view layout or use its design to fill missing artwork."
 )
 
 
@@ -334,7 +510,7 @@ def effect_clause(
 
 #: 同款第 2..N 个颜色：参考图换成「上一版成品（=基准）」+「该色效果图」。
 #: 版型/印花/场景照基准，颜色照效果图 —— 同款各色既一致、颜色又准。
-MASTER_EFFECT_CLAUSE = (
+_LEGACY_MASTER_EFFECT_CLAUSE = (
     "REFERENCE ROLES — two images are attached. IMAGE 1 is the approved master shot of this exact "
     "style, produced from the customer's own photo: it carries the printed artwork, the scene, the "
     "camera, the lighting and the approved garment shape, and nothing about it may move. IMAGE 2 is "
@@ -345,6 +521,15 @@ MASTER_EFFECT_CLAUSE = (
     "seams, folds, wrinkles, print, print placement, camera, framing, background and lighting "
     "exactly as they are. Do not borrow the print, text, logo, person, background or props of "
     "IMAGE 2."
+)
+
+MASTER_EFFECT_CLAUSE = _LEGACY_MASTER_EFFECT_CLAUSE.replace(
+    "two images are attached. ", "the attached images have different jobs. "
+) + (
+    " Keep ALL views from the ORIGINAL UPLOAD canvas, including their front/back identities, "
+    "overlap, arrangement and each side's own artwork. IMAGE 2 is color-only, NEVER an authority "
+    "for view count, layout, cut, cuffs or missing artwork. Restore a dropped original view "
+    "from an attached original upload rather than copying a master omission."
 )
 
 
@@ -510,6 +695,302 @@ def tidy_articles(text: str) -> str:
     return " ".join(out.split())
 
 
+def _garment_subject_text(text: str) -> str:
+    """Remove known source/person locks, not garment/artwork locks, for garment output.
+
+    Shared by builders and the runner boundary so saved/rework prompts receive the
+    same rule. These replacements cover the skill and refine contracts; they are
+    not a vision detector or an attempt to interpret arbitrary operator prose.
+    """
+    out = " ".join((text or "").split())
+    for fragment in (PERSON_CLAUSE, _LEGACY_PERSON_CLAUSE, NEGATIVE_PERSON, NO_PERSON_CLAUSE, _LEGACY_NO_PERSON_CLAUSE,
+                     SUBJECT_CLAUSE, _LEGACY_SUBJECT_CLAUSE, NEGATIVE_SUBJECT, KEEP_ITEMS["subject"]):
+        out = out.replace(fragment, "")
+    out = out.replace(PRESERVE_CLAUSE, GARMENT_PRESERVE_CLAUSE)
+    replacements = {
+        "Transform only the visible garment":
+            "Extract all original garment views, remove any carrier, then transform each garment view",
+        "Change nothing but the garment's silhouette and construction:":
+            "After carrier removal, change only the garment's silhouette and construction:",
+        "This is a fabric colour replacement, not a redraw.":
+            "After carrier removal and empty-garment reconstruction, recolor without redesigning "
+            "the garment.",
+        "This is a colour + artwork task, not a redraw of the photo.":
+            "After carrier removal, change garment color and artwork without redesigning the "
+            "remaining nonhuman scene.",
+        "Keep the image photographic and unchanged everywhere the request does not touch:":
+            "After required carrier removal, keep the remaining garment and nonhuman scene "
+            "photographic and unchanged except where the request applies:",
+        "the source's own silhouette and drape — a worn garment follows that person's pose and "
+        "body shape, a flat-lay follows its own folds and hanging shape":
+            "the empty garment's silhouette and drape, with natural unsupported fabric folds",
+        "the same subject the reference image shows — the same person if it shows a person, an "
+        "empty garment if it shows the garment on its own, and never a person, body part or prop "
+        "that the reference does not already contain;": "the empty garment after carrier removal;",
+        "subject (the same person if the image shows one, an empty garment if it does not), "
+        "pose or folds": "empty garment and its fabric folds after carrier removal",
+        "it defines the scene (person or flat lay, background, props, camera angle, framing, "
+        "lighting)": "it provides only compatible nonhuman scene details, camera and lighting",
+        "keep IMAGE 1's scene unchanged": "keep only IMAGE 1's compatible nonhuman scene details",
+        "only the scene and the artwork": "only compatible nonhuman scene details and the artwork",
+        "and nothing about it may move": "with garment details fixed after complete carrier removal",
+        "Hold the master image pixel-identical and change ONLY the fabric base colour":
+            "After removing any carrier, hold the master's garment structure identical and change "
+            "ONLY the fabric base colour",
+        "Only the fabric's base colour may change.":
+            "Apart from required carrier removal and empty-garment reconstruction, only the "
+            "fabric's base colour may change.",
+        "background and lighting exactly as they are":
+            "compatible nonhuman background and lighting after carrier removal",
+        "same background, props, camera angle, framing, crop, lighting, grain and resolution":
+            "compatible nonhuman background, props, camera, lighting, grain and resolution "
+            "after carrier removal",
+        "same camera, framing, crop, background, lighting, shadows and grain":
+            "same camera, framing, crop, lighting and grain, and only compatible nonhuman "
+            "background and shadows after carrier removal",
+        "background and framing exactly as they are":
+            "compatible nonhuman background and framing after carrier removal",
+        "background replacement, ": "unrequested changes to the remaining nonhuman background, ",
+    }
+    for old, new in replacements.items():
+        out = out.replace(old, new)
+    # The loaded SKILL.md has its own neutral source-subject paragraph and negatives.
+    # Remove those complete clauses rather than leaving 'keep the same person' later.
+    for pattern in (
+        r"NO PERSON — the source photo shows the garment on its own,.*?image quality exactly "
+        r"as they are\.",
+        r"The source image alone decides what the subject is,.*?empty and unoccupied\.",
+        r"Keep the same background, props, camera angle, framing, lighting, and image quality, "
+        r"and never introduce .*?source does not already contain\.",
+        r"Do not change the subject the source shows:.*?stays empty\.",
+        r"Do not change furniture, bedding, wall, background, lighting direction, camera angle, "
+        r"crop, pose, body shape, image composition, or non-garment pixels\.",
+        r"Never add a person, model, face, head, hair, neck, hands, arms, legs, feet or skin "
+        r"where the source shows only the garment\.",
+        r"\b(?:Keep|Preserve) (?:the )?(?:exact )?same person[^.!?]*[.!?]",
+        r"\bDo not change (?:the )?(?:pose|body shape|non-garment pixels)[^.!?]*[.!?]",
+        r"This original also controls wearer count,.*?must never erase or replace that person\.",
+        r"IMAGE 2 is also authoritative for the original wearer count,.*?Later related uploads "
+        r"do not add extra wearers\.",
+    ):
+        out = re.sub(pattern, "", out, flags=re.IGNORECASE)
+    return " ".join(out.split())
+
+
+def _person_subject_text(text: str) -> str:
+    """Remove known empty-current/garment contracts from saved person requests."""
+    out = " ".join((text or "").split())
+    for fragment in (PERSON_CLAUSE, _LEGACY_PERSON_CLAUSE, PRESERVE_CLAUSE, NO_PERSON_CLAUSE, _LEGACY_NO_PERSON_CLAUSE,
+                     NO_PERSON_REINFORCE.strip(), NEGATIVE_NO_PERSON, NEGATIVE_PERSON,
+                     GARMENT_PRESERVE_CLAUSE, SUBJECT_CLAUSE, _LEGACY_SUBJECT_CLAUSE,
+                     NEGATIVE_SUBJECT, KEEP_ITEMS["subject"]):
+        out = out.replace(fragment, " ")
+    replacements = {
+        "the same subject the reference image shows — the same person if it shows a person, an "
+        "empty garment if it shows the garment on its own, and never a person, body part or prop "
+        "that the reference does not already contain;": "the original upload's subject and pose;",
+        "the same empty garment exactly as it is, with nobody in the frame — no person, no face, "
+        "no head, no hair, no neck, no hands, no arms, no legs and no skin anywhere, and nothing "
+        "holding or wearing it;": "the original upload's subject and pose;",
+        "subject (the same person if the image shows one, an empty garment if it does not), "
+        "pose or folds": "original-upload subject and pose, recovering any lost original wearer",
+        "do not add a person or body part that the reference does not show":
+            "do not add people or anatomy absent from the original upload",
+        "all original empty garment views only, with any original wearer or mannequin removed":
+            "all original garment views and their original wearers",
+        "Extract all original garment views, remove any carrier, then transform each garment view":
+            "Preserve all original wearers and transform each original garment view",
+        "the empty garment's silhouette and drape, with natural unsupported fabric folds":
+            "the approved garment silhouette and drape on the original subject",
+        "empty garment and its fabric folds after carrier removal":
+            "original wearer and approved garment folds",
+        "remaining nonhuman background, props and bedding after carrier removal":
+            "original background, props and bedding",
+        "without a carrier": "with the original subject preserved",
+        "empty garment after carrier removal": "garment with its original wearer restored",
+        "After removing any carrier": "With the original wearer preserved or restored",
+        "After carrier removal and empty-garment reconstruction": "With the original wearer preserved or restored",
+        "Apart from required carrier removal and empty-garment reconstruction":
+            "Apart from restoring the original wearer when lost",
+        "After required carrier removal": "With the original wearer preserved or restored",
+        "After carrier removal": "With the original wearer preserved or restored",
+        "after complete carrier removal": "with the original wearer preserved or restored",
+        "after carrier removal": "with the original wearer preserved or restored",
+        "only compatible nonhuman scene details": "original scene details",
+        "compatible nonhuman background": "original background",
+        "remaining nonhuman scene": "original scene",
+    }
+    for old, new in replacements.items():
+        out = out.replace(old, new)
+    for pattern in (
+        r"NO PERSON — the source photo shows the garment on its own,.*?image quality exactly as they are\.",
+        r"The source image alone decides what the subject is,.*?empty and unoccupied\.",
+        r"Do not change the subject the source shows:.*?stays empty\.",
+        r"Never add a person, model, face, head, hair, neck, hands, arms, legs, feet or skin "
+        r"where the source shows only the garment\.",
+    ):
+        out = re.sub(pattern, " ", out, flags=re.IGNORECASE)
+    return " ".join(out.split())
+
+
+def enforce_subject_rule(prompt: str, subject: str = "") -> str:
+    """Enforce the selected output subject above all saved/reference contracts."""
+    kind = str(subject or "").strip().lower()
+    if kind == "garment":
+        return tidy_articles(NO_PERSON_CLAUSE + " " + _garment_subject_text(prompt))
+    if kind == "person":
+        return tidy_articles(PERSON_CLAUSE + " " + _person_subject_text(prompt))
+    return tidy_articles(SUBJECT_CLAUSE + " " + _person_subject_text(prompt))
+
+
+def enforce_subject_negative(negative: str, subject: str = "") -> str:
+    kind = str(subject or "").strip().lower()
+    if kind == "person":
+        return NEGATIVE_PERSON + " " + _person_subject_text(negative)
+    if kind == "garment":
+        return NEGATIVE_NO_PERSON + " " + _garment_subject_text(
+            (negative or "").replace(NEGATIVE_NO_PERSON, "")
+        )
+    return NEGATIVE_SUBJECT + " " + _person_subject_text(negative)
+
+
+def enforce_composition_rule(prompt: str) -> str:
+    """Idempotent canvas lock, placed after the selected subject output rule."""
+    out = " ".join((prompt or "").split())
+    if NO_PERSON_CLAUSE in out or _LEGACY_NO_PERSON_CLAUSE in out:
+        out = enforce_subject_rule(out, "garment")
+    elif PERSON_CLAUSE in out:
+        out = enforce_subject_rule(out, "person")
+    for fragment in (COMPOSITION_CLAUSE, _LEGACY_COMPOSITION_CLAUSE):
+        out = " ".join(out.replace(fragment, "").split())
+    for head in (NO_PERSON_CLAUSE, PERSON_CLAUSE, SUBJECT_CLAUSE):
+        if out.startswith(head):
+            body = out[len(head):].strip()
+            return " ".join(part for part in (head, COMPOSITION_CLAUSE, body) if part)
+    return " ".join(part for part in (COMPOSITION_CLAUSE, out) if part)
+
+
+def original_upload_reference_clause(image_index: int = 3, subject: str = "") -> str:
+    """Role for an actually attached original after a master/intermediate + optional effect."""
+    person = (
+        "This original also controls wearer count, identity, body, face, hair, skin, hands, pose "
+        "and scene. Restore its original person if IMAGE 1 lost them; garment references and "
+        "current/master pixel locks must never erase or replace that person. "
+    ) if str(subject).strip().lower() == "person" else (
+        "This original also controls the actual wearer presence, worn or empty presentation, "
+        "covered/back-facing body silhouette, pose and background. Recover that exact visible "
+        "presentation if IMAGE 1 lost it; never invent cropped anatomy or add a person absent "
+        "from this original. "
+    ) if str(subject).strip().lower() != "garment" else ""
+    return (
+        f"ORIGINAL UPLOAD REFERENCE — IMAGE {int(image_index)} is the customer's ORIGINAL UPLOAD, "
+        "not another style or color target. It is authoritative for ALL original garments/views, "
+        "front/back identities, canvas layout, overlap, relative arrangement and each side's "
+        "unique artwork, unless the operator explicitly changes that artwork. IMAGE 1 remains "
+        "authoritative for the approved revised garment cut, construction and details; keep the "
+        "requested target fabric color, using the color/effect reference when attached. Restore "
+        "any view or side-specific artwork dropped by IMAGE 1 from this original upload, applying "
+        "the approved revised cut/color to every recovered view. Do not copy the original fabric "
+        "color back or undo intentional artwork changes/pattern variants. " + person
+        + "This original-upload reference rule overrides inherited current/master composition locks."
+    )
+
+
+def rework_reference_clause(original_count: int, subject: str = "") -> str:
+    """Describe exactly the original-upload references attached after the current edit target."""
+    count = max(0, int(original_count or 0))
+    roles = (
+        "REWORK REFERENCE ROLES — IMAGE 1 is the current edit target, the accepted result to "
+        "revise, NOT the original upload. It is authoritative for revised fabric color, garment "
+        "cut, cuffs, construction and all already approved changes, except where this revision "
+        "explicitly changes them. "
+    )
+    if count:
+        originals = "IMAGE 2 is the original upload" if count == 1 else (
+            f"IMAGE 2 through IMAGE {count + 1} are the original uploads"
+        )
+        roles += (
+            f"{originals}, NOT style/effect references. These originals are authoritative for "
+            "the original garment/view count, front/back identities, canvas layout, overlap, "
+            "relative arrangement and each side's own unique artwork. Recover missing original "
+            "views and their side-specific artwork from these uploads; never preserve a "
+            "front-only omission or copy a front design onto a back. Apply IMAGE 1's revised "
+            "color/cut/details to recovered views; do NOT copy original fabric color back or "
+            "undo approved revisions. Explicit artwork changes and pattern variants still win "
+            "on their intended sides; do not overwrite intentionally revised artwork with the "
+            "old original design. Restoring dropped views overrides inherited current-result "
+            "pixel/composition locks and the production brief. "
+        )
+        if count > 1:
+            roles += (
+                "IMAGE 2 is the original canvas corresponding to this edit task; restore ALL "
+                "views already inside that canvas. Later original-upload images are related "
+                "views supplied as context, not instructions to merge separate upload files. "
+                "Do not combine independently uploaded front/back files into one new canvas "
+                "unless the operator explicitly requests that combination. "
+            )
+    else:
+        roles += (
+            "IMAGE 1 is the only attached image; no original upload is attached. Preserve all "
+            "views visible in this edit target. Without original-upload evidence, do not "
+            "invent an unseen back, missing artwork or extra garment, or claim to have "
+            "recovered a missing view from an unattached original. "
+        )
+    if str(subject).strip().lower() == "person":
+        roles += (
+            "IMAGE 2 is also authoritative for the original wearer count, identity, face, hair, "
+            "body, skin, hands, pose and scene. Restore the same original person if IMAGE 1 lost "
+            "them; keep approved garment changes. Later related uploads do not add extra wearers. "
+        ) if count else (
+            "Original-person identity evidence is unavailable here; preserve visible people "
+            "without inventing an unseen wearer or claiming recovery from an unattached original. "
+        )
+    elif str(subject).strip().lower() != "garment":
+        roles += (
+            "IMAGE 2 determines the ORIGINAL subject presentation, covered/back-facing wearer, "
+            "pose and backdrop; restore its actual visible content if IMAGE 1 became empty "
+            "clothing or a white product scene. Preserve covered/cropped anatomy and keep an "
+            "original flat lay empty. Later related uploads do not add wearers or merge scenes. "
+        ) if count else (
+            "No original subject evidence is attached: preserve IMAGE 1's visible presentation "
+            "without inventing a missing wearer or claiming unseen anatomy was recovered. "
+        )
+    return roles + "These rework reference roles override any inherited production reference roles."
+
+
+def _strip_production_reference_roles(prompt: str) -> str:
+    """Remove only known role contracts, including v9.1 and garment-normalized saved prompts."""
+    out = " ".join((prompt or "").split())
+    for fragment in (
+        EFFECT_CLAUSE, _LEGACY_EFFECT_CLAUSE, MASTER_EFFECT_CLAUSE,
+        _LEGACY_MASTER_EFFECT_CLAUSE, SILHOUETTE_LOCK_CLAUSE,
+    ):
+        for version in (fragment, _garment_subject_text(fragment), _person_subject_text(fragment),
+                        _person_subject_text(_garment_subject_text(fragment))):
+            out = out.replace(version, " ")
+    for pattern in (
+        r"REWORK REFERENCE ROLES — .*?These rework reference roles override any inherited "
+        r"production reference roles\.",
+        r"ORIGINAL UPLOAD REFERENCE — .*?This original-upload reference rule overrides inherited "
+        r"current/master composition locks\.",
+        r"IMAGE 2 also shows this style's fit, and that is the one to build: .*?\.",
+        r"The target fabric base colour is .*? in sRGB; the attached colour reference image is "
+        r"authoritative for hue, brightness, saturation and temperature\.",
+    ):
+        out = re.sub(pattern, " ", out)
+    return " ".join(out.split())
+
+
+def build_rework_reference_prompt(
+    prompt: str, subject: str = "", original_count: int = 1
+) -> str:
+    """Rebind inherited generation roles to current + actually attached originals; idempotent."""
+    body = _strip_production_reference_roles(prompt)
+    return enforce_composition_rule(enforce_subject_rule(
+        rework_reference_clause(original_count, subject) + " " + body, subject
+    ))
+
+
 def operator_clause(extra: str | None) -> str:
     """兜底：没有识别出具体类别时，把原话作为权威要求附上。"""
     extra = " ".join((extra or "").split())
@@ -519,6 +1000,16 @@ def operator_clause(extra: str | None) -> str:
         "OPERATOR REQUEST (authoritative — honour it on top of the defaults above, and drop any "
         f"default lock that contradicts it): {extra}"
     )
+
+
+def apply_output_policy(prompt: str, negative: str, subject: str, requirement: str) -> tuple[str, str]:
+    from .output_policy import apply_policy
+    if not requirement:
+        return prompt, negative
+    return apply_policy(prompt, negative, subject=subject, requirement=requirement,
+                        person_head=PERSON_CLAUSE, auto_head=SUBJECT_CLAUSE,
+                        composition=COMPOSITION_CLAUSE, old_composition=_LEGACY_COMPOSITION_CLAUSE,
+                        keep_subject=KEEP_ITEMS["subject"])
 
 
 def with_negative(prompt: str, negative: str | None, *, supported: bool) -> str:
@@ -596,13 +1087,17 @@ def keep_clause(
         unlocked.add("artwork")
     if effect:
         unlocked.add("garment")
+    garment_output = str(subject or "").strip().lower() == "garment"
+    if garment_output:
+        unlocked.add("subject")
     items = [text for key, text in KEEP_ITEMS.items() if key not in unlocked]
-    if str(subject or "").strip().lower() == "garment":
-        # 原图是空衣服：明确「不许添人」，而不是靠模型自己体会
-        items.append(
-            "an empty garment only — do not add a person, a model, hands, arms, a neck, skin or "
-            "any body part that the source does not show"
-        )
+    if garment_output:
+        items = [
+            "remaining nonhuman background, props and bedding after carrier removal"
+            if text == KEEP_ITEMS["background"] else text
+            for text in items
+        ]
+        items.append("all original empty garment views only, with any original wearer or mannequin removed")
     if not items:
         return ""
     return "KEEP UNCHANGED — " + "; ".join(items) + "."
@@ -686,6 +1181,7 @@ def build_single_pass(
 
     if mode == "preserve":
         parts.append(PRINT_LOCK_CLAUSE)
+        parts.append(ARTWORK_TOPOLOGY_CLAUSE)
     else:
         # 用户要改图案：不再塞"逐像素保留"，改成正向的图案策略
         parts.append(pattern_clause(mode, color.name_zh, pattern_brief))
@@ -703,18 +1199,19 @@ def build_single_pass(
         parts.append(PRESERVE_CLAUSE)
     elif mode == "preserve" and not keep:
         parts.append(preserve_clause(subject))
-    return tidy_articles(" ".join(part for part in parts if part).strip())
+    return enforce_composition_rule(enforce_subject_rule(
+        tidy_articles(" ".join(part for part in parts if part).strip()), subject
+    ))
 
 
 def build_style_only(garment: GarmentType, *, subject: str = "", effect: bool = False) -> str:
-    return tidy_articles(
-        STYLE_ONLY_TEMPLATE.format(phrase=garment.phrase)
+    base = STYLE_ONLY_TEMPLATE.replace(PRESERVE_CLAUSE, preserve_clause(subject))
+    return enforce_composition_rule(enforce_subject_rule(tidy_articles(
+        base.format(phrase=garment.phrase)
         + " " + sleeve_clause(garment)
-        + " " + cuff_clause(garment)
-        + " " + subject_clause(subject)
+        + " " + cuff_clause(garment, reference=effect)
         + (" " + EFFECT_CLAUSE if effect else "")
-        + (" " + NO_PERSON_CLAUSE if str(subject or "").lower() == "garment" else "")
-    )
+    ), subject))
 
 
 def build_recolor_only(
@@ -725,7 +1222,7 @@ def build_recolor_only(
     subject: str = "",
     effect: bool | None = None,
 ) -> str:
-    garment_mode = str(subject or "").strip().lower() == "garment"
+    want_effect = has_effect(color) if effect is None else bool(effect)
     if (pattern_mode or "preserve") != "preserve":
         base = (
             f"This is a colour + artwork task, not a redraw of the photo. Change the garment's base "
@@ -746,15 +1243,17 @@ def build_recolor_only(
         base = (
             base
             + " " + sleeve_clause(garment)
-            + " " + cuff_clause(garment, reference=has_effect(color))
+            + " " + cuff_clause(garment, reference=want_effect)
         )
     effect_text = effect_clause(color, effect, getattr(garment, "fit", "") if garment else "")
     if effect_text:
         base = base + " " + effect_text
-    base = base + " " + subject_clause(subject)
-    if garment_mode:
-        base = base + " " + NO_PERSON_CLAUSE
-    return tidy_articles(base)
+    if (pattern_mode or "preserve").strip().lower() == "preserve":
+        base += " " + ARTWORK_TOPOLOGY_CLAUSE
+    base = base.replace(PRESERVE_CLAUSE, preserve_clause(subject))
+    if str(subject or "").strip().lower() == "person" and PRESERVE_CLAUSE not in base:
+        base = base + " " + PRESERVE_CLAUSE
+    return enforce_composition_rule(enforce_subject_rule(tidy_articles(base), subject))
 
 
 def build_master_recolor(
@@ -769,22 +1268,22 @@ def build_master_recolor(
     有作用果图（默认）时走 `MASTER_EFFECT_CLAUSE`（版型看基准、颜色看效果图）；
     没有效果图时退回 `SILHOUETTE_LOCK_CLAUSE`（只锁版型，颜色靠色值）。
     """
-    base = RECOLOR_ONLY_TEMPLATE.format(
+    want_effect = has_effect(color) if effect is None else bool(effect)
+    base = RECOLOR_ONLY_TEMPLATE.replace(PRESERVE_CLAUSE, preserve_clause(subject)).format(
         color_name=color.name_zh, color_label=color.label, color_hex=color.hex
     )
     if garment is not None:
         base = (
             base
             + " " + sleeve_clause(garment)
-            + " " + cuff_clause(garment, reference=has_effect(color))
+            + " " + cuff_clause(garment, reference=want_effect)
         )
     roles = master_effect_clause(color, effect)
     if not roles:
         roles = SILHOUETTE_LOCK_CLAUSE
-    base = base + " " + roles + " " + subject_clause(subject)
-    if str(subject or "").strip().lower() == "garment":
-        base = base + " " + NO_PERSON_CLAUSE
-    return tidy_articles(base)
+    base = base + " " + roles
+    base += " " + ARTWORK_TOPOLOGY_CLAUSE
+    return enforce_composition_rule(enforce_subject_rule(tidy_articles(base), subject))
 
 
 def full_negative(
@@ -801,16 +1300,18 @@ def full_negative(
     """
     base = " ".join((skill.negative_prompt or "").split())
     mode = (pattern_mode or "preserve").strip().lower()
-    extra = NEGATIVE_EXTRA if mode == "preserve" else NEGATIVE_VARIANT
+    extra = (NEGATIVE_EXTRA if mode == "preserve" else NEGATIVE_VARIANT) + " " + NEGATIVE_COMPOSITION
+    if mode == "preserve":
+        extra += " " + NEGATIVE_ARTWORK_TOPOLOGY
     if garment is not None:
         extra = extra + " " + sleeve_negative(garment) + " " + cuff_negative(garment)
-    if str(subject or "").strip().lower() == "garment":
-        extra = extra + " " + NEGATIVE_NO_PERSON
-    return (base + " " + extra).strip()
+    return enforce_subject_negative((base + " " + extra).strip(), subject)
 
 
 ARTWORK_LOCK_FRAGMENTS = (
     PRINT_LOCK_CLAUSE,
+    ARTWORK_TOPOLOGY_CLAUSE,
+    NEGATIVE_ARTWORK_TOPOLOGY,
     PRINT_CLAUSE,
     "the printed / embroidered artwork with the same letterforms, spacing, scale, position and "
     "material relief; ",
@@ -842,7 +1343,7 @@ def apply_requirement(
     """
     requirement = " ".join((requirement or "").split())
     if not requirement:
-        return base_prompt
+        return enforce_composition_rule(enforce_subject_rule(base_prompt, subject))
     intents = classify_requirement(requirement)
     mode = (pattern_mode or "").strip().lower()
     if mode not in PATTERN_MODES:
@@ -855,13 +1356,15 @@ def apply_requirement(
             "request explicitly changes the artwork."
         )
         parts.append(PRINT_LOCK_CLAUSE)
+        if ARTWORK_TOPOLOGY_CLAUSE not in prompt:
+            parts.append(ARTWORK_TOPOLOGY_CLAUSE)
     else:
         parts.append(pattern_clause(mode, brief=pattern_brief or requirement))
     parts.append(keep_clause(intents, pattern_mode=mode, subject=subject))
     parts.append(subject_clause(subject))
-    if str(subject or "").strip().lower() == "garment":
-        parts.append(NO_PERSON_CLAUSE)
-    return " ".join(part for part in parts if part).strip()
+    return enforce_composition_rule(enforce_subject_rule(
+        " ".join(part for part in parts if part).strip(), subject
+    ))
 
 
 def preview(

@@ -100,7 +100,7 @@ def main() -> int:
     worn = make_with_person(WORK_DIR / "with-person.png")
     plain_stats = subject.measure(plain)
     worn_stats = subject.measure(worn)
-    check(subject.detect(plain) == subject.GARMENT, "纯衣服平铺图判为 garment", show)
+    check(subject.detect(plain) == subject.AUTO, "无露肤图按原图保留，不据肤色断定无人", show)
     check(subject.detect(worn) == subject.PERSON, "有皮肤的模特图判为 person", show)
     check(plain_stats["skin"] <= subject.SKIN_ABSENT, "纯衣服图皮肤占比≈0", show)
     check(subject.detect(plain, "person") == subject.PERSON, "显式指定 person 时不被自动判定覆盖", show)
@@ -178,10 +178,10 @@ def main() -> int:
     )
     runner.plan()
     first = job.tasks[0]
-    check(first.subject == "garment", "任务记下 subject=garment", show)
-    check(GARMENT_MARK in first.prompt, "任务提示词含禁人段", show)
-    check("no person" in runner.negative_for(garment, first.subject).lower(), "任务否定词含禁人", show)
-    check(job.params.get("subjects", {}).get("garment") == 1, "params.subjects 统计了纯衣服张数", show)
+    check(first.subject == "auto", "任务记下按原图保留的 auto 决策", show)
+    check(NEUTRAL_MARK in first.prompt and GARMENT_MARK not in first.prompt, "无露肤原图不套强制脱人段", show)
+    check("Do not add a person" in runner.negative_for(garment, first.subject), "原图无人仍禁止新增人物", show)
+    check(job.params.get("subjects", {}).get("auto") == 1, "params.subjects 统计按原图保留张数", show)
 
     if live:
         print("⑧ 真跑一张（a6api）：成品里不应出现人物")

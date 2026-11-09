@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-black="smoke" data-tone="obsidian">
+<head>
+<base href="../flow-v2/" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>主黑副紫 · 独立沙箱</title>
+<link rel="stylesheet" href="base.css" />
+<link rel="stylesheet" href="aurora.css" />
+<link rel="stylesheet" href="flow.css" />
+<link rel="stylesheet" href="prism.css" />
+<link rel="stylesheet" href="prism-motion.css" />
+<link rel="stylesheet" href="noir.css" />
+<link rel="stylesheet" href="themes.css" />
+<link rel="stylesheet" href="obsidian-glass.css" />
+<link rel="stylesheet" href="../black-purple-v3/workbench-theme.css" />
+<script src="../black-purple-v3/palettes.js"></script>
+<script src="../black-purple-v3/workbench-theme.js"></script>
+</head>
+<body class="flow-shell booting">
+<div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
+<div class="ambient" aria-hidden="true"></div>
+<div class="cursor-glow" aria-hidden="true"></div>
+<canvas class="prism-renderer" id="prismCanvas" aria-hidden="true"></canvas>
+
+<svg style="display:none" aria-hidden="true">
+  <defs>
+    <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/><path d="m20 2 .7 1.3L22 4l-1.3.7L20 6l-.7-1.3L18 4l1.3-.7z"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 18l5-5 4 4 3-3 4 4"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5h7l2 2h9v12H3z"/><path d="M12 17v-5m0 0-2 2m2-2 2 2"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 15a3 3 0 01-3 3H8l-4 3V6a3 3 0 013-3h10a3 3 0 013 3z"/><path d="M8 9h8M8 13h5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-4-4 4 4 4-4M5 17v4h14v-4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 17H3z"/><path d="M12 9v5m0 3h.01"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M4 14v6h6m10-16-6 6M4 20l6-6"/></symbol>
+    <symbol id="i-coins" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="9" cy="7" rx="6" ry="3"/><path d="M3 7v5c0 1.7 2.7 3 6 3s6-1.3 6-3V7"/><path d="M15 12v5c0 1.7 2.7 3 6 3"/><ellipse cx="18" cy="17" rx="3" ry="1.6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M16 5.5a3 3 0 010 5.6"/><path d="M18 14.6c2 .6 3.4 2.4 3.4 5.4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-7-7 16-2-7z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <!-- ------------------------------------------------------------ 左侧图标栏 -->
+  <aside class="rail">
+    <a class="logo" href="index.html" aria-label="生图工作台">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M10.4 2.3c.34 4.05 2.33 6.04 6.38 6.38-4.05.34-6.04 2.33-6.38 6.38-.34-4.05-2.33-6.04-6.38-6.38 4.05-.34 6.04-2.33 6.38-6.38Z" fill="currentColor" fill-opacity="0.95" stroke="none"/>
+        <path d="M18.3 13.6c.2 2.4 1.38 3.58 3.78 3.78-2.4.2-3.58 1.38-3.78 3.78-.2-2.4-1.38-3.58-3.78-3.78 2.4-.2 3.58-1.38 3.78-3.78Z" fill="currentColor" fill-opacity="0.8" stroke="none"/>
+      </svg>
+    </a>
+    <div class="rail-sep"></div>
+    <button class="nav-icon on" type="button" data-view="gallery" aria-label="成品画廊" title="成品画廊"><svg><use href="#i-image"/></svg></button>
+    <button class="nav-icon" type="button" id="railUpload" aria-label="上传原图" title="上传原图"><svg><use href="#i-upload"/></svg></button>
+    <button class="nav-icon" type="button" data-view="logs" aria-label="运行日志与历史" title="运行日志与历史"><svg><use href="#i-clock"/></svg></button>
+    <button class="nav-icon" type="button" id="railChat" aria-label="需求沟通" title="需求沟通"><svg><use href="#i-chat"/></svg></button>
+    <div class="rail-bottom">
+      <button class="nav-icon" type="button" id="railUsage" aria-label="账号用量" title="账号用量" hidden><svg><use href="#i-users"/></svg></button>
+      <a class="nav-icon" id="railAdmin" href="#admin" aria-label="管理后台" title="管理后台" hidden><svg><use href="#i-shield"/></svg></a>
+      <button class="avatar profile-trigger" type="button" id="railAvatar" aria-label="打开个人菜单" title="个人菜单" aria-expanded="false" aria-controls="profileMenu"><img src="avatar-placeholder.svg" alt="头像占位" width="38" height="38" /><span class="avatar-status" aria-hidden="true"></span></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ------------------------------------------------------------- 顶栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><svg><use href="#i-spark"/></svg></span>
+        <span>生图工作台</span>
+        <small>AURORA / PRISM</small>
+      </div>
+      <nav class="toplinks" aria-label="扩展功能">
+        <span class="workspace-tag"><i></i>创作空间</span>
+        <a href="tones.html">三套色调 ↗</a>
+      </nav>
+      <div class="top-right">
+        <span class="status"><i class="dot"></i><span id="healthLine">—</span></span>
+        <span class="tag warn" id="skillWarn" hidden></span>
+        <a class="subtle admin-top" id="adminLink" href="#admin" hidden><svg><use href="#i-shield"/></svg>管理后台</a>
+        <span class="topbar-ready"><i></i>工作台就绪</span>
+      </div>
+    </header>
+
+    <div class="flow-bar">
+      <div class="flow-context"><span class="demo-pill"><i></i>本地模拟</span><span class="flow-context-text">春夏系列 <span>/</span> 多款式创作</span></div>
+      <div class="scenario-tools">
+        <label for="demoScenario">体验场景</label>
+        <select id="demoScenario" aria-label="模拟生成场景"><option value="normal">批量出图 · 36 张</option><option value="slow">慢速回传 · 36 张</option><option value="failure">异常与重试 · 36 张</option><option value="stress">多图压力 · 120 张</option></select>
+        <button type="button" id="demoReset" title="恢复演示素材与款式">重置</button>
+      </div>
+      <span class="demo-note">样图演示 · 不上传 · 不计费</span>
+    </div>
+    <div class="mobile-tabs" aria-label="工作区切换"><button type="button" data-mobile-pane="config" aria-pressed="false">配置 <span id="mobileStyleCount">6 款</span></button><button type="button" class="active" data-mobile-pane="results" aria-pressed="true">画布 <span id="mobileDoneCount">36 张</span></button><button type="button" class="mobile-profile profile-trigger" id="mobileProfile" aria-label="打开个人菜单" aria-controls="profileMenu" aria-expanded="false"><img src="avatar-placeholder.svg" alt="头像占位" width="26" height="26" /></button></div>
+    <div class="workspace">
+      <!-- --------------------------------------------------------- 控制台 -->
+      <aside class="controls glass" aria-label="创作配置">
+        <section class="source-section">
+          <h2 class="section-label">原始素材 <span class="hint" id="fileCount">载入中…</span></h2>
+          <div class="upload" id="drop" role="button" tabindex="0" aria-label="上传原图">
+            <input type="file" id="fileInput" multiple accept="image/png,image/jpeg,image/webp" hidden />
+            <span style="display:grid;gap:1px;min-width:0">
+              <strong>拖入或上传原图</strong>
+              <span>支持多张、多角度</span>
+            </span>
+            <span class="plus" aria-hidden="true">+</span>
+          </div>
+          <div class="thumbs" id="thumbs"></div>
+          <details class="upload-help"><summary>多角度命名规则</summary><p>同一件衣服的不同角度请命名为 <code>item-01_view-01.png</code>、<code>item-01_view-02.png</code>；不同 item 会分别出图。</p></details>
+        </section>
+
+        <div class="divider"></div>
+
+        <section class="styles-section">
+          <h2 class="section-label">款式与色彩 <span class="section-count" id="styleCount">—</span></h2>
+          <div class="style-list" id="styleList" aria-label="已选款式"><div class="sk" style="height:140px"></div><div class="sk" style="height:58px"></div><div class="sk" style="height:58px"></div></div>
+          <button class="add-style" type="button" id="addStyle">
+            <svg><use href="#i-plus"/></svg>添加款式
+          </button>
+          <p class="summary" id="outputCount"></p>
+        </section>
+
+        <div class="divider"></div>
+
+        <section class="settings-section">
+          <details id="settingsDetails">
+          <summary class="settings-toggle" aria-label="展开生成设定"><span class="settings-title"><svg><use href="#i-spark"/></svg><span>生成设定<small>模型、尺寸与质量</small></span></span><span class="settings-meta" id="settingsSummary">2K · 高质量</span><span class="settings-cta">调整参数 <span class="chevron" aria-hidden="true">⌄</span></span></summary>
+          <div class="settings-body">
+          <label class="field">
+            <span class="lbl">生图接口 <span id="providerState"></span></span>
+            <select id="provider"></select>
+          </label>
+          <label class="field">
+            <span class="lbl">模型与单价</span>
+            <select id="model"></select>
+            <input type="text" id="modelManual" placeholder="手填模型名" hidden />
+          </label>
+          <!-- 「并发数」已去掉：默认全推，超额的自动进飞书队列排队，这里只显示排队情况 -->
+          <div class="queue-line">
+            <span class="gate-hint" id="gateHint" title="点一下刷新队列状态">队列 —</span>
+          </div>
+          <label class="field">
+            <span class="lbl">画面主体 <span class="tip" title="原图只有衣服（平铺/挂拍）时选「只有衣服」，提示词会禁止模型添加模特">?</span></span>
+            <select id="subject">
+              <option value="auto">自动判断 · 按原图</option>
+              <option value="garment">只有衣服 · 平铺/挂拍（禁止加人）</option>
+              <option value="person">真人上身 · 保留同一个人</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="lbl">画面比例</span>
+            <select id="aspect">
+              <option value="auto">自动 · 跟随原图</option>
+              <option value="1:1">1:1 方形</option>
+              <option value="3:4">3:4 竖版</option>
+              <option value="4:3">4:3 横版</option>
+            </select>
+          </label>
+          <div class="row2">
+            <label class="field">
+              <span class="lbl">分辨率</span>
+              <select id="sizeTier">
+                <option value="1K">1K · 1024 级</option>
+                <option value="2K">2K · 2048 级</option>
+                <option value="4K">4K · 3072 级</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="lbl">质量</span>
+              <select id="quality">
+                <option value="high">high · 细节最好</option>
+                <option value="medium">medium</option>
+                <option value="low">low · 最快</option>
+                <option value="auto">auto</option>
+              </select>
+            </label>
+          </div>
+          <p class="summary" id="estimateLine">预计花费 —</p>
+          <div class="note">
+            <svg><use href="#i-shield"/></svg>
+            <span>当前为本地模拟，费用仅作演示</span>
+          </div>
+          </div>
+          </details>
+        </section>
+
+        <div class="divider"></div>
+        <div class="copy-row">
+          <button class="btn btn-ghost" type="button" id="previewBtn"><svg><use href="#i-doc"/></svg>提示词预览 <span aria-hidden="true">↗</span></button>
+        </div>
+      </aside>
+
+      <!-- ----------------------------------------------------------- 画布 -->
+      <section class="canvas" aria-label="创作画布">
+        <div class="canvas-head">
+          <div class="canvas-left">
+            <div class="view-tabs">
+              <button class="view-tab active" type="button" data-view="gallery">成品画廊<span class="count" id="galleryCount">0</span></button>
+              <button class="view-tab" type="button" data-view="logs">日志与记录</button>
+            </div>
+            <div class="job-strip">
+              <b id="jobTitle">准备创作</b>
+              <span id="jobStage" role="status">正在读取样图…</span>
+              <span class="queue-chip" id="queueChip" hidden></span>
+            </div>
+          </div>
+          <div class="tools">
+            <button class="subtle" type="button" id="cancelBtn" hidden>取消</button>
+            <button class="subtle" type="button" id="retryBtn" hidden>重试失败</button>
+            <button class="subtle danger-soft" type="button" id="retryLimitedBtn" hidden>重试被限流</button>
+            <button class="subtle" type="button" id="feishuSyncBtn" hidden>补写飞书</button>
+            <a class="subtle" id="downloadBtn" hidden><svg><use href="#i-download"/></svg>打包下载</a>
+          </div>
+        </div>
+
+        <div id="galleryPane">
+          <div class="kpis">
+            <div class="kpi"><div class="k">总任务</div><div class="v" id="kpiTotal">0</div></div>
+            <div class="kpi ok"><div class="k">已完成</div><div class="v" id="kpiDone">0</div></div>
+            <div class="kpi bad"><div class="k">失败</div><div class="v" id="kpiFailed">0</div></div>
+            <div class="kpi"><div class="k">本次花费</div><div class="v" id="kpiCost">—</div></div>
+          </div>
+
+          <div class="progress-wrap">
+            <div class="progress" role="progressbar" aria-labelledby="progressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><i></i></div>
+            <div class="progress-meta">
+              <span id="progressLabel">0 / 0</span>
+              <span id="progressStats">等待开始</span>
+            </div>
+          </div>
+
+          <div class="gallery-filters" aria-label="筛选成品">
+            <div class="filter-tabs"><button type="button" class="active" data-filter="all" aria-pressed="true">全部 <span>36</span></button><button type="button" data-filter="done" aria-pressed="false">已完成 <span>36</span></button><button type="button" data-filter="running" aria-pressed="false">生成中 <span>0</span></button><button type="button" data-filter="queued" aria-pressed="false">待处理 <span>0</span></button><button type="button" data-filter="failed" aria-pressed="false">异常 <span>0</span></button></div>
+            <div class="gallery-density"><button type="button" id="toggleDensity" aria-pressed="false" title="切换紧凑网格"><svg><use href="#i-image"/></svg><span>紧凑</span></button></div>
+          </div>
+          <div class="toolbar" id="resultToolbar" hidden>
+            <label class="check"><input type="checkbox" id="selAll" /><span>全选成品</span></label>
+            <span class="count" id="selCount">已选 0 张</span>
+            <div class="grow"></div>
+            <button class="btn btn-accent btn-sm" type="button" id="batchReworkBtn" disabled><svg><use href="#i-chat"/></svg>批量改图</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="batchExportBtn" disabled><svg><use href="#i-download"/></svg>批量导出</button>
+          </div>
+
+          <div class="gallery-scroll" id="galleryScroll" tabindex="0" aria-label="结果画廊，可独立滚动">
+          <div class="gallery grid-imgs" id="gridImgs"></div>
+
+          <div class="empty" id="emptyState">
+            <svg><use href="#i-image"/></svg>
+            <strong style="font-size:12.5px;color:#bdb6d4">成品会出现在这里</strong>
+            <span style="font-size:11px">选择原图与颜色，开始你的第一轮创作</span>
+          </div>
+
+          <div id="filterEmpty" hidden><svg><use href="#i-image"/></svg><span>当前筛选下还没有图片</span><button type="button" id="clearFilter">查看全部</button></div>
+          <div class="canvas-foot">
+            <span><i class="dot"></i><span>演示样图 · 点击查看大图</span></span>
+            <span id="viewportHint">逐张回填，无需等待整批完成</span>
+          </div>
+          </div>
+        </div>
+
+        <div class="logs-pane" id="logPane" hidden>
+          <div class="glass" style="padding:14px">
+            <div class="section-label">运行日志<small>LOG</small></div>
+            <div class="log" id="log" aria-live="polite"></div>
+          </div>
+          <div class="glass" style="padding:14px">
+            <div class="section-label">
+              <span>历史任务</span>
+              <button class="tiny-button" type="button" id="feishuHistoryBtn" hidden>飞书历史 · 打包下载 ↗</button>
+            </div>
+            <div class="history" id="history"></div>
+          </div>
+        </div>
+
+        <div class="composer glass">
+          <div class="composer-head"><svg><use href="#i-spark"/></svg><label for="briefInput">创作需求</label><span class="brief-tag">Ctrl + Enter 生成</span><button type="button" id="randomBrief" title="填入一条灵感">换个灵感 ↻</button></div>
+          <textarea id="briefInput" rows="1" aria-label="本次生成需求" placeholder="图案和背景保持不变，只更换面料底色…"></textarea>
+          <div class="composer-bottom">
+            <div class="quick-prompts" id="briefChips"></div>
+            <div class="generate-actions">
+              <button class="btn btn-ghost" type="button" id="openHarnessBtn"><svg><use href="#i-chat"/></svg>需求沟通</button>
+              <details class="more-actions"><summary aria-label="更多生成操作" title="更多生成操作">···</summary><div><button class="btn btn-ghost" type="button" id="directStartBtn">忽略需求，按默认生成</button></div></details>
+              <button class="btn btn-primary" type="button" id="startBtn" disabled><svg><use href="#i-spark"/></svg><span>生成 36 张</span></button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="footer">
+      <span>生图工作台 / AURORA</span>
+    </footer>
+  </main>
+</div>
+
+<!-- ---------------------------------------------------------- 大图灯箱 -->
+<dialog class="lightbox" id="lightbox" aria-labelledby="lightboxTitle">
+  <div class="lightbox-head">
+    <span id="lightboxTitle">成品大图</span>
+    <button class="iconbtn" type="button" id="closeModal" aria-label="关闭大图"><svg><use href="#i-x"/></svg></button>
+  </div>
+  <div class="lightbox-stage" id="lightboxStage"><div class="image-loading" role="status">正在读取原图…</div><img id="largeImage" alt="成品大图" decoding="async" /><button class="lightbox-prev" type="button" id="lightboxPrev" aria-label="上一张">‹</button><button class="lightbox-next" type="button" id="lightboxNext" aria-label="下一张">›</button></div>
+  <div class="lightbox-foot">
+    <span id="lightboxSub">演示样图 · ← → 切换</span>
+    <a id="sampleDownload" download>下载这张 ↓</a>
+  </div>
+</dialog>
+
+<!-- --------------------------------------------------------- 提示词预览 -->
+<div class="scrim" id="promptScrim" hidden></div>
+<section class="drawer drawer-wide" id="promptDrawer" hidden aria-modal="true" role="dialog" aria-label="提示词预览">
+  <div class="drawer-head">
+    <span class="avatar"><svg><use href="#i-doc"/></svg></span>
+    <div class="who"><b>提示词预览</b><span>保留图案、材质与构图约束</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="promptClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
+  </div>
+  <div class="prompt-body"><pre class="prompt-preview" id="promptBody"></pre></div>
+  <div class="drawer-foot"><span class="tip">改图返工时会以成品为参考图，并保留这些约束。</span></div>
+</section>
+
+<!-- ---------------------------------------------------------- 需求沟通 -->
+<div class="scrim" id="harnessScrim" hidden></div>
+<aside class="drawer" id="harnessDrawer" hidden aria-modal="true" role="dialog" aria-label="需求沟通">
+  <div class="drawer-head">
+    <span class="avatar"><svg><use href="#i-spark"/></svg></span>
+    <div class="who"><b id="harnessTitle">需求沟通</b><span id="harnessSub">本地模拟分析 · 流式反馈</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="harnessClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
+  </div>
+  <div class="chat" id="chatLog" aria-live="polite"></div>
+  <div class="drawer-foot">
+    <div class="quick" id="quickChips"></div>
+    <!-- 改图可以换模型：成品当参考图交给另一个模型重画 -->
+    <div class="rework-model" id="reworkModel" hidden>
+      <div class="row2">
+        <label class="field">
+          <span class="lbl">改图接口</span>
+          <select id="reworkProvider"></select>
+        </label>
+        <label class="field">
+          <span class="lbl">改图模型</span>
+          <select id="reworkModelSel"></select>
+        </label>
+      </div>
+      <p class="hint" id="reworkModelHint">成品会作为参考图交给这个模型重画</p>
+    </div>
+    <div class="input-row">
+      <textarea id="harnessInput" rows="2" placeholder="直接问它：这图能改吗？多少钱？图案会漂吗？"></textarea>
+      <button class="btn btn-primary btn-icon" type="button" id="harnessSend" aria-label="发送" style="height:44px;width:44px"><svg><use href="#i-send"/></svg></button>
+    </div>
+    <div class="drawer-actions" id="harnessActions">
+      <button class="btn btn-ghost" type="button" id="harnessDefault">按默认生成</button>
+      <button class="btn btn-primary" type="button" id="harnessApply" disabled>按分析结果生成</button>
+    </div>
+  </div>
+</aside>
+
+<!-- ---------------------------------------------------------- 飞书历史 -->
+<div class="scrim" id="feishuScrim" hidden></div>
+<aside class="drawer" id="feishuDrawer" hidden aria-modal="true" role="dialog" aria-label="飞书历史">
+  <div class="drawer-head">
+    <span class="avatar"><svg><use href="#i-download"/></svg></span>
+    <div class="who"><b>飞书历史成品</b><span id="feishuSub">记录和成品图都在多维表格里</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="feishuClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
+  </div>
+  <div class="chat" id="feishuList"></div>
+  <div class="drawer-foot">
+    <div class="row" style="display:flex;align-items:center;gap:10px">
+      <label class="check" style="display:flex;align-items:center;gap:6px;font-size:11px">
+        <input type="checkbox" id="feishuAll" /><span>全选</span>
+      </label>
+      <span class="hint" id="feishuCount" style="margin:0">0 条</span>
+    </div>
+    <div class="drawer-actions">
+      <button class="btn btn-ghost" type="button" id="feishuReload">刷新</button>
+      <button class="btn btn-primary" type="button" id="feishuExport" disabled title="在本机把选中的成品压成一个 ZIP">打包下载 ZIP</button>
+    </div>
+    <p class="tip">每行右侧「直链」= 浏览器直接从飞书下载；打包 ZIP 会在本机合并成压缩包。</p>
+  </div>
+</aside>
+
+<!-- ---------------------------------------------------------- 账号用量 -->
+<div class="scrim" id="accountsScrim" hidden></div>
+<aside class="drawer" id="accountsDrawer" hidden aria-modal="true" role="dialog" aria-label="账号用量">
+  <div class="drawer-head">
+    <span class="avatar"><svg><use href="#i-users"/></svg></span>
+    <div class="who"><b>账号用量</b><span id="accountsSub">每个账号做了多少张、花了多少钱</span></div>
+    <button class="btn btn-quiet btn-icon" type="button" id="accountsClose" aria-label="关闭"><svg><use href="#i-x"/></svg></button>
+  </div>
+  <div class="chat" id="accountsList"></div>
+  <div class="drawer-foot">
+    <div class="row" style="display:flex;align-items:center;gap:10px">
+      <span class="hint" id="accountsTotal" style="margin:0">—</span>
+    </div>
+    <div class="drawer-actions">
+      <button class="btn btn-ghost" type="button" id="accountsReload">刷新</button>
+    </div>
+  </div>
+</aside>
+
+<section class="profile-card" id="profileMenu" aria-labelledby="profileTitle" hidden>
+  <div class="profile-header"><img src="avatar-placeholder.svg" alt="头像占位" width="44" height="44" /><div><b id="profileTitle">个人空间</b><span class="who-chip" id="whoChip" hidden><span id="whoName">演示账号</span><small>管理员</small></span></div><button class="iconbtn" id="profileClose" type="button" aria-label="关闭个人菜单"><svg><use href="#i-x"/></svg></button></div>
+  <div class="profile-overview"><span><i></i>本地创作会话</span><span>已连接</span></div>
+  <div class="profile-options">
+    <button class="profile-option" id="feishuBtn" type="button"><span class="profile-option-icon"><svg><use href="#i-clock"/></svg></span><span><b>飞书历史</b><small>查看记录与成品</small></span><span class="profile-arrow" aria-hidden="true">↗</span></button>
+    <button class="profile-option" id="usageChip" type="button"><span class="profile-option-icon mint"><svg><use href="#i-coins"/></svg></span><span><b>用量与花费</b><small id="usageText">今日 0 张</small></span><span class="profile-arrow" aria-hidden="true">↗</span></button>
+    <button class="profile-option" id="accountsBtn" type="button" hidden><span class="profile-option-icon warm"><svg><use href="#i-users"/></svg></span><span><b>账号</b><small>身份与账号用量</small></span><span class="profile-arrow" aria-hidden="true">↗</span></button>
+  </div>
+  <div class="profile-footer"><span>星雾创作工作台</span><button id="logoutBtn" type="button"><svg><use href="#i-arrow"/></svg>退出会话</button></div>
+</section>
+<dialog class="lightbox admin-preview" id="adminPreview"><div class="lightbox-head"><span>管理后台 · 演示入口</span><button class="iconbtn" type="button" id="adminPreviewClose" aria-label="关闭管理预览"><svg><use href="#i-x"/></svg></button></div><div class="admin-preview-body"><p>账号、模型、接口与队列管理入口已保留。当前沙箱使用独立模拟数据，不写入正式配置。</p><div class="acc-card"><b>演示管理员</b><p>2 个接口 · 3 个模型 · 同时生成 4 张</p></div><button class="btn btn-primary" id="adminPreviewAccounts" type="button">查看模拟账号用量</button></div></dialog>
+<div class="toasts" id="toasts" aria-live="assertive"></div>
+
+<script src="catalog.js"></script>
+<script src="mock.js"></script>
+<script src="atmosphere.js"></script>
+<script src="vendor/three-0.160.1.min.js"></script>
+<script src="prism-fx.js"></script>
+<script src="flow.js"></script>
+<script src="prism-ui.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
