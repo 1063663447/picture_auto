@@ -41,7 +41,6 @@ EXPECTED_PLAIN = {
     "10-stretch-tee",
     "11-kids-dolman-tee",
     "12-curved-hem-tee",
-    "14-dolman-tee",
     "17-kids-cropped-tee",
     "19-u-neck-tee",
     "20-distressed-tee",
@@ -57,7 +56,7 @@ EXPECTED_PLAIN = {
 #: 无袖（背心/挂脖）：没有袖口，只有袖笼 + 领口，提示词换成袖笼那一段
 EXPECTED_VEST = {"08-tank-top", "13-mens-tank", "18-halter-tank"}
 #: 下装（短裤）：整件衣服换成了裤子，腰头 + 两个裤腿
-EXPECTED_BOTTOM = {"15-mid-shorts", "16-sports-shorts"}
+EXPECTED_BOTTOM: set[str] = set()        # 客户口径：库里没有裤子（15/16 已移出）
 
 LONG_MARK = "FULL-LENGTH LONG SLEEVES"
 SHORT_MARK = "GENUINE SHORT SLEEVES"

@@ -49,6 +49,16 @@ M = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 COLOR_CODE_RE = __import__("re").compile(r"^[A-Z]{1,5}\[\d+\]$")
 
+#: **不建档的 sheet**（客户口径：这张表就是 24 个款式，没有「成人牛角袖」和「裤子」）
+#:   工作簿里确实有 14成人牛角袖 / 15中短裤 / 16运动短裤 三个 sheet，但「目录」页不列它们，
+#:   客户也明确说没有这两类；导进来会让运营选到不该卖的款，所以直接排除。
+#:   想恢复：把这几个代号从这里删掉，再跑一次本脚本即可。
+EXCLUDE_CODES: set[str] = {"14", "15", "16"}
+
+#: 目录里有、但工作簿里没有 sheet 的款式（目前是 30扎染T 30#ZRT）：
+#: 没有颜色行和效果图就没法建档，等客户补 sheet 后再导。
+MISSING_SHEET_CODES = {"30": "30扎染T（30#ZRT）"}
+
 #: 新款式的建档元数据（老 10 款沿用 styles.json 里已经调好的 phrase / fit，不在这里覆盖）。
 #:   phrase  —— 写进「款式锁 / 款式转换段」的名词短语，**必须是这个款本身的准确描述**
 #:   fit     —— 照着效果图写的版型细节（带效果图时会写进提示词）
@@ -371,6 +381,9 @@ def main() -> int:
         code = entry["code"]
         meta = STYLE_META.get(code)
         existing = by_code.get(code)
+        if code in EXCLUDE_CODES:
+            print(f"  [skip] {entry['code_full']}：不在目录里（客户口径 24 款，无成人牛角袖/裤子）")
+            continue
         if existing is None and meta is None:
             print(f"  [skip] {entry['code_full']}：既没有现存款式，STYLE_META 里也没有建档信息")
             continue
@@ -499,6 +512,15 @@ def main() -> int:
                 )
             existing["colors"] = colors_out
 
+    dropped = [
+        s for s in styles
+        if str(s.get("style_code") or "").strip() in EXCLUDE_CODES
+    ]
+    if dropped:
+        styles = [s for s in styles if s not in dropped]
+        print("\n按 EXCLUDE_CODES 剔除：" + "、".join(
+            f"{s.get('style_code')} {s.get('slug')}" for s in dropped
+        ))
     styles.sort(key=lambda s: str(s.get("style_code") or "").zfill(3))
     STYLES.write_text(json.dumps(styles, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\n写出 {written} 张效果图 → {EFFECTS}")

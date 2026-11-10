@@ -29,16 +29,17 @@ from skillbridge.style_prompts import load_all, write_index  # noqa: E402
 LIB = Path(__file__).resolve().parent.parent / "library"
 FAILURES: list[str] = []
 
-EXPECT_KINDS = {"top", "vest", "bottom"}
+EXPECT_KINDS = {"top", "vest"}          # 客户口径 24 款里没有下装
 VESTS = {"08-tank-top", "13-mens-tank", "18-halter-tank"}
-BOTTOMS = {"15-mid-shorts", "16-sports-shorts"}
-TWO_TONE = {"11-kids-dolman-tee", "14-dolman-tee"}
+BOTTOMS: set[str] = set()               # 14/15/16 已按客户口径移出
+#: 客户明确说没有的款式，库里不许再出现
+FORBIDDEN_SLUGS = {"14-dolman-tee", "15-mid-shorts", "16-sports-shorts"}
+TWO_TONE = {"11-kids-dolman-tee"}
 CROPPED = {"05-cropped-tee", "17-kids-cropped-tee", "26-cropped-sorona-tee"}
 
 #: 每个款式专属提示词里必须出现的关键词（证明「细节真的写进去了」）
 DETAIL_MARKERS = {
     "11-kids-dolman-tee": "RAGLAN TWO-TONE",
-    "14-dolman-tee": "RAGLAN TWO-TONE",
     "12-curved-hem-tee": "CURVED HEM",
     "19-u-neck-tee": "U NECKLINE",
     "18-halter-tank": "HALTER NECK",
@@ -52,8 +53,6 @@ DETAIL_MARKERS = {
     "09-kids-cotton-tee": "KIDS COTTON",
     "08-tank-top": "TANK SHAPE",
     "13-mens-tank": "MUSCLE TANK SHAPE",
-    "15-mid-shorts": "SHORTS DETAILS",
-    "16-sports-shorts": "RUNNING SHORTS DETAILS",
 }
 
 
@@ -74,11 +73,11 @@ def main() -> int:
     rows = json.loads((LIB / "styles.json").read_text(encoding="utf-8"))
     rows = rows if isinstance(rows, list) else rows.get("styles") or []
 
-    print("① 数据：菲律宾款式表 27 款 / 121 色")
-    check(len(rows) == 27, f"styles.json 有 27 个款式（实际 {len(rows)}）", show)
+    print("① 数据：菲律宾款式表 24 款 / 112 色")
+    check(len(rows) == 24, f"styles.json 有 24 个款式（实际 {len(rows)}）", show)
     total = sum(len(s.get("colors") or []) for s in rows)
-    check(total == 121, f"共 121 个色号（实际 {total}）", show)
-    check(len(types) == 30, f"工作台可选 30 款（27 + skill 自带 3，实际 {len(types)}）", show)
+    check(total == 112, f"共 112 个色号（实际 {total}）", show)
+    check(len(types) == 27, f"工作台可选 27 款（24 + skill 自带 3，实际 {len(types)}）", show)
     bad_files: list[str] = []
     bad_effect: list[str] = []
     for style in rows:
@@ -118,7 +117,7 @@ def main() -> int:
     print("③ 提示词：每款一份专属核心，且真的生效")
     on_disk = load_all(library)
     missing = [slug for slug in types if slug not in on_disk]
-    check(not missing, f"30 款都有专属提示词文件（缺 {missing}）", show)
+    check(not missing, f"27 款都有专属提示词文件（缺 {missing}）", show)
     for slug in sorted(catalog_slugs):
         garment = types[slug]
         if not garment.style_positive:
@@ -132,7 +131,7 @@ def main() -> int:
             check(neg_marker in negative, f"{slug}：专属否定词进了负面词", show)
         check("must not gain no " not in built, f"{slug}：没有双重否定病句", show)
 
-    print("④ 品类：背心没有袖子、短裤是两条腿")
+    print("④ 品类：背心没有袖子（客户口径 24 款里没有下装）")
     for slug in sorted(VESTS):
         garment = types[slug]
         text = prompts.build_single_pass(wb.skill, garment, garment.colors[0], subject="garment")
@@ -146,7 +145,10 @@ def main() -> int:
         check(prompts.LEG_SHORTS_CLAUSE in text, f"{slug}：写明是短裤不是上衣", show)
         check(prompts.CUFF_HEM_BOTTOM_CLAUSE in text, f"{slug}：袖口段换成腰头/裤脚", show)
         check("SLEEVE LENGTH" not in text, f"{slug}：不出现袖长约束", show)
-        check("CAMISOL" not in text.upper(), f"{slug}：没有吊带措辞", show)
+    stale = sorted(FORBIDDEN_SLUGS & set(types))
+    check(not stale, f"客户说没有的款式（成人牛角袖/裤子）已从库里移出：{stale}", show)
+    check("bottom" not in {g.kind for g in types.values() if g.slug in catalog_slugs},
+          "款式库里不再有下装款式", show)
 
     print("⑤ 款式细节：结构写进提示词（不是只写在 phrase 里）")
     for slug, marker in sorted(DETAIL_MARKERS.items()):
@@ -162,11 +164,11 @@ def main() -> int:
         check("above the waist" in text, f"{slug}：写明衣长在腰线以上", show)
 
     print("⑥ 回退：删掉专属文件也能按属性拼装")
-    sample = types["16-sports-shorts"]
+    sample = types["11-kids-dolman-tee"]
     bare = type(sample)(**{**sample.__dict__, "style_positive": "", "style_negative": ""})
     built = prompts.build_single_pass(wb.skill, bare, bare.colors[0], subject="garment")
     check("CONVERT THE GARMENT TYPE" in built, "无专属文件 → 回落款式转换段", show)
-    check(prompts.LEG_SHORTS_CLAUSE in built, "无专属文件 → 仍按品类写「短裤不是上衣」", show)
+    check(prompts.garment_lock(bare) in built, "无专属文件 → 仍然带款式锁", show)
     with tempfile.TemporaryDirectory() as tmp:
         index = write_index(Path(tmp), {slug: on_disk[slug] for slug in list(on_disk)[:3]})
         check(index.is_file(), "索引能重新生成（新增款式时会用到）", show)

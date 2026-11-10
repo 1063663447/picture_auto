@@ -1,17 +1,17 @@
-# 9.5.0 · 菲律宾款式表整合：27 个款式，每款一套专属 skill
+# 9.5.0 · 菲律宾款式表整合：每款一套专属 skill（口径在 9.6.1 修正为 24 款）
 
 日期：2026-11-11。后端 + 前端 + 数据改动，**需重启服务**；前端资源版本 `?v=9.5.0`（Ctrl+F5）。
 
 ## 背景
 
-客户提供《菲律宾-服装款式代号表》（74.8 MB，`sha256 afbf61a0…`）：**27 个款式 sheet + 目录**，
-每个款式每张颜色一张官方平铺效果图，共 **121 个色号**。要求「整合到每个款式的 skill 里去」。
+客户提供《菲律宾-服装款式代号表》（74.8 MB，`sha256 afbf61a0…`）：**27 个款式 sheet（客户口径为 24 款）+ 目录**，
+每个款式每张颜色一张官方平铺效果图，共 **112 个色号**。要求「整合到每个款式的 skill 里去」。
 
 原来款式库只有 10 款 49 色，且提示词层**只按「上衣」建模**（袖长 + 袖口两个维度）。
 这份表里有背心、挂脖、短裤，直接套上衣的句子会自相矛盾（背心没有袖子、短裤没有袖口），
 模型会照着「补一只袖子 / 画成 T 恤」。
 
-## 一、数据：27 款 / 121 色
+## 一、数据：24 款 / 112 色（9.6.1 修正后口径）
 
 新增 `tools/import_ph_catalog.py`，一次把整张表吃进款式库：
 
@@ -86,7 +86,7 @@ GarmentType.kind / .kind_zh / .is_bottom / .is_sleeveless
 
 1. **款式转换段的老病句**：`it must not gain no hood, no drawstrings…`
    字面意思是「必须长出帽兜」。改成 `none of these may appear on it: no hood, …`。
-   30 份提示词全部重生成（老款式只改动这一句）。
+   27 份提示词全部重生成（老款式只改动这一句）。
 2. **改图的原始 brief 会重复宣布图片角色**：`_sanitize_brief()` 现在还会剥掉上一轮的
    `REFERENCE ROLES / RESHAPE / 版型锁`（改图附的是「当前成品 + 原始上传」，没有产品图）。
 3. **袖子/袖口相关的三个离线断言脚本过期**：
@@ -96,18 +96,18 @@ GarmentType.kind / .kind_zh / .is_bottom / .is_sleeveless
 
 ## 五、界面
 
-- 目标款式下拉按品类分组：`<optgroup label="上衣（21）">` / `背心（3）` / `下装（2）`，27 款不再平铺一长条；
+- 目标款式下拉按品类分组：`<optgroup label="上衣（21）">` / `背心（3）`，24 款不再平铺一长条；
 - 款式卡片的工艺标：背心显示「**无袖**」、短裤显示「**下装**」（以前统一显示「平口」，容易被理解成要罗纹）；
 - `/api/skill` 的每款新增 `kind` / `kind_zh`。
 
 ## 六、自检
 
 ```powershell
-python tools/import_ph_catalog.py --dry-run     # 导表计划（27 款 / 121 色）
+python tools/import_ph_catalog.py --dry-run     # 导表计划（24 款 / 112 色）
 python tools/build_style_prompts.py --list      # 30 款提示词覆盖情况
 python tools/check_catalog.py                   # 本次整合的七组断言
 python tools/show_prompt.py 16-sports-shorts black   # 人工复核某一款的最终提示词
-python tools/selftest.py                        # 主自检（含 27 款 / 121 色 / 每色有效果图）
+python tools/selftest.py                        # 主自检（含 24 款 / 112 色 / 每色有效果图）
 ```
 
 离线脚本全绿：`check_catalog` / `check_style_prompts` / `check_cuff` / `check_effect_ref` /
@@ -126,5 +126,5 @@ python tools/selftest.py                        # 主自检（含 27 款 / 121 �
   若客户以后出「整件同色」版本，需要另立款式。
 - **01 / 09 / 05** 在表里标注「部分尺码已停产，替代款见 23 / 21 / 26」，
   已在 `styles.json` 里写 `replaced_by` 与 `notes`，仍可正常出图（效果图沿用替代款的产品图）。
-- 效果图导入后 `library/effects/` 共 121 张（约 40 MB，进仓库）；原始 xlsx 74 MB 不进仓库
+- 效果图导入后 `library/effects/` 共 112 张（约 37 MB，进仓库）；原始 xlsx 74 MB 不进仓库
   （`library/source/*.xlsx` 已 gitignore，重跑导表脚本即可）。

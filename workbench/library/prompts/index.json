@@ -86,27 +86,6 @@
       "negative_chars": 544
     },
     {
-      "slug": "14-dolman-tee",
-      "file": "14-dolman-tee.json",
-      "notes": "成人牛角袖：插肩双色（身子白、袖子+领口才是这个色）",
-      "positive_chars": 3785,
-      "negative_chars": 667
-    },
-    {
-      "slug": "15-mid-shorts",
-      "file": "15-mid-shorts.json",
-      "notes": "中短裤：松紧腰+抽绳、两个裤腿、及膝以上",
-      "positive_chars": 2801,
-      "negative_chars": 563
-    },
-    {
-      "slug": "16-sports-shorts",
-      "file": "16-sports-shorts.json",
-      "notes": "运动短裤：短裤腿、圆抽绳、侧缝与裤脚白色撞色滚边",
-      "positive_chars": 2953,
-      "negative_chars": 573
-    },
-    {
       "slug": "17-kids-cropped-tee",
       "file": "17-kids-cropped-tee.json",
       "notes": "童装短款：衣长到腰线以上、儿童版型",

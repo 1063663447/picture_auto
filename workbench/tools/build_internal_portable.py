@@ -19,7 +19,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 WB = ROOT / 'workbench'
-VERSION = '9.6.0'
+VERSION = '9.6.1'
 
 
 def sha(path: Path) -> str:
@@ -110,7 +110,7 @@ def main() -> int:
     add_tree(ROOT / 'apparel-style-recolor', stage / 'apparel-style-recolor')
     for name in ['serve.py', 'cli.py', 'requirements.txt', 'pricing.json',
                  'CHANGELOG_PORTABLE_9.3.0.md', 'CHANGELOG_WORKFLOW_9.4.0.md', 'CHANGELOG_ARTWORK_9.4.1.md',
-                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md', 'CHANGELOG_MASTER_GATE_9.6.0.md',
+                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md', 'CHANGELOG_MASTER_GATE_9.6.0.md', 'CHANGELOG_STYLES_24_9.6.1.md',
                  'HANDOVER.md', 'REVIEW_9.4.1.md']:
         copy_file(WB / name, stage / 'workbench' / name)
     machine_keys={'WORKBENCH_DATA_DIR','WORKBENCH_HOST','WORKBENCH_PORT','WORKBENCH_SESSION_SECRET','WORKBENCH_AUTH_TOKEN','PORT'}

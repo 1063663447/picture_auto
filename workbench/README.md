@@ -25,8 +25,8 @@
 > 每次确认 / 修改都会沉淀成该款式的长期规则（`library/prompts/<slug>.json` 的 `lessons`）。对话框新增 5 个工具：看状态 / 确认 / 打回 / 看规则 / 记规则。
 > 详见 [`CHANGELOG_MASTER_GATE_9.6.0.md`](CHANGELOG_MASTER_GATE_9.6.0.md)。
 
-> **2026-11-11 · 9.5.0 菲律宾款式表整合**：《菲律宾-服装款式代号表》27 个款式 / 121 个色号全部建档，
-> 每款一套专属提示词（`library/prompts/`，共 30 份），新增「品类」维度（上衣 / 背心 / 下装）——背心不再被补袖子、
+> **2026-11-11 · 9.5.0 菲律宾款式表整合**：《菲律宾-服装款式代号表》24 个款式 / 112 个色号全部建档，
+> 每款一套专属提示词（`library/prompts/`，共 27 份），新增「品类」维度（上衣 / 背心；下装代码保留但本批没有裤子）——背心不再被补袖子、
 > 短裤不再被当成 T 恤。详见 [`CHANGELOG_STYLES_9.5.0.md`](CHANGELOG_STYLES_9.5.0.md)。
 
 > **2026-11-07 · 9.4.1**：在 9.4.0 的粘贴、任务收尾、人物保护和 AI 多款多色上下文基础上，补齐印墨／露底布料分离规则，针对圣诞人物腿部和图案周边的黑块。分发 `releases/PictureWorkbench-9.4.1-win-x64-internal.zip`；同图白／粉测试及视觉验收限制见 [`CHANGELOG_ARTWORK_9.4.1.md`](CHANGELOG_ARTWORK_9.4.1.md)。9.4.0 工作流说明见 [`CHANGELOG_WORKFLOW_9.4.0.md`](CHANGELOG_WORKFLOW_9.4.0.md)，下面旧版为历史记录。
@@ -993,14 +993,14 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   系统提示词明确「不要替用户确认、不要催、一次只问一句、一次性要求不进规则」。
   - 回归：`python tools/check_assistant.py`
 
-- **27 个款式全部建档，一款一套「skill」（9.5.0）**：客户给了《菲律宾-服装款式代号表》
-  （27 个款式 sheet + 目录，121 个色号，每款每色一张官方效果图），要求「整合到每个款式的 skill 里去」。
+- **24 个款式全部建档，一款一套「skill」（9.5.0）**：客户给了《菲律宾-服装款式代号表》
+  （24 个款式 sheet + 目录，112 个色号，每款每色一张官方效果图），要求「整合到每个款式的 skill 里去」。
   以前款式库只有 10 款 49 色，且**只按上衣建模**（袖长 + 袖口工艺两个维度）。
   现在：
-  1. **建档 27 款 / 121 色**：`tools/import_ph_catalog.py` 一次解析整张表 —— 旧款式补色号、新款式建档
+  1. **建档 24 款 / 112 色**：`tools/import_ph_catalog.py` 一次解析整张表 —— 旧款式补色号、新款式建档
      （`phrase` / `fit` / 袖长 / 袖口 / 品类 / 别名 / 英文代号），每色效果图落 `library/effects/<slug>/<色号>.jpg`，
      缩略图落 `library/refs/<slug>/<label>.jpg`，hex 从效果图面料区取样。**重跑幂等**（`--dry-run` 先看计划）。
-  2. **新增「品类」（`kind`）维度**：`top` / `vest`（背心、挂脖）/ `bottom`（短裤）。
+  2. **新增「品类」（`kind`）维度**：`top` / `vest`（背心、挂脖）；`bottom`（下装）的能力保留，但这批 24 款里没有裤子，不建档。
      背心没有袖子、短裤没有袖口 —— 以前那些「袖长 / 袖口平折边」的句子套上去就是自相矛盾，
      模型会照着补一只袖子。现在 `prompts.py` 按品类换整段：
      `SLEEVE_NONE_CLAUSE`（袖笼包边 + 肩带）、`LEG_SHORTS_CLAUSE`（腰头 + 两条裤腿，不是上衣）、
@@ -1012,12 +1012,12 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
      phrase 里说不清的结构，必须单独点名，否则模型只会「换个颜色」。
   4. **顺手修掉一个老病句**：款式转换段原来是 `it must not gain no hood, no drawstrings…`
      （字面意思是「必须长出帽兜」），现在改成 `none of these may appear on it: …`。
-  5. **界面**：27 款下拉按品类分组（`<optgroup>` 上衣/背心/下装）；背心、短裤不再标「平口」，
-     改标「无袖 / 下装」，免得运营以为要罗纹。
+  5. **界面**：24 款下拉按品类分组（`<optgroup>` 上衣/背心）；背心不再标「平口」，
+     改标「无袖」，免得运营以为要罗纹。
   - 导表：`python tools/import_ph_catalog.py`（`--dry-run` 只看计划）
   - 生成提示词：`python tools/build_style_prompts.py --all`（缺的才写，`--force` 覆盖）
   - 看某款最终提示词：`python tools/show_prompt.py 16-sports-shorts black`
-  - 回归：`python tools/check_catalog.py`（27 款/121 色/建档/提示词/品类/细节/回退 七组断言）
+  - 回归：`python tools/check_catalog.py`（24 款/112 色/建档/提示词/品类/细节/回退 七组断言）
 
 - **每个款式一套专属提示词（9.4.9）**：以前所有款式共用一套「按属性拼装」逻辑（袖长/袖口/帽兜分支），
   改一个款会连带影响别的款，属性组合也会爆炸。现在拆成两层：
