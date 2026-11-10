@@ -539,6 +539,19 @@ MASTER_EFFECT_CLAUSE = _LEGACY_MASTER_EFFECT_CLAUSE.replace(
 )
 
 
+#: 派生色改发「面料色卡」时的角色说明（色卡里没有任何衣服形状可抄）。
+SWATCH_CLAUSE = (
+    "REFERENCE ROLES — IMAGE 1 is the approved master shot of this exact style: it carries the scene, "
+    "the person, the printed artwork, the camera, the lighting and the approved garment construction, "
+    "and nothing about it may move. IMAGE 2 is only a small SWATCH of this colourway's fabric: match "
+    "its fabric colour — hue, brightness, saturation, warm/cool balance, and how heathered or marled "
+    "yarn reads — and nothing else. The swatch carries NO garment shape, so do not read any cut, "
+    "silhouette, sleeve length, hood, collar, cuff or hem from it. Change only the fabric base colour; "
+    "keep IMAGE 1's garment type, hood or lack of hood, neckline, sleeves, cuffs, hem, seams, folds, "
+    "wrinkles, print, print placement, camera, framing, background and lighting exactly as they are."
+)
+
+
 def master_effect_clause(color: "ColorRef | None", override: bool | None = None) -> str:
     """基准色派生用（image 1 = 基准成品，image 2 = 该色效果图）。"""
     enabled = has_effect(color) if override is None else bool(override)
@@ -1458,6 +1471,7 @@ def build_master_recolor(
     garment: GarmentType | None = None,
     subject: str = "",
     effect: bool | None = None,
+    swatch: bool = False,
 ) -> str:
     """同款第 2..N 色的提示词：基准成品 + 该色效果图 → 只改颜色。
 
@@ -1476,9 +1490,13 @@ def build_master_recolor(
             + " " + cuff_clause(garment, reference=want_effect)
             + " " + drawstring_clause(garment)
         )
-    roles = master_effect_clause(color, effect)
-    if not roles:
-        roles = SILHOUETTE_LOCK_CLAUSE
+    if swatch:
+        # 派生色改发面料色卡：形状只能看基准，色卡里没有任何衣服形状
+        roles = SWATCH_CLAUSE
+    else:
+        roles = master_effect_clause(color, effect)
+        if not roles:
+            roles = SILHOUETTE_LOCK_CLAUSE
     base = base + " " + roles
     base += " " + ARTWORK_TOPOLOGY_CLAUSE
     return enforce_composition_rule(enforce_subject_rule(tidy_articles(base), subject))

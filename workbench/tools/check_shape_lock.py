@@ -141,9 +141,10 @@ def main() -> int:
     )
     derived_prompt = tasks[1].prompt
     check(
-        roles_for(prompts.MASTER_EFFECT_CLAUSE, tasks[1]) in derived_prompt
+        roles_for(prompts.SWATCH_CLAUSE, tasks[1]) in derived_prompt
+        or roles_for(prompts.MASTER_EFFECT_CLAUSE, tasks[1]) in derived_prompt
         or roles_for(prompts.SILHOUETTE_LOCK_CLAUSE, tasks[1]) in derived_prompt,
-        "适合输出主体的完整版型约束已注入（效果图优先）", show,
+        "派生任务的版型约束已注入（色卡/效果图/基准三选一）", show,
     )
     check(
         all(t.subject != "garment" or t.prompt.startswith(prompts.NO_PERSON_CLAUSE) for t in tasks),

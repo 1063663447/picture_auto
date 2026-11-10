@@ -197,9 +197,11 @@ def main() -> int:
     check(master4.master and not master4.master_task, "第一个颜色是基准色", show)
     check(derived4.master_task == master4.id, "其余颜色跟随基准", show)
     roles4 = prompts.enforce_subject_rule(prompts.MASTER_EFFECT_CLAUSE, derived4.subject).removeprefix(prompts.NO_PERSON_CLAUSE).strip()
-    check(roles4 in derived4.prompt, "跟随任务的提示词含适合输出主体的完整「基准+效果图」分工", show)
+    check("small SWATCH" in derived4.prompt or roles4 in derived4.prompt,
+          "跟随任务的提示词含「基准 + 色卡」分工", show)
     check(derived4.subject != "garment" or derived4.prompt.startswith(prompts.NO_PERSON_CLAUSE), "只有衣服时禁人物规则优先于参考图角色", show)
-    check("IMAGE 2 is the official product photo" in derived4.prompt, "写明第 2 张是效果图（定颜色）", show)
+    check("SWATCH of this colourway" in derived4.prompt,
+          "写明第 2 张是面料色卡（只定颜色，不带版型）", show)
     asyncio.run(runner4.run())
     check(len(provider4.requests) == 2, "两次请求（基准 + 跟随）", show)
     if len(provider4.requests) == 2:
@@ -211,11 +213,9 @@ def main() -> int:
         )
         if len(images) == 3:
             check(Path(images[0]).name == Path(master4.out or "").name, "第 1 张是基准成品", show)
-            pink = garment4.color("pink")
             check(
-                pink is not None and pink.effect is not None
-                and Path(images[1]).name == pink.effect.name,
-                "第 2 张是该色效果图", show,
+                "swatches" in str(Path(images[1]).parent),
+                "第 2 张是该色面料色卡（派生色不再发整张效果图）", show,
             )
             check(Path(images[2]).read_bytes() == (runner4.root / derived4.source).read_bytes(), "第 3 张是未修改的原始上传画布", show)
 

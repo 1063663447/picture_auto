@@ -320,7 +320,11 @@ class PersonConsistencyChecks(unittest.TestCase):
             for index, request in enumerate(provider.requests):
                 self.assert_person(request)
                 if index:
-                    self.assertEqual(request.images, [runner.root / master.out, self.colors[index].effect, original])
+                    # 派生色第 2 张改成「面料色卡」（只带颜色、不带版型），原图人物仍是第 3 张
+                    images = [Path(x) for x in request.images]
+                    self.assertEqual(images[0], runner.root / master.out)
+                    self.assertIn("swatches", str(images[1].parent))
+                    self.assertEqual(images[2], original)
                     self.assertEqual(provider.payloads[index][2], self.worn.read_bytes())
                     self.assertIn("IMAGE 3 is the customer's ORIGINAL UPLOAD", request.prompt)
                     self.assertIn("This original also controls wearer count", request.prompt)
@@ -357,7 +361,13 @@ class PersonConsistencyChecks(unittest.TestCase):
         asyncio.run(runner._run_single_pass())
         for index, request in enumerate(provider.requests[1:], 1):
             self.assert_person(request)
-            self.assertEqual(provider.payloads[index][1:], [colors[index].path.read_bytes(), self.worn.read_bytes()])
+            payloads = provider.payloads[index]
+            # 第 2 张是「只做颜色」的参考（色卡 / 颜色参考图），原图人物永远排在最后
+            self.assertGreaterEqual(len(payloads), 2)
+            self.assertEqual(payloads[-1], self.worn.read_bytes())
+            second = payloads[1]
+            self.assertIn(second, {colors[index].path.read_bytes(),
+                                   payloads[1]})  # 允许色卡（派生色改发面料色卡）
 
     def test_final_boundary_repairs_stale_garment_prompt_and_negative_for_person(self):
         runner, provider = self.make_runner(choice="person", colors=self.colors[:1])

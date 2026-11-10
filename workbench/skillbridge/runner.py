@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from PIL import Image
 
 from . import prompts
+from . import swatch as swatch_mod
 from . import subject as subject_mod
 from .job import Job, Task, job_stamp, normalise_item, view_of
 from .gate import GateBusy
@@ -357,6 +358,8 @@ class JobRunner:
                             garment=garment,
                             subject=subject,
                             effect=want_effect,
+                            # 派生色会发面料色卡（不带版型），提示词也要这么说
+                            swatch=want_effect,
                         )
                     elif self.mode in {"two_phase", "recolor_only"}:
                         prompt = prompts.build_recolor_only(
@@ -810,9 +813,16 @@ class JobRunner:
                 else task.source
             )
         images = [source]
-        if self.use_effect(color) and color.effect is not None:
-            # 效果图优先：版型/工艺/颜色都以它为准（提示词里的角色说明讲清了两张图的分工）。
-            # 版型锁定时 source 是基准成品，于是 = 【基准成品, 该色效果图】。
+        # 派生色（source_override = 基准成品）只发「面料色卡」，不发整张效果图：
+        # 效果图带版型，模型偶尔会连版型一起搬（飞书 1526~1542：短袖跑成带帽卫衣）。
+        derived = source_override is not None
+        swatch = None
+        if derived and self.use_effect(color) and color.effect is not None:
+            swatch = swatch_mod.swatch_path(color.effect, self.root / "work" / "color-swatches")
+        if swatch is not None:
+            images.append(swatch)
+        elif self.use_effect(color) and color.effect is not None:
+            # 首色/基准：效果图是版型+工艺+颜色的权威
             images.append(color.effect)
         elif self.send_reference:
             if color.path.is_file():

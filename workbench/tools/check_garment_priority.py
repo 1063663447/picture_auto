@@ -262,7 +262,11 @@ class GarmentPriorityChecks(unittest.TestCase):
         asyncio.run(runner._execute_shape_task(derived))
         self.assertEqual(len(provider.requests), 2)
         self.assertEqual(provider.requests[0].images, [source, self.worn])
-        self.assertEqual(provider.requests[1].images, [runner.root / master.out, self.mannequin])
+        # 派生色改成「基准成品 + 面料色卡(+原图)」：色卡不带版型，避免把效果图的款式抄过来
+        derived_images = [Path(x) for x in provider.requests[1].images]
+        self.assertEqual(derived_images[0], runner.root / master.out)
+        self.assertIn("swatches", str(derived_images[1].parent))
+        self.assertEqual(derived_images[-1], runner.root / master.source if len(derived_images) > 2 else derived_images[-1])
         for request in provider.requests:
             self.assert_garment_request(request)
         self.assertTrue(all(t.status == "done" and t.attempts == 1 for t in runner.job.tasks))

@@ -151,6 +151,12 @@ workbench/
   3. 平口袖口原句 "sleeve stays at full width" 与紧身款冲突 → 带效果图时用 `CUFF_PLAIN_CLAUSE_REF`
 - 接口只支持单图（`max_images<2`）或缺效果图 → 自动退回「原图 + 颜色参考图」
 
+### 4.3.8 派生色发「面料色卡」（9.4.8，别再删）
+派生色（跟随基准只改颜色）如果还发整张效果图，模型偶尔会把效果图的**版型**一起抄过来
+（飞书 1526~1542：21 童装索罗娜·黑色 变带帽卫衣）。现在 `skillbridge/swatch.py` 从效果图裁
+256×256 纯面料色卡（sha256 缓存），派生请求 = 【基准成品, 色卡, 原图】，提示词用 `SWATCH_CLAUSE`
+说明"色卡只有颜色、没有版型"；基准色仍发官方效果图。回归 `tools/check_swatch.py`。
+
 ### 4.3.7 帽绳要同色系（9.4.7，别再删）
 客户说的「带子容易串」是**颜色串色**（黑卫衣画出白帽绳），不是绳子交叉 —— 9.4.6 那套几何约束已回退。
 `prompts.DRAWSTRING_CLAUSE`（HOOD CORD COLOUR）+ `drawstring_negative()` 现在钉的是：

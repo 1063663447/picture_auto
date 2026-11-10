@@ -959,6 +959,14 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **派生色改用「面料色卡」（9.4.8）**：飞书 1526~1542 出现「基准色对、个别派生色跑款」
+  （21 童装索罗娜·黑色 变成了带帽卫衣）。根因是派生色还在发整张效果图 —— 效果图带版型，
+  模型偶尔会把版型也一起搬过来。
+  现在 `skillbridge/swatch.py` 从效果图裁一块 **256×256 纯面料色卡**（按 sha256 缓存）：
+  基准色发「原图+效果图」，派生色发「基准成品+面料色卡（+原图）」，提示词用 `SWATCH_CLAUSE`
+  明确「色卡只取颜色、不含任何版型」。
+  真机对照 `data/test/style-drift/`，回归 `tools/check_swatch.py`。
+
 - **帽绳要同色系（9.4.7）**：客户说「连帽卫衣的带子容易串」= **颜色串色**（黑卫衣画出白帽绳），
   不是绳子交叉。连帽款现在注入 `HOOD CORD COLOUR`（放在提示词靠前）：
   绳色必须跟**本件衣身**同色系（黑卫衣→黑绳、白卫衣→米白绳），
@@ -1131,6 +1139,7 @@ python tools/check_price_table.py    # 打印飞书定价表现状（三位小�
 python tools/check_cuff.py           # 袖口工艺 + 款式转换段回归（离线）
 python tools/check_request_boundary.py  # 请求边界：不支持 negative 的接口要把否定词并进提示词（离线）
 python tools/check_hood_cords.py     # 连帽卫衣帽绳：跟衣身同色系（离线）
+python tools/check_swatch.py         # 派生色只发面料色卡（不带版型）（离线）
 python tools/check_no_person.py      # 主体约束回归：平铺图禁止补模特 / 真人图保留同一个人（离线）
 python tools/check_no_person.py --live --source=library/refs/23-sorona-tee/white.jpg  # 真跑一张（≈¥0.006）看成品有没有人
 python tools/import_style_catalog.py  # 从《墨西哥-服装款式代号表》导入每色效果图（library/effects）
