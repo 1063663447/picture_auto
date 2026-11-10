@@ -5,6 +5,11 @@
     python tools/make_review_fixture.py [目标目录]
 输出：<目录>/config.json（额外挂 mock 接口 + data_dir 指过来）+ data/jobs/<id>/job.json
       打印 job id 与可用的访问地址，用于浏览器验收。
+
+9.6.7 起造 **3 张基准图**（3 个款式各一张），用来验收：
+  · 多张基准图时的审核条布局（不能互相挤压）
+  · 只框选其中一张时，服务端只针对那一张返工
+  · 两张基准图同时框选改图（并发），互不串任务
 """
 from __future__ import annotations
 
@@ -30,6 +35,15 @@ def make_png(path: Path, text: str, color) -> Path:
     return path
 
 
+# 款式 · 颜色 · 基准图（跟真实任务同款同色的命名习惯）
+MASTERS = [
+    ("26-cropped-sorona-tee", "26 露脐索罗娜", "white", "白色", (236, 234, 230),
+     [("black", "黑色"), ("red", "红色")]),
+    ("19-u-neck-tee", "19 U领T", "white", "白色", (232, 229, 224), [("black", "黑色")]),
+    ("06-hoodie", "06 连帽卫衣", "black", "黑色", (58, 56, 62), [("white", "白色")]),
+]
+
+
 def main() -> int:
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "scratch" / "review-fixture"
     if target.exists():
@@ -43,65 +57,84 @@ def main() -> int:
         path.mkdir(parents=True, exist_ok=True)
 
     make_png(inputs / "view-01.png", "SOURCE", (188, 60, 66))
-    master = make_png(outputs / "master-white.png", "BASE", (236, 234, 230))
 
-    def task(task_id: str, color: str, name: str, *, master_flag: bool, out: str = "",
-             derived: bool = False) -> dict:
-        return {
-            "id": task_id, "item": "item-01", "view": "view-01",
-            "color": color, "color_hex": "#ECEAE6", "color_name": name,
+    tasks: list[dict] = []
+    selections: list[dict] = []
+    master_ids: list[str] = []
+    derived_total = 0
+    for slug, display, color, color_name, tint, derived in MASTERS:
+        master_id = f"item-01__{slug}__{color}"
+        master_ids.append(master_id)
+        out_name = f"master-{slug}-{color}.png"
+        master = make_png(outputs / out_name, f"BASE {slug}", tint)
+        tasks.append({
+            "id": master_id, "item": "item-01", "view": "view-01",
+            "color": color, "color_hex": "#ECEAE6", "color_name": color_name,
             "source": "inputs/item-01/view-01.png",
-            "garment": "23-sorona-tee", "garment_name": "23 索罗娜短袖",
-            "prompt": "CONVERT THE GARMENT TYPE … fixture …",
+            "garment": slug, "garment_name": display,
+            "prompt": f"CONVERT THE GARMENT TYPE … {slug} … fixture …",
             "subject": "garment", "person_alert": False,
-            "master": master_flag, "master_task": "" if master_flag else "item-01-view-01__white",
-            "reference": "", "approved": False, "review_note": "", "adopted_from": "",
-            "status": "done" if out else "pending", "attempts": 1 if out else 0,
-            "error": None, "error_kind": "", "out": out or None,
-            "started_at": time.time() - 60 if out else None,
-            "finished_at": time.time() - 30 if out else None,
-            "bytes": master.stat().st_size if out else 0,
-        }
+            "master": True, "master_task": "", "reference": "", "approved": False,
+            "review_note": "", "adopted_from": "", "status": "done", "attempts": 1,
+            "error": None, "error_kind": "", "out": f"outputs/{out_name}",
+            "started_at": time.time() - 60, "finished_at": time.time() - 30,
+            "bytes": master.stat().st_size,
+        })
+        selections.append({"garment_type": slug, "garment_name": display,
+                           "colors": [color] + [c for c, _ in derived]})
+        for other, other_name in derived:
+            derived_total += 1
+            tasks.append({
+                "id": f"item-01__{slug}__{other}", "item": "item-01", "view": "view-01",
+                "color": other, "color_hex": "#ECEAE6", "color_name": other_name,
+                "source": "inputs/item-01/view-01.png",
+                "garment": slug, "garment_name": display,
+                "prompt": f"CONVERT THE GARMENT TYPE … {slug} … fixture …",
+                "subject": "garment", "person_alert": False,
+                "master": False, "master_task": master_id, "reference": "",
+                "approved": False, "review_note": "", "adopted_from": "",
+                "status": "pending", "attempts": 0, "error": None, "error_kind": "",
+                "out": None, "started_at": None, "finished_at": None, "bytes": 0,
+            })
 
-    tasks = [
-        task("item-01-view-01__white", "white", "白色", master_flag=True,
-             out="outputs/master-white.png"),
-        task("item-01-view-01__black", "black", "黑色", master_flag=False, derived=True),
-        task("item-01-view-01__red", "red", "红色", master_flag=False, derived=True),
-    ]
+    total = len(tasks)
+    colour_total = sum(len(s["colors"]) for s in selections)
     payload = {
-        "id": job_id, "status": "review", "stage": "基准图已出，等你确认（确认后按这张图改其余颜色）",
-        "batch_name": "23-sorona-tee-style-recolor-batch",
+        "id": job_id, "status": "review",
+        "stage": "基准图已出，等你确认（确认后按这张图改其余颜色）",
+        "batch_name": "multi-style-recolor-batch",
         "zip": None, "has_zip": False, "error": None,
         "created_at": time.time() - 120, "updated_at": time.time() - 20, "finished_at": None,
         "duration": None,
-        "stats": {"total": 3, "pending": 2, "queued": 0, "running": 0, "done": 1,
-                  "failed": 0, "skipped": 0, "canceled": 0, "finished": 1, "rate_limited": 0},
-        "progress": 33.3,
+        "stats": {"total": total, "pending": total - len(MASTERS), "queued": 0, "running": 0,
+                  "done": len(MASTERS), "failed": 0, "skipped": 0, "canceled": 0,
+                  "finished": len(MASTERS), "rate_limited": 0},
+        "progress": round(100.0 * len(MASTERS) / max(1, total), 1),
         "params": {
-            "garment_type": "23-sorona-tee", "garment_name": "23 索罗娜短袖",
-            "colors": ["white", "black", "red"],
-            "selections": [{"garment_type": "23-sorona-tee", "garment_name": "23 索罗娜短袖",
-                            "colors": ["white", "black", "red"]}],
-            "style_count": 1, "total_colors": 3, "mode": "single_pass",
+            "garment_type": MASTERS[0][0], "garment_name": MASTERS[0][1],
+            "colors": [MASTERS[0][2]] + [c for c, _ in MASTERS[0][5]],
+            "selections": selections,
+            "style_count": len(MASTERS), "total_colors": colour_total, "mode": "single_pass",
             "kind": "", "provider": "mock", "provider_label": "离线模拟",
-            "model": "mock-image", "concurrency": 1, "rpm": 0, "size": "auto",
+            "model": "mock-image", "concurrency": 4, "rpm": 0, "size": "auto",
             "quality": "low", "seed": None, "max_retries": 1, "timeout_sec": 60,
             "output_format": "png", "send_reference": True, "input_fidelity": "",
             "max_bytes": 2000000, "extra_requirements": "", "pattern_mode": "preserve",
             "pattern_brief": "", "subject": "garment", "subject_choice": "garment",
             "retry_on_person": False, "shape_lock": "master", "review_gate": True,
             "account": "fixture",
-            "estimate": {"model": "mock-image", "count": 3, "unit": 0.0, "total": 0.0,
+            "estimate": {"model": "mock-image", "count": total, "unit": 0.0, "total": 0.0,
                          "currency": "CNY", "priced": True},
         },
         "tasks": tasks,
-        "log": [{"t": time.time() - 100, "level": "info", "msg": "（界面验收用的假任务，不花钱）"}],
+        "log": [{"t": time.time() - 100, "level": "info",
+                 "msg": "（界面验收用的假任务，不花钱；3 个款式各一张基准图）"}],
         "review": {
             "enabled": True, "awaiting": True, "phase": "",
-            "master_ids": ["item-01-view-01__white"],
-            "pending_ids": ["item-01-view-01__white"],
-            "approved_ids": [], "derived_total": 2, "derived_done": 0, "can_approve": True,
+            "master_ids": master_ids,
+            "pending_ids": list(master_ids),
+            "approved_ids": [], "derived_total": derived_total, "derived_done": 0,
+            "can_approve": True,
         },
     }
     (job_root / "job.json").write_text(
@@ -128,6 +161,7 @@ def main() -> int:
     token = str(server.get("auth_token") or "1_JiQgjmfST8")
     print(f"fixture: {target}")
     print(f"job_id : {job_id}")
+    print(f"款式   : {len(MASTERS)} 个 · 基准图 {len(master_ids)} 张 · 总任务 {total} 个")
     print("启动：python serve.py --config \"%s\" --port 8789" % (target / "config.json"))
     print(f"打开：http://127.0.0.1:8789/?token={token}&job={job_id}")
     return 0

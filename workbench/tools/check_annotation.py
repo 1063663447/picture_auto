@@ -198,6 +198,29 @@ async def scenario(show: bool) -> int:
         check("框2" in intro and "印花" in intro, "框2 的内容进了上下文", show)
         check("别扩大到框外" in intro, "上下文要求「只改框内」", show)
 
+        print("④ 9.6.7 前端/接口的框选细节")
+        root = Path(__file__).resolve().parent.parent
+        app = (root / "web" / "app.js").read_text(encoding="utf-8")
+        index = (root / "web" / "index.html").read_text(encoding="utf-8")
+        css = (root / "web" / "annotate.css").read_text(encoding="utf-8")
+        api = (root / "skillbridge" / "api.py").read_text(encoding="utf-8")
+        check('class="annotate-frame"' in index, "框层和图片装在同一个盒子里（框跟手）", show)
+        check(".annotate-frame{position:relative" in css and
+              ".annotate-stage svg{position:absolute;left:0;top:0" in css,
+              "框层相对图片定位，不是铺满整块", show)
+        check("try { stage.setPointerCapture?.(event.pointerId); } catch (_)" in app,
+              "指针 capture 抛错不影响画框", show)
+        check("runAnnotationRound(" in app and "streamQuiet(" in app,
+              "「交给 AI 改」直接发送（不再等用户点第二次）", show)
+        check("watchReworkFor(" in app and "const reworkTimers = new Map();" in app,
+              "改图进度按 jobId 分开盯（可多张并发）", show)
+        check("if (st.working)" in app and 'data-state="${kind}"' in app,
+              "卡片有「改图中」状态和转圈占位", show)
+        check("adoptRound(" in app and "::${rw.shots[0].id}" in app,
+              "第 2 轮可以直接采纳当基准", show)
+        check("wanted = {str(item) for item in task_ids}" in api,
+              "接口只处理点名的那一张基准图（不连累其它款色）", show)
+
         print()
         if FAILURES:
             print(f"失败 {len(FAILURES)} 条：")

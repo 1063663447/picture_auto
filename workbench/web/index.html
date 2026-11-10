@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=9.6.14" />
-<link rel="stylesheet" href="/aurora.css?v=9.6.14" />
-<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.14" />
-<link rel="stylesheet" href="/blackglass/type.css?v=9.6.14" />
-<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.14" />
-<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.14" />
-<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.14" />
-<link rel="stylesheet" href="/blackglass.css?v=9.6.14" />
-<link rel="stylesheet" href="/graphite.css?v=9.6.14" />
-<link rel="stylesheet" href="/ai-workflow.css?v=9.6.14" />
-<link rel="stylesheet" href="/review-cards.css?v=9.6.14" />
-<link rel="stylesheet" href="/annotate.css?v=9.6.14" />
+<link rel="stylesheet" href="/style.css?v=9.6.17" />
+<link rel="stylesheet" href="/aurora.css?v=9.6.17" />
+<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.17" />
+<link rel="stylesheet" href="/blackglass/type.css?v=9.6.17" />
+<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.17" />
+<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.17" />
+<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.17" />
+<link rel="stylesheet" href="/blackglass.css?v=9.6.17" />
+<link rel="stylesheet" href="/graphite.css?v=9.6.17" />
+<link rel="stylesheet" href="/ai-workflow.css?v=9.6.17" />
+<link rel="stylesheet" href="/review-cards.css?v=9.6.17" />
+<link rel="stylesheet" href="/annotate.css?v=9.6.17" />
 </head>
 <body class="flow-shell booting">
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -310,8 +310,12 @@
             </button>
           </div>
           <div class="annotate-stage" id="annotateStage">
-            <img id="annotateImage" alt="待改的基准图" />
-            <svg id="annotateLayer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <!-- 图片和框层必须贴在同一个盒子里：框层若铺满整个 stage，
+                 图片两侧的留白会让框的位置和鼠标对不上（9.6.7 修） -->
+            <div class="annotate-frame" id="annotateFrame">
+              <img id="annotateImage" alt="待改的基准图" />
+              <svg id="annotateLayer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </div>
             <div class="annotate-hint" id="annotateHint">按住鼠标在图上拖，框出要改的地方（可画多个）</div>
           </div>
           <div class="annotate-list" id="annotateList"></div>
@@ -432,11 +436,11 @@
 <div class="scrim" id="usageScrim" hidden></div><aside class="drawer" id="usageDrawer" hidden aria-modal="true" role="dialog" aria-label="我的用量"><div class="drawer-head"><span class="avatar"><svg><use href="#i-coins"/></svg></span><div class="who"><b>我的用量与花费</b><span>按工作台用量记录计价</span></div><button class="btn btn-quiet btn-icon" id="usageClose" type="button" aria-label="关闭用量"><svg><use href="#i-x"/></svg></button></div><div class="chat" id="usageBody"></div><div class="drawer-foot"><button class="btn btn-ghost" id="usageReload" type="button">刷新用量</button></div></aside>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.14"></script>
-<script src="/blackglass/atmosphere.js?v=9.6.14"></script>
-<script src="/blackglass/effects.js?v=9.6.14"></script>
-<script src="/blackglass-ui.js?v=9.6.14"></script>
-<script src="/ai-workflow.js?v=9.6.14"></script>
-<script src="/app.js?v=9.6.14"></script>
+<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.17"></script>
+<script src="/blackglass/atmosphere.js?v=9.6.17"></script>
+<script src="/blackglass/effects.js?v=9.6.17"></script>
+<script src="/blackglass-ui.js?v=9.6.17"></script>
+<script src="/ai-workflow.js?v=9.6.17"></script>
+<script src="/app.js?v=9.6.17"></script>
 </body>
 </html>

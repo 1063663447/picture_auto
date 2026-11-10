@@ -124,13 +124,20 @@ def static_checks(show: bool) -> None:
     # 3) 每张单独确认 / 改图
     check('data-approve="${esc(task.id)}"' in js, "每张基准图有「这张可以」按钮", show)
     check('data-rework="${esc(task.id)}"' in js, "每张基准图有「改这张」按钮", show)
-    check("approveMaster(button, null, [button.dataset.approve])" in js,
+    check("approveMaster(approve, null, [approve.dataset.approve])" in js,
           "「这张可以」只确认这一张", show)
     check("async function approveMaster(button, adopt, onlyTaskIds)" in js,
           "approveMaster 支持指定任务", show)
     check("openHarness(\"master\", [target.id], state.job.id)" in js,
           "「改这张」只把这一张带进对话", show)
-    check("task.approved ? \"\" :" in js, "已确认的卡片收起按钮", show)
+    # 9.6.7 卡片改成差异化状态：已确认那一支只留一行说明，不再渲染任何按钮
+    approved_act = ""
+    if "if (st.approved) {" in js:
+        head = js.index("if (st.approved) {")
+        tail = js.index("} else if (st.working) {", head)
+        approved_act = js[head:tail]
+    check(bool(approved_act) and "<button" not in approved_act,
+          "已确认的卡片收起按钮", show)
 
     # 4) 对话不再自动返基准图（确认在画布）
     check("chatMasterCard(" not in js, "对话不再自动返基准图卡片（画布接管）", show)

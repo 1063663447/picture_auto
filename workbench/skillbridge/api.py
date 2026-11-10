@@ -663,12 +663,19 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 masters = [t for t in master_job.tasks if t.master]
                 pending = [t for t in master_job.tasks if t.master_task]
                 ready = [t for t in masters if t.out]
-                task_ids = [t.id for t in (ready or masters)]
+                # 9.6.7 按张改图：前端框选/点名了哪一张，就只处理那一张。
+                # 以前这里会把所有已出的基准图一起塞给 AI，于是「只改这张的领口」
+                # 会连累另外两个款色一起返工——多款同批时是硬伤。
+                wanted = {str(item) for item in task_ids}
+                targets = [t for t in (ready or masters) if not wanted or t.id in wanted]
+                if not targets:
+                    raise ValueError("指定的那张基准图还没出图，或不属于这条任务")
+                task_ids = [t.id for t in targets]
                 count = len(pending) or max(1, len(masters))
-                source_count = len({str(t.source) for t in masters})
+                source_count = len({str(t.source) for t in targets})
                 task_context = []
                 rows = []
-                for task in masters:
+                for task in targets:
                     picked = bench.skill.type_by_alias(task.garment or inherited.get("garment_type"))
                     ref = picked.color(str(task.color))
                     code = ref.file_code if ref else ""
@@ -688,14 +695,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
                                            else subject_mod.task_kind(master_job, task, bench.get_job)})
                 image_assets = []
                 image_notes = []
-                for task in ready:
+                for task in targets:
                     path = job_image_path(master_job, task.out)
                     if path is not None:
                         image_assets.append(
                             HarnessImage(path, "master",
                                          f"基准图（待确认）· {task.color_name} · 任务 {task.id}")
                         )
-                for task in masters:
+                for task in targets:
                     for upload in original_uploads(master_job, task, bench.get_job)[:1]:
                         if len(image_assets) >= agent.MAX_IMAGES:
                             break
@@ -703,13 +710,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
                             HarnessImage(upload.path, "original",
                                          f"原始上传图 · {upload.name}")
                         )
-                if not ready:
+                if not any(t.out for t in targets):
                     image_notes.append("基准图还没生成出来，本轮只按文字需求对齐。")
                 image_paths = [row.path for row in image_assets]
                 garment = bench.skill.type_by_alias(rows[0]["garment_type"]) if rows else None
                 color = rows[0]["name_zh"] if len(rows) == 1 else ""
                 subject_kind = subject_kind or (
-                    subject_mod.task_kind(master_job, masters[0], bench.get_job) if masters else ""
+                    subject_mod.task_kind(master_job, targets[0], bench.get_job) if targets else ""
                 )
                 model_choice = model_choice or str(inherited.get("model") or "")
                 provider_name = provider_name or str(inherited.get("provider") or "")

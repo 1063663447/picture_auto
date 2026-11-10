@@ -73,6 +73,9 @@
     // 9.6.6 改图任务只返一次图：同一个改图任务被重复上报时不再往对话里塞第二张卡片
     reworkJobId: "",
     harnessReworkSubmitted: false,
+    // 9.6.7 每张基准图各自的改图进度：taskId -> {stage,jobId,shots,progress,note,error}
+    // 多张可以同时处于「改图中」，互不排队（生图接口支持并发）
+    reworks: {},
     // 9.6.2 对话优先：正在盯的基准图任务（空=没在盯）
     masterJobId: "",
     annotationId: "",
@@ -1173,11 +1176,136 @@
     reviewBound = true;
     $("approveMasterBtn")?.addEventListener("click", (event) => approveMaster(event.currentTarget));
     $("talkMasterBtn")?.addEventListener("click", () => talkMaster());
+    // 9.6.7 卡片用事件委托：轮询重建 DOM 时不会把点击监听一起丢掉
+    //（以前那一版的按钮在「重建瞬间」点下去是没反应的）
+    $("reviewThumbs")?.addEventListener("click", (event) => {
+      const hit = event.target.closest(
+        "[data-approve],[data-adopt],[data-annotate],[data-rework],img[data-preview]"
+      );
+      if (!hit) return;
+      const approve = hit.closest("[data-approve]");
+      if (approve) { approveMaster(approve, null, [approve.dataset.approve]); return; }
+      const adopt = hit.closest("[data-adopt]");
+      if (adopt) { adoptRound(adopt); return; }
+      const annotate = hit.closest("[data-annotate]");
+      if (annotate) { openAnnotator(annotate.dataset.annotate); return; }
+      const rework = hit.closest("[data-rework]");
+      if (rework) { talkMaster(rework.dataset.rework); return; }
+      const img = hit.closest("img[data-preview]");
+      if (img) {
+        const state0 = img.closest(".review-card")?.dataset.state || "";
+        if (state0 === "working") { toast("ok", "这张正在按框改图，等新图出来再动手"); return; }
+        openAnnotator(img.dataset.task);
+      }
+    });
   }
   function styleLabel(task) {
     const name = task.garment_name || (state.skill?.types?.[task.garment]?.display_name) || "";
     const colour = task.color_name || task.color || "";
     return [name, colour].filter(Boolean).join(" · ");
+  }
+
+  /* --------------------------------------- 9.6.7 卡片状态：待确认/改图中/第 2 轮 -- */
+  // 运营在一张卡片上要能直接看到：这张确认了没有、AI 是不是正在按框改它、
+  // 第 2 轮出来了没有。多张基准图可以**同时**改（每张一个任务，互不排队）。
+  function reworkOf(taskId) {
+    const entry = taskId ? state.reworks[taskId] : null;
+    if (!entry) return null;
+    if (entry.masterJob && state.job?.id && entry.masterJob !== state.job.id) return null;
+    return entry;
+  }
+
+  function setRework(taskId, patch, opts) {
+    if (!taskId) return;
+    const prev = state.reworks[taskId] || {
+      masterJob: state.job?.id || "", stage: "", jobId: "", shots: [], progress: "",
+      note: "", error: "", at: 0,
+    };
+    state.reworks[taskId] = { ...prev, ...patch, at: Date.now() };
+    if (!(opts && opts.quiet) && state.job) renderReview(state.job);
+  }
+
+  function reviewCardState(task) {
+    const rw = reworkOf(task.id);
+    const stage = rw?.stage || "";
+    return {
+      rw,
+      stage,
+      working: stage === "thinking" || stage === "running",
+      ready: stage === "ready" && (rw?.shots || []).length > 0,
+      failed: stage === "failed",
+      approved: Boolean(task.approved),
+    };
+  }
+
+  function reviewCardHtml(task) {
+    const st = reviewCardState(task);
+    const shot = st.ready ? st.rw.shots[0] : null;
+    const thumb = shot ? (shot.thumb_small || shot.preview || "") : (task.thumb_small || "");
+    const full = shot ? (shot.preview || shot.thumb || "") : (task.preview || task.thumb || "");
+    const kind = st.approved ? "approved" : st.working ? "working" : st.ready ? "revised"
+      : st.failed ? "failed" : "pending";
+    const badge = st.approved
+      ? (task.adopted_from ? "已确认 · 用第 2 轮" : "已确认")
+      : st.working ? "改图中"
+        : st.ready ? "第 2 轮 · 待确认"
+          : st.failed ? "改图失败" : "第 1 轮 · 待确认";
+    const tone = st.approved ? "ok" : (st.working || st.failed || st.ready) ? "warn" : "";
+    const veil = st.working
+      ? `<div class="working-veil"><span class="spin"></span>
+           <b>${st.stage === "thinking" ? "AI 正在读框选…" : "第 2 轮基准图生成中…"}</b>
+           <small>${esc(st.rw.progress || "按框位改完就返图给你，框外不动")}</small>
+         </div>`
+      : "";
+    let acts;
+    if (st.approved) {
+      acts = `<div class="review-card-acts"><span class="acts-note">已确认${task.adopted_from ? "（第 2 轮）" : ""}，按它改其余颜色</span></div>`;
+    } else if (st.working) {
+      acts = `<div class="review-card-acts"><span class="acts-note">改图任务已提交 · 可以先去框选别的</span></div>`;
+    } else if (st.ready) {
+      acts = `<div class="review-card-acts">
+        <button type="button" data-adopt="${esc(task.id)}">这张可以</button>
+        <button type="button" data-annotate="${esc(task.id)}">还要改</button>
+        <button type="button" data-rework="${esc(task.id)}">直接说</button>
+      </div>`;
+    } else if (st.failed) {
+      acts = `<div class="review-card-acts">
+        <button type="button" data-annotate="${esc(task.id)}">再框一次</button>
+        <button type="button" data-rework="${esc(task.id)}">直接说</button>
+      </div>`;
+    } else {
+      acts = `<div class="review-card-acts">
+        <button type="button" data-approve="${esc(task.id)}">这张可以</button>
+        <button type="button" data-annotate="${esc(task.id)}">框选改</button>
+        <button type="button" data-rework="${esc(task.id)}">直接说</button>
+      </div>`;
+    }
+    const why = st.failed && st.rw.error
+      ? `<span class="rw-error" title="${esc(st.rw.error)}">${esc(st.rw.error)}</span>`
+      : "";
+    return `<figure class="review-card ${kind}" data-state="${kind}" data-task="${esc(task.id)}">
+      <div class="thumb-wrap${st.working ? " is-working" : ""}">
+        <img src="${esc(thumb)}" alt="${esc(styleLabel(task))} 基准图"
+             data-preview="${esc(full)}" data-task="${esc(task.id)}" />
+        <span class="badge" data-tone="${esc(tone)}">${esc(badge)}</span>
+        ${veil}
+      </div>
+      <figcaption>
+        <b>${esc(task.garment_name || task.garment || "款式")}</b>
+        <span>${esc(task.color_name || task.color)}${st.approved ? " · 已确认" : st.ready ? " · 第 2 轮" : " · 待确认"}</span>
+        ${why}
+      </figcaption>
+      ${acts}
+    </figure>`;
+  }
+
+  async function adoptRound(button) {
+    const taskId = button.dataset.adopt;
+    const rw = reworkOf(taskId);
+    if (!rw || !rw.jobId || !rw.shots?.length) { toast("bad", "还没拿到第 2 轮的图"); return; }
+    const adopt = { [taskId]: `${rw.jobId}::${rw.shots[0].id}` };
+    await approveMaster(button, adopt, [taskId]);
+    setRework(taskId, { stage: "adopted" });
   }
 
   function renderReview(job) {
@@ -1191,6 +1319,8 @@
     if (!show) return;
     const stage = $("reviewStage"), note = $("reviewNote");
     const pending = masters.filter((t) => !t.approved);
+    const working = pending.filter((t) => reviewCardState(t).working).length;
+    const readyCount = pending.filter((t) => reviewCardState(t).ready).length;
     if (info.phase === "derived" && !pending.length) {
       stage.textContent = `基准已全部确认，正在按它改其它颜色（${info.derived_done || 0}/${info.derived_total || 0}）`;
       note.textContent = "改色中…";
@@ -1199,7 +1329,11 @@
       stage.textContent = pending.length === masters.length
         ? `基准图出来了（${masters.length} 张）：每张都能单独确认，也可以只让某一张先改色`
         : `还有 ${pending.length} 张待确认（已确认 ${masters.length - pending.length} 张）`;
-      note.textContent = "确认前不会出其它颜色，也不花钱；改图会单独针对那一张";
+      note.textContent = working
+        ? `${working} 张正在按框改图，等着就行；现在也可以去框选其它基准图`
+        : (readyCount
+          ? `${readyCount} 张已经出第 2 轮，看一眼对不对再确认`
+          : "确认前不会出其它颜色，也不花钱；改图只针对那一张");
       note.dataset.warn = "0";
     } else {
       stage.textContent = "基准图生成中，出来就能先确认";
@@ -1208,36 +1342,14 @@
     const box = $("reviewThumbs");
     // 轮询每 1.2s 会走一遍 renderReview：卡片没变化就不重建 DOM，
     // 否则用户正要点「框选改」时节点被换掉（点了没反应 / 框选对话被打断）。
-    const sig = masters.map((task) => `${task.id}:${task.approved ? 1 : 0}:${task.thumb_small || ""}`).join("|");
+    const sig = masters.map((task) => {
+      const st = reviewCardState(task);
+      const shot = st.rw?.shots?.[0] || null;
+      return `${task.id}:${task.approved ? 1 : 0}:${task.thumb_small || ""}:${st.stage}:${shot?.id || ""}`;
+    }).join("|");
     if (box && box.dataset.sig !== sig) {
       box.dataset.sig = sig;
-      box.innerHTML = masters.map((task) => `
-        <figure class="review-card${task.approved ? " approved" : ""}">
-          <img src="${esc(task.thumb_small)}" alt="${esc(styleLabel(task))} 基准图"
-               data-preview="${esc(task.preview || task.thumb || "")}" data-task="${esc(task.id)}" />
-          <figcaption>
-            <b>${esc(task.garment_name || task.garment || "款式")}</b>
-            <span>${esc(task.color_name || task.color)}${task.approved ? " · 已确认" : " · 待确认"}</span>
-          </figcaption>
-          ${task.approved ? "" : `<div class="review-card-acts">
-            <button type="button" data-approve="${esc(task.id)}">这张可以</button>
-            <button type="button" data-annotate="${esc(task.id)}">框选改</button>
-            <button type="button" data-rework="${esc(task.id)}">直接说</button>
-          </div>`}
-        </figure>`).join("");
-      box.querySelectorAll("img[data-preview]").forEach((img) => {
-        // 点图 = 打开框选（大图 + 画框 + 写要求）
-        img.addEventListener("click", () => openAnnotator(img.dataset.task));
-      });
-      box.querySelectorAll("[data-approve]").forEach((button) => {
-        button.addEventListener("click", () => approveMaster(button, null, [button.dataset.approve]));
-      });
-      box.querySelectorAll("[data-rework]").forEach((button) => {
-        button.addEventListener("click", () => talkMaster(button.dataset.rework));
-      });
-      box.querySelectorAll("[data-annotate]").forEach((button) => {
-        button.addEventListener("click", () => openAnnotator(button.dataset.annotate));
-      });
+      box.innerHTML = masters.map((task) => reviewCardHtml(task)).join("");
     }
     const approve = $("approveMasterBtn");
     if (approve) {
@@ -1324,39 +1436,61 @@
   // 用户在对话里说「领口小一点」→ AI 调 reject_master 生成改图任务 →
   // 这里盯着那条改图任务，出图后在对话里返图，并给「用这张当基准」按钮（= 采纳 + 开始改色）。
   let reworkTimer = 0;
+  // 9.6.7 每张基准图一条改图任务，可以同时跑好几条：定时器按 jobId 分开存
+  const reworkTimers = new Map();
   function stopReworkWatch() {
     if (reworkTimer) { clearTimeout(reworkTimer); reworkTimer = 0; }
+    for (const timer of reworkTimers.values()) clearTimeout(timer);
+    reworkTimers.clear();
   }
 
-  function startReworkWatch(jobId, masterIds) {
-    stopReworkWatch();
-    const alive = () => state.harnessMode === "master" && $("harnessDrawer") && !$("harnessDrawer").hidden;
+  // 盯一条改图任务：出图就分发给对应的基准图卡片，失败/中断就标出来
+  function watchReworkFor(jobId, taskIds, onSettled) {
+    const ids = (taskIds || []).filter(Boolean);
+    if (!jobId || !ids.length) return;
     const tick = async () => {
-      if (!alive()) { stopReworkWatch(); return; }
-      let delay = 2500;
+      reworkTimers.delete(jobId);
       try {
         const data = await api(`/api/jobs/${jobId}`, { cache: "no-store" });
         const job = data.job || {};
-        const shots = (job.tasks || []).filter((t) => t.out && t.thumb_small);
+        const shots = (job.tasks || []).filter((t) => t.out && (t.thumb_small || t.preview));
         if (shots.length) {
-          stopReworkWatch();
-          masterStatusDone();
-          chatReworkCard(shots, job.id, masterIds || []);
+          ids.forEach((taskId, index) => {
+            setRework(taskId, {
+              stage: "ready", jobId, progress: "",
+              shots: [shots[Math.min(index, shots.length - 1)]],
+            });
+          });
+          if ($("harnessDrawer") && !$("harnessDrawer").hidden) chatReworkCard(shots, jobId, ids);
+          if (typeof onSettled === "function") onSettled(true);
+          toast("ok", "第 2 轮基准图出来了，看一眼这份改得对不对");
           return;
         }
-        if (TERMINAL.includes(job.status) && !shots.length) {
-          stopReworkWatch();
-          masterStatusLine(`改图没成功：${job.error || job.stage || "未知原因"}。可以再说一次要改哪里。`);
+        if (TERMINAL.includes(job.status)) {
+          const why = job.error || job.stage || "改图没出图";
+          ids.forEach((taskId) => setRework(taskId, { stage: "failed", jobId, error: why }));
+          if (typeof onSettled === "function") onSettled(false);
           return;
         }
-        masterStatusLine(`正在按你说的改…（${job.stage || "生成中"}）`);
-      } catch (err) {
-        masterStatusLine(`改图进度读取失败，正在重试：${err.message}`);
-        delay = 4000;
-      }
-      if (alive()) reworkTimer = setTimeout(tick, delay);
+        ids.forEach((taskId) => {
+          if (reworkOf(taskId)?.stage === "running") {
+            setRework(taskId, { progress: job.stage || "" }, { quiet: true });
+          }
+        });
+      } catch (_) { /* 网络抖一下就下一轮再试 */ }
+      reworkTimers.set(jobId, setTimeout(tick, 2200));
     };
     tick();
+  }
+
+  function startReworkWatch(jobId, masterIds) {
+    // 「直接说」这条路：任务和卡片共用一套进度（watchReworkFor），
+    // 对话开着的时候额外把图返到对话里，并保留一句状态行。
+    const ids = (masterIds || []).filter(Boolean);
+    ids.forEach((taskId) => setRework(taskId, { stage: "running", jobId, progress: "生成中" }));
+    const alive = () => state.harnessMode === "master" && $("harnessDrawer") && !$("harnessDrawer").hidden;
+    if (alive()) masterStatusLine("正在按你说的改…（生成中）");
+    watchReworkFor(jobId, ids, () => { masterStatusDone(); });
   }
 
   function chatReworkCard(shots, reworkJobId, masterIds) {
@@ -1528,7 +1662,8 @@
     };
     stage.addEventListener("pointerdown", (event) => {
       if (event.button !== undefined && event.button !== 0) return;
-      stage.setPointerCapture?.(event.pointerId);
+      // 部分浏览器/笔式指针会在 capture 时抛 NotFoundError，抛出去整段拖拽就废了
+      try { stage.setPointerCapture?.(event.pointerId); } catch (_) { /* 抓不住也照样画 */ }
       const start = point(event);
       anno.dragging = { startX: start.x, startY: start.y, box: null };
       stage.style.cursor = "crosshair";
@@ -1607,6 +1742,16 @@
     }).join("；");
   }
 
+  // 9.6.7 框选改图：点「交给 AI 改」就把标注图 + 框位 + 要求**直接发给 AI**，
+  // 不再让用户再点一次发送。发完立刻回到审核条，这张卡片转圈等第 2 轮；
+  // 用户可以在等待期间去框选、去改别的基准图（每张一条任务，互不排队）。
+  function annotationInstruction(task, summary) {
+    const which = task
+      ? `${task.garment_name || task.garment || "这个款式"} · ${task.color_name || task.color || ""}`
+      : "这张基准图";
+    return `按我框选的位置改「${which}」：${summary}。框外不要动，标注框线不要画进成品。`;
+  }
+
   async function submitAnnotation(button) {
     if (!anno.boxes.length) { toast("bad", "先画一个框再提交"); return; }
     const empty = anno.boxes.filter((box) => !(box.note || "").trim());
@@ -1614,40 +1759,133 @@
       toast("bad", `框${empty.map((b) => b.n).join("、")} 还没写要改什么`);
       return;
     }
+    const taskId = anno.taskId, jobId = anno.jobId;
     await withLoading(button, async () => {
       let annotationId = "";
       try {
         const blob = await composeAnnotatedImage();
         if (blob) {
           const form = new FormData();
-          form.append("task_id", anno.taskId);
+          form.append("task_id", taskId);
           form.append("boxes", JSON.stringify(anno.boxes));
-          form.append("file", blob, `annotation-${anno.taskId}.png`);
-          const res = await api(`/api/jobs/${anno.jobId}/annotations`, { method: "POST", body: form });
+          form.append("file", blob, `annotation-${taskId}.png`);
+          const res = await api(`/api/jobs/${jobId}/annotations`, { method: "POST", body: form });
           annotationId = res?.annotation?.id || "";
         }
       } catch (err) {
         toast("bad", `标注图保存失败：${err.message}`);
         return;
       }
-      const task = (state.job?.tasks || []).find((t) => t.id === anno.taskId);
-      const which = task
-        ? `${task.garment_name || task.garment || "这个款式"} · ${task.color_name || task.color || ""}`
-        : "这张基准图";
+      const task = (state.job?.tasks || []).find((t) => t.id === taskId);
       const summary = annotationText();
       const boxes = anno.boxes.map((box) => ({ ...box }));
       closeAnnotator();
-      // 交给 harness：带上框信息与标注图，AI 据此改提示词再调改图
-      await openHarness("master", [anno.taskId], anno.jobId);
-      state.annotationId = annotationId;
-      state.annotationBoxes = boxes;
-      const input = $("harnessInput");
-      if (input) {
-        input.value = `按我框选的位置改「${which}」：${summary}。框外不要动，标注框线不要画进成品。`;
-        input.focus();
+      // 立刻回到审核条，并把这张标成「AI 正在读框选…」
+      setRework(taskId, {
+        stage: "thinking", jobId: "", shots: [], error: "", progress: "",
+        note: "", instruction: annotationInstruction(task, summary),
+      });
+      $("reviewBar")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      toast("ok", "已交给 AI：正在按框改这张，你可以先去框选别的基准图");
+      runAnnotationRound({ taskId, jobId, annotationId, boxes, summary, task });
+    }, "提交中…");
+  }
+
+  // 安静的流式请求：不抢对话面板，只等服务端把任务建出来（一次请求 = 一轮改图）
+  async function streamQuiet(payload, onEvent) {
+    const res = await fetch("/api/harness/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok || !res.body) throw new Error(`AI 连接失败 HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let reply = "";
+    let jobId = "";
+    const take = (frame) => {
+      let event = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data += line.slice(5).trim();
       }
-      toast("ok", annotationId ? "标注已保存，发给 AI 说明要改什么吧" : "说明已填好，发给 AI 吧");
-    }, "保存标注中…");
+      if (!data) return;
+      let body;
+      try { body = JSON.parse(data); } catch (_) { return; }
+      if (event === "error") throw new Error(String(body.error || body.text || "AI 返回了错误"));
+      if (event === "delta" || event === "message") reply += String(body.text || "");
+      if (event === "job" && body.job_id) jobId = String(body.job_id);
+      if (event === "prompt" && body.job_id) jobId = String(body.job_id);
+      if (typeof onEvent === "function") onEvent(event, body);
+    };
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+        let index;
+        while ((index = buffer.indexOf("\n\n")) >= 0) {
+          const frame = buffer.slice(0, index);
+          buffer = buffer.slice(index + 2);
+          take(frame);
+        }
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) take(buffer);
+    } finally {
+      reader.releaseLock();
+    }
+    return { reply: reply.trim(), jobId };
+  }
+
+  async function runAnnotationRound(round) {
+    const taskId = round.taskId;
+    const payload = {
+      mode: "master",
+      instruction: round.instruction || annotationInstruction(round.task, round.summary),
+      job_id: round.jobId,
+      task_ids: [taskId],
+      subject: $("subject")?.value || "auto",
+      size: currentSize(),
+      quality: $("quality")?.value || "",
+      output_format: currentOutputFormat(),
+      send_reference: true,
+      shape_lock: "master",
+      pattern_mode: currentPatternMode(),
+      history: [],
+    };
+    if (round.annotationId) payload.annotation_id = round.annotationId;
+    if (round.boxes?.length) payload.annotations = round.boxes;
+    try {
+      const { reply, jobId } = await streamQuiet(payload, (event, body) => {
+        if (event === "tool" || event === "result") {
+          const label = String(body.name || "");
+          if (/reject_master|submit_rework|submit_generation/.test(label)) {
+            setRework(taskId, { progress: "正在提交改图任务…" }, { quiet: true });
+          }
+        }
+      });
+      const note = (reply || "").replace(/\s+/g, " ").slice(0, 220);
+      if (!jobId) {
+        setRework(taskId, { stage: "failed", error: note || "AI 没有建改图任务" });
+        toast("bad", "AI 没有提交改图任务，可以再框一次或直接说");
+        return;
+      }
+      setRework(taskId, { stage: "running", jobId, note, progress: "生成中" });
+      watchReworkFor(jobId, [taskId]);
+      state.reworkJobId = jobId;
+      if (note) {
+        // 记进对话历史：之后在对话框里接着说，AI 知道上一轮改了哪儿
+        state.harnessHistory.push({ role: "user", content: payload.instruction });
+        state.harnessHistory.push({ role: "assistant", content: note });
+        state.harnessHistory = state.harnessHistory.slice(-12);
+      }
+    } catch (err) {
+      setRework(taskId, { stage: "failed", error: err.message });
+      toast("bad", `框选改图没成功：${err.message}`);
+    }
   }
 
   function talkMaster(taskId) {
@@ -2219,7 +2457,8 @@
     panel.classList.remove("on");scrim.classList.remove("on");clearTimeout(panelCloseTimers.get(panelId));
     panelCloseTimers.set(panelId,setTimeout(()=>{if(panel.dataset.panelEpoch===epoch){panel.hidden=true;scrim.hidden=true;}},240));
   }
-  function closeHarness(){stopMasterWatch();stopReworkWatch();stopDistillWatch();state.annotationId="";state.annotationBoxes=[];closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
+  // 9.6.7 关对话框**不**停改图轮询：卡片上的「改图中」要在关掉对话后继续跑完
+  function closeHarness(){stopMasterWatch();stopDistillWatch();state.annotationId="";state.annotationBoxes=[];closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
   function closePrompt() { closePanel("promptDrawer", "promptScrim"); }
 
   /* ----------------------------------------------------------- harness chat */
@@ -2549,7 +2788,11 @@
       if(!id||state.reworkJobId===id)return;
       const review=reviewInfo(state.job)||{};
       state.reworkJobId=id;state.harnessReworkSubmitted=true;
-      startReworkWatch(id, review.master_ids||[]);
+      // 只推进「本轮点名的那些基准图」，不能把整批都刷成改图中
+      const targets=(state.reworkTargets&&state.reworkTargets.length)
+        ? state.reworkTargets.slice()
+        : (review.pending_ids||review.master_ids||[]);
+      startReworkWatch(id, targets);
       window.AIWorkflow?.phase('reworking');
       loadHistory();toast("ok","已按你说的开始改图，出图后我会返给你看");
       return;

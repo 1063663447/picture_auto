@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.6-win-x64-internal.zip"
-VERSION = "9.6.6"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.7-win-x64-internal.zip"
+VERSION = "9.6.7"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -51,6 +51,7 @@ REQUIRED = [
     "workbench/CHANGELOG_STYLES_9.5.0.md",
     "workbench/CHANGELOG_WHITE_MASTER_9.6.5.md",
     "workbench/CHANGELOG_ANNOTATE_9.6.6.md",
+    "workbench/CHANGELOG_REVIEW_965_9.6.7.md",
     "workbench/HANDOVER.md",
     "workbench/web/index.html",
     "workbench/web/app.js",
@@ -121,6 +122,19 @@ def main() -> int:
     check("openAnnotator" in app and "composeAnnotatedImage" in app,
           "前端有框选标注（大图 + 画框 + 合成标注图）")
     check("annotation_id" in app, "标注 id 随对话发给 harness")
+    # 9.6.7 框选直接发送 + 每张并发改图 + 卡片状态
+    check("runAnnotationRound" in app and "streamQuiet" in app,
+          "「交给 AI 改」直接发送（不等第二次点击）")
+    check("watchReworkFor" in app and "reworkTimers" in app,
+          "改图进度按 jobId 分开盯（多张可并发）")
+    check("data-state=" in app and "working-veil" in app,
+          "卡片有改图中/第 2 轮状态")
+    review_css = z.read(TOP + "workbench/web/review-cards.css").decode("utf-8")
+    check("grid-template-columns:repeat(auto-fill" in review_css,
+          "审核卡片自适应网格（不被挤压）")
+    annotate_css = z.read(TOP + "workbench/web/annotate.css").decode("utf-8")
+    check(".annotate-frame{position:relative" in annotate_css,
+          "框层贴着图片（框跟手，不偏移）")
     index = z.read(TOP + "workbench/web/index.html").decode("utf-8")
     check('id="reviewBar"' in index, "index.html 有审核条容器")
     check('id="annotateDialog"' in index, "index.html 有框选弹窗容器")

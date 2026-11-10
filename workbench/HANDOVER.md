@@ -142,6 +142,18 @@ workbench/
   改图时 `runner._execute_rework_task` 把标注图当 **IMAGE 2**，提示词追加 `prompts.annotation_clause(2)`（框线是地图不是设计）；
   harness 上下文带 `annotations`（每框编号/位置/要求）。回归：`tools/check_annotation.py`。
   注意：`#annotateImage` 是 `pointer-events:none`，拖拽事件落在 `#annotateStage`。
+- **框选直接发送 + 多张并发改图（9.6.7）**：
+  - 点「交给 AI 改」= 存标注图 + `streamQuiet()` **直接发** `/api/harness/stream`（不开对话框），
+    回来就在审核条上：这张卡进 `state.reworks[taskId] = {stage:'thinking'|'running'|'ready'|'failed'}`，
+    图上盖 `working-veil` 转圈；出图后卡片显示第 2 轮 + 「这张可以」→ `adoptRound()` 走
+    `approve_master(adopt={masterId:"<reworkJobId>::<taskId>"})`。
+  - 进度用 `watchReworkFor(jobId, taskIds)`，定时器存在 `reworkTimers`（按 jobId），所以多张可以同时跑；
+    `closeHarness()` **不再**停这些定时器（关对话框不影响卡片进度）。
+  - 卡片交互改成 `#reviewThumbs` 上的一次性事件委托（`bindReviewActions`）：轮询重建 innerHTML 不会丢点击。
+  - 服务端 `api.py` master 分支按前端 `task_ids` 收窄 `targets`，只处理点名的那一张；回归：
+    `tools/check_concurrent_rework.py`（两轮并发 + 各自单张 + 标注图 + 提示词约束）。
+  - 框层坐标：`index.html` 的 `.annotate-frame` 同时装 `img` 和 `svg`，`annotate.css` 里 svg 相对 frame 定位，
+    否则图片两侧留白会让框整体偏移（9.6.6 的坑）。
 - **对话优先 + 主动沉淀（9.6.2）**：点生成后自动打开对话框（`startMasterChat` → `masterWatch`），基准图与改图结果都以图片卡片返到对话里（`chatMasterCard` / `chatReworkCard`），「采纳当基准」走 `POST /api/jobs/{id}/approve` 的 `adopt`；确认时 `service.approve_master` 自动调 `learn_from_review` 把对齐要求写进 `lessons`（`defaults.auto_learn`，默认开）。回归：`tools/check_auto_learn.py`。
 - **30 扎染T**：无 sheet 的款式走 `import_ph_catalog.MANUAL_STYLES` + `tools/add_style_30_tiedye.py` 裁图建档（图来自客户款式图，不是表格）。
 - **生成是两段式（9.6.0）**：多色批次先只出「基准图」，任务停在 `review`，运营在界面/对话框里确认后才按这张基准图给其余颜色改色；不满意就对话提修改，改完「采纳」成新基准。
