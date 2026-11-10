@@ -26,3 +26,5 @@ releases/
 ui-sandbox/live-3d-v1/
 # 验证截图/对照页（体积大且可再生）
 validation/
+# 产品展示图（生图接口直出，约 13MB；tools/make_showcase*.py 可重出）
+showcase/
