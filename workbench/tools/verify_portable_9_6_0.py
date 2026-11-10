@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.4-win-x64-internal.zip"
-VERSION = "9.6.4"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.5-win-x64-internal.zip"
+VERSION = "9.6.5"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -53,6 +53,7 @@ REQUIRED = [
     "workbench/web/index.html",
     "workbench/web/app.js",
     "workbench/web/style.css",
+    "workbench/web/review-cards.css",
     "apparel-style-recolor/SKILL.md",
 ]
 

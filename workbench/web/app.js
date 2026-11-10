@@ -30,12 +30,13 @@
     "这图能改吗？大概多少钱",
   ];
   // 基准图审核期的话术：都是「对着基准图说一句」，点一下就能填进输入框
+  // 基准图改图时的常用话术（确认在画布上点，这里只管「改哪里」）
   const QUICK_MASTER = [
-    "可以，就按这张基准图改其它颜色",
     "领口再小一点，别太大",
     "颜色偏亮了，往效果图的颜色靠",
     "印花和文字必须原样，不要重画",
-    "这条要记住，以后这个款都这样做",
+    "这张的裁切再往下一点",
+    "以后这个款都按这个版型来",
   ];
 
   const QUICK_REWORK = [
@@ -1047,8 +1048,8 @@
       window.WorkbenchUI.endSubmission(true);
       if(fromHarness){state.harnessSubmittedJob=data.job.id;window.AIWorkflow?.submitted(data.job.id);}else closeHarness();
       watchJob(data.job.id, data.job);
-      // 9.6.2：多色批次先出基准图 → 直接拉出对话框，由 AI 返图给用户确认
-      if(data.job?.review?.enabled) startMasterChat(data.job.id);
+      // 9.6.5：基准图的确认回到画布上的审核条（可单张确认）；
+      // 只有需要改图时才打开对话框（在审核条上点「改这张」）。
       loadHistory();
       loadGate();
       setTimeout(loadPricing, 1500);   // 先让结果区渲染出来，用量芯片稍后再刷
@@ -1168,53 +1169,85 @@
     $("approveMasterBtn")?.addEventListener("click", (event) => approveMaster(event.currentTarget));
     $("talkMasterBtn")?.addEventListener("click", () => talkMaster());
   }
+  function styleLabel(task) {
+    const name = task.garment_name || (state.skill?.types?.[task.garment]?.display_name) || "";
+    const colour = task.color_name || task.color || "";
+    return [name, colour].filter(Boolean).join(" · ");
+  }
+
   function renderReview(job) {
     bindReviewActions();
     const bar = $("reviewBar");
     if (!bar) return;
     const info = reviewInfo(job);
     const masters = (job?.tasks || []).filter((t) => t.master && t.thumb_small);
-    const show = Boolean(info && (info.awaiting || info.pending_ids?.length));
+    const show = Boolean(info && (info.awaiting || info.pending_ids?.length || masters.length));
     bar.hidden = !show;
     if (!show) return;
     const stage = $("reviewStage"), note = $("reviewNote");
-    if (info.awaiting) {
-      stage.textContent = `这张满意就点「确定」，之后才会按它给其它 ${info.derived_total || 0} 个颜色改色；不满意就在右边对着说。`;
-      note.textContent = "确认前不会出其它颜色，也不花钱";
-      note.dataset.warn = "0";
-    } else if (info.phase === "derived") {
-      stage.textContent = `基准已确认，正在按它改其它颜色（${info.derived_done || 0}/${info.derived_total || 0}）`;
+    const pending = masters.filter((t) => !t.approved);
+    if (info.phase === "derived" && !pending.length) {
+      stage.textContent = `基准已全部确认，正在按它改其它颜色（${info.derived_done || 0}/${info.derived_total || 0}）`;
       note.textContent = "改色中…";
       note.dataset.warn = "0";
+    } else if (pending.length) {
+      stage.textContent = pending.length === masters.length
+        ? `基准图出来了（${masters.length} 张）：每张都能单独确认，也可以只让某一张先改色`
+        : `还有 ${pending.length} 张待确认（已确认 ${masters.length - pending.length} 张）`;
+      note.textContent = "确认前不会出其它颜色，也不花钱；改图会单独针对那一张";
+      note.dataset.warn = "0";
     } else {
-      stage.textContent = "基准图还没出来，稍等一下";
+      stage.textContent = "基准图生成中，出来就能先确认";
       note.textContent = "";
     }
     const box = $("reviewThumbs");
     if (box) {
       box.innerHTML = masters.map((task) => `
-        <figure>
-          <img src="${esc(task.thumb_small)}" alt="${esc(task.color_name || task.color)} 基准图"
+        <figure class="review-card${task.approved ? " approved" : ""}">
+          <img src="${esc(task.thumb_small)}" alt="${esc(styleLabel(task))} 基准图"
                data-preview="${esc(task.preview || task.thumb || "")}" data-task="${esc(task.id)}" />
-          <figcaption>${esc(task.color_name || task.color)}${task.approved ? " · 已确认" : " · 待确认"}</figcaption>
+          <figcaption>
+            <b>${esc(task.garment_name || task.garment || "款式")}</b>
+            <span>${esc(task.color_name || task.color)}${task.approved ? " · 已确认" : " · 待确认"}</span>
+          </figcaption>
+          ${task.approved ? "" : `<div class="review-card-acts">
+            <button type="button" data-approve="${esc(task.id)}">这张可以</button>
+            <button type="button" data-rework="${esc(task.id)}">改这张</button>
+          </div>`}
         </figure>`).join("");
       box.querySelectorAll("img[data-preview]").forEach((img) => {
         img.addEventListener("click", () => openLightbox?.(img.dataset.preview, img.dataset.task));
       });
+      box.querySelectorAll("[data-approve]").forEach((button) => {
+        button.addEventListener("click", () => approveMaster(button, null, [button.dataset.approve]));
+      });
+      box.querySelectorAll("[data-rework]").forEach((button) => {
+        button.addEventListener("click", () => talkMaster(button.dataset.rework));
+      });
     }
     const approve = $("approveMasterBtn");
     if (approve) {
-      approve.disabled = !info.can_approve;
-      approve.textContent = info.phase === "derived" ? "已确认" : "确定，按它改色";
+      const canAll = pending.length > 0;
+      approve.disabled = !canAll;
+      approve.textContent = canAll
+        ? (pending.length === masters.length ? "全部确认，按它们改色" : `确认剩下 ${pending.length} 张`)
+        : (info.phase === "derived" ? "已确认" : "确定，按它改色");
+    }
+    const talk = $("talkMasterBtn");
+    if (talk) {
+      talk.textContent = "改哪张？（对话）";
+      talk.disabled = pending.length === 0;
     }
   }
 
-  async function approveMaster(button, adopt) {
+  async function approveMaster(button, adopt, onlyTaskIds) {
     const jobId = state.jobId;
     if (!jobId || state.job?.id !== jobId) return;
     const info = reviewInfo(state.job);
     if (!info || !info.can_approve) { toast("bad", "现在还没有可确认的基准图"); return; }
-    const ids = [...(info.pending_ids || [])].length ? [...info.pending_ids] : [...(info.master_ids || [])];
+    const ids = (onlyTaskIds && onlyTaskIds.length)
+      ? [...onlyTaskIds]
+      : ([...(info.pending_ids || [])].length ? [...info.pending_ids] : [...(info.master_ids || [])]);
     await withLoading(button, async () => {
       try {
         const res = await api(`/api/jobs/${jobId}/approve`, {
@@ -1234,7 +1267,6 @@
         watchJob(jobId);
         state.masterShown = true;
         state.masterDoneShown = false;
-        if (state.harnessMode === "master") masterWatch(jobId);
       } catch (err) {
         toast("bad", err.message);
       }
@@ -1244,43 +1276,6 @@
   /* ------------------------------------------------ 9.6.2 对话优先的确认流程 -- */
   // 客户要求：放原图 + 选款式 → 点生成 → 直接拉出对话框；基准图在对话里返给用户看，
   // 有歧义就在对话里说哪张要改，改完再返图，直到确认才开始改色。
-  function chatMasterCard(tasks, intro) {
-    const wrap = document.createElement("div");
-    wrap.className = "msg assistant";
-    const figures = tasks.map((task) => {
-      const src = task.thumb_small || task.thumb || "";
-      return `<figure><img src="${esc(src)}" alt="${esc(task.color_name || task.color)} 基准图"
-        data-preview="${esc(task.preview || task.thumb || src)}" data-task="${esc(task.id)}" />
-        <figcaption>${esc(task.color_name || task.color)}</figcaption></figure>`;
-    }).join("");
-    wrap.innerHTML = `<span class="who">AI 助手</span>
-      <div class="bubble master-card">
-        <p style="margin:0">${esc(intro)}</p>
-        <div class="master-shots">${figures}</div>
-        <div class="chat-actions">
-          <button type="button" class="primary" data-master-act="approve">就按这张改色</button>
-          <button type="button" data-master-act="edit">我要改…</button>
-        </div>
-      </div>`;
-    $("chatLog").appendChild(wrap);
-    wrap.querySelectorAll("img[data-preview]").forEach((img) => {
-      img.addEventListener("click", () => openLightbox?.(img.dataset.preview, img.dataset.task));
-    });
-    wrap.querySelector("[data-master-act='approve']")?.addEventListener("click", (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      approveMaster(button).finally(() => { button.disabled = false; });
-    });
-    wrap.querySelector("[data-master-act='edit']")?.addEventListener("click", () => {
-      const input = $("harnessInput");
-      if (!input) return;
-      if (!input.value) input.value = "这张图要改：";
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    });
-    scrollChat();
-    return wrap;
-  }
 
   function masterStatusLine(text) {
     // 同一条状态只更新文字，不刷屏
@@ -1309,94 +1304,7 @@
     state.masterShown = false;
   }
 
-  function startMasterChat(jobId) {
-    if (!jobId) return;
-    state.masterJobId = jobId;
-    state.masterShown = false;
-    if (state.harnessMode !== "master") {
-      const review = reviewInfo(state.job) || {};
-      openHarness("master", review.master_ids || [], jobId);
-    }
-    masterWatch(jobId);
-  }
 
-  async function masterWatch(jobId) {
-    if (masterTimer) { clearTimeout(masterTimer); masterTimer = 0; }
-    if (!jobId) return;
-    const drawer = $("harnessDrawer");
-    const alive = () => state.masterJobId === jobId
-      && drawer && !drawer.hidden && state.harnessMode === "master";
-    if (!alive()) { stopMasterWatch(); return; }
-    let delay = state.masterShown ? 3000 : 2000;      // 还没出基准时勤一点
-    try {
-      const data = await api(`/api/jobs/${jobId}`, { cache: "no-store" });
-      const job = data.job || {};
-      if (!alive()) return;
-      const review = job.review || {};
-      const tasks = (job.tasks || []);
-      const masters = tasks.filter((t) => t.master);
-      const masterShots = masters.filter((t) => t.thumb_small || t.thumb);
-      const masterDone = masterShots.length;
-      const masterTotal = masters.length;
-      const derivedTotal = review.derived_total || tasks.filter((t) => t.master_task).length;
-      const derivedDone = tasks.filter((t) => t.master_task && t.out).length;
-      // 「已确认」只认这两种信号：阶段切到 derived，或基准任务被标记 approved
-      const approved = review.phase === "derived" || (review.approved_ids || []).length > 0;
-      const awaitingReview = review.awaiting || job.status === "review";
-
-      if (approved) {
-        // 确认之后：只有这时才说「正在按基准改色」
-        if (derivedTotal && derivedDone < derivedTotal) {
-          masterStatusLine(`基准已确认，正在按它给其余颜色改色：${derivedDone}/${derivedTotal}`);
-        } else {
-          masterStatusDone();
-          if (!state.masterDoneShown) {
-            state.masterDoneShown = true;
-            chatBubble("assistant",
-              `全部改色完成：${derivedDone} 张新颜色 + ${masterDone} 张基准。`
-              + "右侧画廊可以直接下载，或者继续改图。");
-          }
-          return;
-        }
-      } else if (awaitingReview && masterDone) {
-        // 基准图出来了，停下来等确认：返图 + 给按钮（一张只发一次）
-        masterStatusDone();
-        if (!state.masterShown) {
-          state.masterShown = true;
-          chatMasterCard(masterShots,
-            `基准图出来了（${masterDone} 张）。满意就点「就按这张改色」，我再给其余 `
-            + `${derivedTotal} 个颜色改色；要改就直接说改哪里，我改完再返图给你看。`);
-        }
-      } else if (masterTotal && masterDone < masterTotal) {
-        // 还在出基准：只说进度，不提确认、不发图
-        const running = masters.filter((t) => t.status === "running").length;
-        const failed = masters.filter((t) => t.status === "failed").length;
-        const tail = running ? `（生成中 ${running}）` : failed ? `（失败 ${failed}）` : "";
-        masterStatusLine(
-          `基准图生成中 ${masterDone}/${masterTotal}…${tail}` +
-          (failed && !running ? "　可以重试或换模型" : "")
-        );
-        state.masterShown = false;
-      } else if (TERMINAL.includes(job.status) || job.status === "partial") {
-        // 基准没出全就结束了（失败/取消）：说清楚，别假装在改色
-        masterStatusDone();
-        if (masterShots.length && !state.masterShown) {
-          state.masterShown = true;
-          chatMasterCard(masterShots, "基准图只出来部分，先看这几张；要我按它改色就说可以。");
-        } else if (!masterShots.length) {
-          masterStatusLine(
-            `基准图没出来（${job.error || job.stage || "任务已结束"}）。可以点重试，或者换个模型再来一次。`
-          );
-        }
-      } else if (masterTotal === 0) {
-        masterStatusLine(job.stage || "生成中…");
-      }
-    } catch (err) {
-      masterStatusLine(`进度读取失败，正在重试：${err.message}`);
-      delay = 4000;
-    }
-    if (alive()) masterTimer = setTimeout(() => masterWatch(jobId), delay);
-  }
 
   /* ------------------------------------------- 9.6.2 改图返图 + 采纳当基准 --- */
   // 用户在对话里说「领口小一点」→ AI 调 reject_master 生成改图任务 →
@@ -1515,12 +1423,21 @@
     distillTimer = setTimeout(tick, 4000);
   }
 
-  function talkMaster() {
+  function talkMaster(taskId) {
     if (!state.job?.id) { toast("bad", "还没有可讨论的任务"); return; }
     const info = reviewInfo(state.job);
     if (!info) { toast("bad", "这一批没有基准图审核"); return; }
-    openHarness("master", info.pending_ids?.length ? info.pending_ids : info.master_ids, state.job.id);
+    const pending = (state.job.tasks || []).filter(
+      (t) => t.master && !t.approved && (t.thumb_small || t.thumb)
+    );
+    // 只针对一张：没指定就用第一张待确认的
+    const target = taskId
+      ? (state.job.tasks || []).find((t) => t.id === taskId)
+      : pending[0];
+    if (!target) { toast("bad", "没有可改的基准图"); return; }
+    openHarness("master", [target.id], state.job.id);
   }
+
 
   function renderJob(job) {
     if(job.id!==state.jobId)return;
@@ -2259,12 +2176,16 @@
       $("harnessDefault").textContent="返回画廊";
       $("reworkModel").hidden=true;
       renderQuick(QUICK_MASTER);openDrawer("harness");updateSummary();
-      const hasShot = (state.job?.tasks || []).some((t) => t.master && (t.thumb_small || t.thumb));
-      if (hasShot) {
-        chatBubble("assistant",`这是这批的基准图。满意就说「可以」或点「确定」，我再按它给其它 ${info.derived_total||0} 个颜色改色；不满意就直接说哪里要改，比如「领口再小一点」。`);
-      } else {
-        chatBubble("assistant",`基准图正在生成（先只出一张，其它 ${info.derived_total||0} 个颜色还没开始）。出图我马上发给你看，你满意再确认改色。`);
-      }
+      const pickedTasks = (state.job?.tasks || []).filter((t) => (taskIds || []).includes(t.id));
+      const pickedTask = pickedTasks[0] || null;
+      const which = pickedTask
+        ? `${pickedTask.garment_name || pickedTask.garment || "这个款式"} · `
+          + `${pickedTask.color_name || pickedTask.color || ""}`
+        : "这张基准图";
+      chatBubble("assistant",
+        `现在只改「${which}」这一张基准图，其它颜色先不动。`
+        + "直接说要改哪里就行（比如「领口再小一点」「印花别动」），我改完把新图发给你看；"
+        + "觉得可以了就回工作台点这张的「这张可以」，那时才会开始按它改色。");
       window.AIWorkflow?.start("master");window.AIWorkflow?.phase('idle','对着基准图说明要改的地方，或直接确认。');
       return true;
     }

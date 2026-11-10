@@ -1891,12 +1891,16 @@ class Workbench:
             raise WorkbenchError("任务正在运行中，等这一轮结束再确认")
         adopt = adopt or {}
         state = self.review_payload(job)
-        if not adopt and not state["awaiting"]:
+        if not adopt and not (state["awaiting"] or state["pending_ids"]):
             # 已经确认过 / 压根没开审核的任务：别再点一次，也别把它翻成 running
             raise WorkbenchError(
                 "这条任务现在不在「基准图待确认」状态（可能已经确认过或没开审核）"
             )
-        targets = self._master_targets(job, task_ids)
+        targets = [
+            t for t in self._master_targets(job, task_ids) if not t.approved
+        ]
+        if not targets and not adopt:
+            raise WorkbenchError("选中的基准图已经确认过了")
         # 采纳：把返工/另一批的成品复制过来，当成这张基准图
         for master_id, source_task in adopt.items():
             master = next((t for t in job.tasks if t.id == master_id), None)
@@ -1934,9 +1938,11 @@ class Workbench:
         job.params["approved_at"] = time.time()
         job.status = "running"
         job.stage = "基准已确认，按基准图改色"
+        approved_now = sum(1 for t in job.tasks if t.master and t.approved)
+        master_total = sum(1 for t in job.tasks if t.master)
         job.add_log(
-            f"基准图已确认（{len(targets)} 张）：其余 "
-            f"{sum(1 for t in job.tasks if t.master_task)} 张按这张基准改色"
+            f"基准图已确认 {len(targets)} 张（累计 {approved_now}/{master_total}）："
+            f"这些基准对应的其它颜色开始改色"
             + (f"；确认备注：{note}" if note else "")
         )
         job.save()

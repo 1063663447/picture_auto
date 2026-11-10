@@ -105,30 +105,46 @@ async def wait_job(bench: Workbench, job_id: str, timeout: float = 60.0) -> None
 
 
 def static_checks(show: bool) -> None:
-    print("② 前端状态机：只有 phase=derived / approved_ids 才算已确认")
+    print("② 前端：确认改回画布（可单张）+ 不再自动弹 AI 窗口")
     js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
-    check(
-        'const approved = review.phase === "derived" || (review.approved_ids || []).length > 0;' in js,
-        "用 phase/approved_ids 判「已确认」",
-        show,
-    )
-    check("const awaitingReview = review.awaiting || job.status === \"review\";" in js,
-          "「等确认」单独取 awaiting/status=review", show)
-    # 分支顺序：approved → (awaiting && 出图) → 生成中
-    order = []
-    for marker in (
-        "if (approved) {",
-        "} else if (awaitingReview && masterDone) {",
-        "} else if (masterTotal && masterDone < masterTotal) {",
-    ):
-        order.append(js.find(marker))
-    check(all(index > 0 for index in order), "三个分支都在", show)
-    check(order == sorted(order), f"分支顺序正确（approved 在前）：{order}", show)
-    check("基准图生成中 " in js, "生成中有独立文案（不再说已确认）", show)
-    check("state.masterShown = false;" in js, "没出图时会重置「已返图」标记", show)
-    check("const hasShot = (state.job?.tasks || []).some((t) => t.master" in js,
-          "开场白按「有没有基准图」分别说", show)
+    index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 
+    # 1) 生成后不再自动打开对话
+    check("startMasterChat" not in js, "已删除「生成即弹 AI 窗口」的 startMasterChat", show)
+    check("if(data.job?.review?.enabled) startMasterChat" not in js,
+          "createJob 里不再自动开对话", show)
+    check("只有需要改图时才打开对话框" in js, "注释写明「改图时才开对话」", show)
+
+    # 2) 画布审核条：标清款式 + 颜色
+    check('id="reviewBar"' in index, "画布上有基准图审核条 #reviewBar", show)
+    check("function styleLabel(task)" in js, "有「款式 · 颜色」标签函数", show)
+    check("task.garment_name || task.garment" in js, "卡片上取款式名", show)
+    check("task.color_name || task.color" in js, "卡片上取颜色名", show)
+
+    # 3) 每张单独确认 / 改图
+    check('data-approve="${esc(task.id)}"' in js, "每张基准图有「这张可以」按钮", show)
+    check('data-rework="${esc(task.id)}"' in js, "每张基准图有「改这张」按钮", show)
+    check("approveMaster(button, null, [button.dataset.approve])" in js,
+          "「这张可以」只确认这一张", show)
+    check("async function approveMaster(button, adopt, onlyTaskIds)" in js,
+          "approveMaster 支持指定任务", show)
+    check("openHarness(\"master\", [target.id], state.job.id)" in js,
+          "「改这张」只把这一张带进对话", show)
+    check("task.approved ? \"\" :" in js, "已确认的卡片收起按钮", show)
+
+    # 4) 对话不再自动返基准图（确认在画布）
+    check("chatMasterCard(" not in js, "对话不再自动返基准图卡片（画布接管）", show)
+    check("function masterWatch(" not in js, "已删除自动轮询返图的 masterWatch", show)
+    check("现在只改「" in js, "对话开场白点名「只改这一张」", show)
+
+    # 5) 三态判据仍在：卡片只对「没确认」的图给按钮，确认状态看 task.approved
+    check("const pending = masters.filter((t) => !t.approved);" in js,
+          "待确认按 task.approved 过滤（不是靠 awaiting）", show)
+    check("info.phase === \"derived\"" in js,
+          "改色进度只在 phase=derived 时显示", show)
+    service = (ROOT / "skillbridge" / "service.py").read_text(encoding="utf-8")
+    check("def review_payload(self, job: Job) -> dict:" in service,
+          "后端 review_payload 仍区分 awaiting / approved", show)
 
 async def scenario(show: bool) -> int:
     tmp = Path(tempfile.mkdtemp(prefix="master-chat-", dir=os.environ.get("PI_SCRATCH_DIR") or None))

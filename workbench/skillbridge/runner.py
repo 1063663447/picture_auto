@@ -158,7 +158,10 @@ class JobRunner:
         # 基准图审核闸门：先只出基准图，运营在对话框里确认/修改，确认后才按基准图改其余颜色。
         # phase=derived 表示「已经确认过，这一趟只跑派生色」，不再拦截。
         self.phase = str(params.get("phase") or "").strip().lower()
-        self.review_gate = bool(params.get("review_gate", False)) and self.shape_lock and self.phase != "derived"
+        # review_mode：这批开过基准审核闸门（派生阶段也认它，用来做「按张确认」的过滤）
+        self.review_mode = bool(params.get("review_gate", False)) and self.shape_lock
+        # review_gate：**这一趟**要不要在出完基准后停下来等确认
+        self.review_gate = self.review_mode and self.phase != "derived"
         self.negative = prompts.full_negative(self.skill, self.pattern_mode, subject=self.subject_override)
         # 多款式时每个款式有各自的袖口工艺（平口/螺纹），否定词必须按款取，
         # 不能共用第一款的：否则长袖 T 恤会拿到卫衣的否定、或者反过来
@@ -311,6 +314,22 @@ class JobRunner:
             self.job.params["subjects"] = {k: kinds.count(k) for k in subject_mod.KINDS}
         task.prompt = prompts.enforce_composition_rule(prompts.enforce_subject_rule(task.prompt, kind))
 
+    @staticmethod
+    def _master_index(colors) -> int:
+        """基准色选哪个：**白色优先**（浅底最容易看出袖长/领口/下摆/印花位置），没有白色用第一个。
+
+        客户口径（2026-11-11）：基准图统一先做白色。
+        """
+        for index, color in enumerate(colors or []):
+            label = str(getattr(color, "label", "") or "").strip().lower()
+            code = str(getattr(color, "code", "") or "").strip().upper()
+            name_zh = str(getattr(color, "name_zh", "") or "").strip()
+            if label in {"white", "off-white", "ivory", "cream"}:
+                return index
+            if code.startswith("WH") or name_zh in {"白色", "米白", "米白色"}:
+                return index
+        return 0
+
     def plan(self) -> None:
         sources = self._sources()
         if not sources:
@@ -341,18 +360,22 @@ class JobRunner:
                 # 版型锁定：同款同图的第一个颜色当基准，其余颜色以它为参考图只改色，
                 # 否则每色独立生成 → 袖长/衣宽/下摆每次都漂，客户一眼看出「不是同一件」
                 lock = self.shape_lock and len(colors) > 1
-                master_id = ""
-                for index, color in enumerate(colors):
+                master_index = self._master_index(colors) if lock else 0
+
+                def _task_id(color) -> str:
                     # 多款式时 id 里带上款式，避免「同图同色不同款」撞号
-                    task_id = (
+                    return (
                         f"{base}__{garment.slug}__{color.label}"
                         if self.multi_style
                         else f"{base}__{color.label}"
                     )
-                    is_master = lock and index == 0
-                    if lock and index == 0:
-                        master_id = task_id
-                    derive = lock and index > 0
+
+                # 先把基准 id 算准：白色可能不在第一位，排在它前面的颜色也要指向它
+                master_id = _task_id(colors[master_index]) if (lock and colors) else ""
+                for index, color in enumerate(colors):
+                    task_id = _task_id(color)
+                    is_master = lock and index == master_index
+                    derive = lock and not is_master
                     # 效果图是否真的会随请求发出去（接口要多图、该色有图）
                     want_effect = self.use_effect(color)
                     if derive:
@@ -406,8 +429,10 @@ class JobRunner:
         self.job.params["subject_policy"] = subject_mod.AUTO_POLICY
         self.job.total = len(tasks)
         if any(task.master_task for task in tasks):
+            base_labels = [t.color_name or t.color for t in tasks if t.master]
             self.job.add_log(
-                f"版型锁定：先出 {sum(1 for t in tasks if t.master)} 张基准色，"
+                f"版型锁定：先出 {sum(1 for t in tasks if t.master)} 张基准色"
+                f"（{('、'.join(base_labels)) or '白色优先'}），"
                 f"其余 {sum(1 for t in tasks if t.master_task)} 张按基准成品改色（同款各色版型一致）"
             )
         self._save(force=True)
@@ -548,6 +573,32 @@ class JobRunner:
             self._save(force=True)
             return
         # ② 其余颜色以基准成品为参考图，只改面料颜色
+        #    按张确认：只跑「基准已被确认」的那些派生色，其它继续等下一次确认
+        pending_masters = [
+            t for t in self.job.tasks if t.master and not t.approved
+        ]
+        if self.review_mode and pending_masters:
+            approved_ids = {t.id for t in self.job.tasks if t.master and t.approved}
+            runnable = [t for t in derived if t.master_task in approved_ids]
+            skipped = len(derived) - len(runnable)
+            if skipped:
+                self.job.add_log(
+                    f"还有 {skipped} 张派生色所属的基准图没确认，先不动它们"
+                )
+            await self._gather(runnable, self._execute_shape_task)
+            # 派生跑完但基准还没全部确认 → 回到「等确认」，不打包不结束
+            still_pending = [t for t in self.job.tasks if t.master and not t.approved]
+            if still_pending:
+                self.job.status = "review"
+                done = sum(1 for t in self.job.tasks if t.master and t.out)
+                self.job.stage = (
+                    f"已确认 {sum(1 for t in self.job.tasks if t.master and t.approved)}"
+                    f"/{sum(1 for t in self.job.tasks if t.master)} 张基准"
+                    f"（已出 {done} 张），其余等确认"
+                )
+                self._save(force=True)
+                return
+            return
         await self._gather(derived + plain, self._execute_shape_task)
 
     def _task_by_id(self, task_id: str) -> Task | None:
@@ -826,6 +877,25 @@ class JobRunner:
             self._negatives[key] = cached
         return cached
 
+    def _review_note(self) -> None:
+        """基准图一出图就把闸门状态更新成 review：让运营不必等全部基准跑完。"""
+        if not self.review_gate:
+            return
+        masters = [t for t in self.job.tasks if t.master]
+        ready = [t for t in masters if t.out and not t.approved]
+        if not ready:
+            return
+        pending = [t for t in masters if not t.out and t.status not in {"failed", "canceled"}]
+        self.job.status = "review"
+        if pending:
+            self.job.stage = (
+                f"基准图已出 {len([t for t in masters if t.out])}/{len(masters)} 张，"
+                "已出的可以先确认；其余还在生成"
+            )
+        else:
+            self.job.stage = "基准图已出，等你确认（确认后按这张改色）"
+        self._save(force=True)
+
     async def _execute_color_task(self, task: Task, *, source_override: Path | None = None) -> None:
         self._apply_task_subject(task)
         garment = self.garment_for_task(task)
@@ -947,6 +1017,9 @@ class JobRunner:
                         )
                 rel = self._store(task, data)
                 self._set_status(task, "done", out=rel, error=None, error_kind="", bytes=len(data))
+                # 基准图一出图就切到 review：运营不用等其它款/其它基准跑完
+                if task.master:
+                    self._review_note()
                 return
             except ProviderError as exc:
                 last_error = exc.message

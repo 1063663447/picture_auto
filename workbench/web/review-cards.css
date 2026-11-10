@@ -1,0 +1,21 @@
+/* 9.6.5 基准图确认卡片：标清「哪个款式 · 哪个颜色」，每张单独确认/改图 */
+#reviewBar .review-thumbs{gap:12px}
+#reviewBar .review-card{
+  display:flex;flex-direction:column;gap:6px;align-items:stretch;
+  padding:8px;border-radius:12px;background:rgba(255,255,255,.035);
+  border:1px solid rgba(184,176,204,.16);min-width:150px;max-width:190px}
+#reviewBar .review-card.approved{border-color:rgba(120,220,170,.4);background:rgba(70,200,150,.07)}
+#reviewBar .review-card img{
+  width:100%;height:150px;object-fit:contain;border-radius:9px;background:#fff;
+  border:1px solid rgba(255,255,255,.14);cursor:zoom-in}
+#reviewBar .review-card figcaption{display:flex;flex-direction:column;gap:1px;font-size:11px;line-height:1.35}
+#reviewBar .review-card figcaption b{color:#efeaff;font-weight:600}
+#reviewBar .review-card figcaption span{color:#a9a2c0}
+#reviewBar .review-card-acts{display:flex;gap:6px}
+#reviewBar .review-card-acts button{
+  flex:1;font-size:11px;padding:4px 6px;border-radius:8px;cursor:pointer;
+  border:1px solid rgba(150,126,255,.42);background:rgba(122,92,255,.18);color:#e9e4ff}
+#reviewBar .review-card-acts button[data-approve]{
+  border-color:rgba(120,220,170,.45);background:rgba(70,200,150,.18);color:#dcffe9}
+#reviewBar .review-card-acts button:hover{filter:brightness(1.15)}
+#reviewBar .review-card-acts button:disabled{opacity:.5;cursor:default}
