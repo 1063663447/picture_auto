@@ -32,7 +32,8 @@ def main()->None:
         assert not target.scheme and not target.netloc, f'External resource: {resource}'
         assert (WEB/target.path.lstrip('/')).is_file(), f'Missing asset: {resource}'
         if resource.endswith(('.js','.css')) or '?v=' in resource:
-            assert 'v=9.4.1' in resource, f'Unversioned script/style: {resource}'
+            # 只要求「带版本号」，具体版本号跟着发布走（每次发版都会统一 bump）
+            assert re.search(r'[?&]v=\d+\.\d+\.\d+', resource), f'Unversioned script/style: {resource}'
     assert all(word not in html+app+ui for word in ['FlowDemo','mock.js','catalog.js','demoScenario','demoReset','tone-01','prism-syntax-check'])
     assert 'window.fetch=' not in app+ui, 'Production must not replace fetch'
     assert 'thumb_small' in app and 'preview' in app, 'Thumbnail / preview mapping missing'

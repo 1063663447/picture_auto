@@ -16,3 +16,7 @@ __pycache__/
 Thumbs.db
 # 构建资产（embed python + wheel，共 23MB，可从旧包重新提取：tools/extract_portable_assets.py）
 scratch/
+# 便携包 staging（每次 130MB+，成品放 workbench/releases/ 且那里也已忽略）
+dist/
+# 提示词生成器的覆盖备份（--force 时产生）
+workbench/library/prompts/*.json.bak

@@ -102,9 +102,9 @@ workbench/
 │   ├── admin.html/admin.js  独立管理看板（SVG 曲线/柱状图）
 │   └── style.css / glass.css / aurora.css 旧基础与主题资源保留
 ├── library/                 款式库
-│   ├── styles.json          10 款式 / 49 色（含 fit 版型描述、effect 效果图字段）
+│   ├── styles.json          27 款式 / 121 色（含 fit 版型描述、kind 品类、effect 效果图字段）
 │   ├── refs/<slug>/<color>.jpg    颜色参考图（小色卡）
-│   └── effects/<slug>/<码>.jpg    官方效果图（1500×1500，49 张，导入而来）
+│   └── effects/<slug>/<码>.jpg    官方效果图（1500×1500，121 张，导入而来）
 ├── tools/                   50+ 个检查/运维脚本（见 §8）
 ├── data/                    **不进 git**：jobs/（每单一个目录）、drafts/、test/（验证产物）
 └── .skills/                 可选的 ui-ux skill（不参与生图）
@@ -132,9 +132,10 @@ workbench/
 ### 4.1 skill 是两层的
 - `apparel-style-recolor/SKILL.md`：**生图规范原文**（版型描述、提示词模板、负面词、打包规则），
   `skill.load_skill()` 用 `> 引用块` 解析出 `prompt_template` / `negative_prompt`
-- `workbench/library/styles.json`：**款式库叠加层**（10 个业务款式的代号、颜色、版型短语、袖型/袖口、fit、effect），
+- `workbench/library/styles.json`：**款式库叠加层**（27 个业务款式的代号、颜色、版型短语、袖型/袖口、kind 品类、fit、effect），
   `library.load_library()` 合并进 `skill.types`（同 slug 以 skill 为准）
-- 本工作台实际用的是「款式库」那 10 个款式；skill 自带的 3 个通用款（短袖/圆领卫衣/连帽卫衣）仍可用
+- 本工作台实际用的是「款式库」那 27 个款式；skill 自带的 3 个通用款（短袖/圆领卫衣/连帽卫衣）仍可用
+- 每个款式都有 `kind` 品类（`top` 上衣 / `vest` 背心 / `bottom` 下装）：背心没有袖子、短裤没有袖口，提示词里的袖长/袖口段落按品类整段替换，别再用上衣那套句子
 
 ### 4.2 提示词是「拼」出来的，不是一个字符串
 `prompts.build_single_pass()` 的顺序：skill 模板 → 袖长 → 袖口工艺 → 色值锚点 →
@@ -142,7 +143,7 @@ workbench/
 负面词 `full_negative()` 单独拼。**任何一段改动都会影响出图，改前先跑 `tools/check_*.py`。**
 
 ### 4.3 「原图 + 效果图」双参考（8.0 起）
-- 每个颜色都有一张官方效果图（`library/effects/<款式>/<色号>.jpg`，来自《墨西哥-服装款式代号表.xlsx》）
+- 每个颜色都有一张官方效果图（`library/effects/<款式>/<色号>.jpg`，来自《菲律宾-服装款式代号表.xlsx》）
 - 请求固定 `image[0]=原图/基准`、`image[1]=该色效果图`，提示词用 `EFFECT_CLAUSE` 讲清分工：
   **IMAGE 1 = 场景 + 印花（不可动资产）**，**IMAGE 2 = 版型 + 工艺 + 颜色（权威）**
 - **三个坑（都踩过，别再踩）**
@@ -285,7 +286,7 @@ workbench/
 | a6api 单张耗时 | 1 并发 22.4s；10 并发 22–25s（wall 39s）；30 并发 p50 33 / p95 39.6（wall 75s）；100 并发 p50 51 / p95 84 / max 130（wall 246s） |
 | 并发甜点 | 单批 **20–30 张**；再往上只是尾巴变长 |
 | 版型漂移（修前） | 同款 3 色轮廓相似度只有 0.3–0.6 |
-| 款式库 | 10 款式 / 49 色 / 49 张效果图（19MB） |
+| 款式库 | 27 款式 / 121 色 / 121 张效果图（约 40MB） |
 
 ---
 
@@ -333,7 +334,7 @@ python tools/make_shape_compare.py       # 生成版型 A/B 对照图
 
 ## 9. 已知限制 / 待办
 
-1. **效果图只覆盖 10 个款式**（款式表导入），skill 自带的通用款（短袖/圆领卫衣/连帽卫衣）没有效果图，
+1. **效果图覆盖 27 个款式**（款式表导入），skill 自带的通用款（短袖/圆领卫衣/连帽卫衣）没有效果图，
    走的是颜色参考图老路径。
 2. **`fit` 字段是人工按效果图填的**（`library/styles.json`），若某款描述不准，直接改这个词，
    提示词会立刻跟着变。理想做法是让模型读效果图自动生成版型描述。

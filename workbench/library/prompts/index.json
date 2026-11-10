@@ -2,94 +2,213 @@
   "note": "每个款式一套专属默认提示词；缺文件的款式回落到按属性拼装",
   "styles": [
     {
+      "slug": "01-cotton-tee",
+      "file": "01-cotton-tee.json",
+      "notes": "纯棉宽松短袖：哑光纯棉、落肩宽袖（已被 23 索罗娜短袖取代）",
+      "positive_chars": 3202,
+      "negative_chars": 590
+    },
+    {
       "slug": "03-crewneck-sweatshirt",
       "file": "03-crewneck-sweatshirt.json",
       "notes": "圆领卫衣：无帽、罗纹领口/袖口/下摆、抓绒",
-      "positive_chars": 2126,
+      "positive_chars": 2141,
       "negative_chars": 417
+    },
+    {
+      "slug": "04-milk-silk-tee",
+      "file": "04-milk-silk-tee.json",
+      "notes": "牛奶丝短袖：丝光垂坠、宽松落肩（面料观感要像牛奶丝，不是纯棉）",
+      "positive_chars": 3307,
+      "negative_chars": 598
+    },
+    {
+      "slug": "05-cropped-tee",
+      "file": "05-cropped-tee.json",
+      "notes": "露脐短袖：衣长只到腰线以上（已被 26 露脐索罗娜取代）",
+      "positive_chars": 3193,
+      "negative_chars": 597
     },
     {
       "slug": "06-hoodie",
       "file": "06-hoodie.json",
       "notes": "连帽卫衣：帽子+帽绳（绳与衣身同色系）、袋鼠兜、罗纹袖口下摆",
-      "positive_chars": 2811,
+      "positive_chars": 2826,
       "negative_chars": 693
     },
     {
       "slug": "07-washed-tee",
       "file": "07-washed-tee.json",
       "notes": "水洗T恤：oversize 落肩、水洗做旧面料、平口",
-      "positive_chars": 2895,
+      "positive_chars": 2910,
       "negative_chars": 522
+    },
+    {
+      "slug": "08-tank-top",
+      "file": "08-tank-top.json",
+      "notes": "背心：宽肩带高袖笼、深圆领、无袖、衣长偏短",
+      "positive_chars": 2843,
+      "negative_chars": 574
+    },
+    {
+      "slug": "09-kids-cotton-tee",
+      "file": "09-kids-cotton-tee.json",
+      "notes": "童装纯棉短袖：儿童哑光纯棉、落肩（已被 21 童装索罗娜取代）",
+      "positive_chars": 3218,
+      "negative_chars": 599
     },
     {
       "slug": "10-stretch-tee",
       "file": "10-stretch-tee.json",
       "notes": "弹力短袖：紧身弹力针织、贴身、平口",
-      "positive_chars": 2847,
+      "positive_chars": 2862,
       "negative_chars": 522
+    },
+    {
+      "slug": "11-kids-dolman-tee",
+      "file": "11-kids-dolman-tee.json",
+      "notes": "童装牛角袖：插肩双色（身子白、袖子+领口才是这个色）",
+      "positive_chars": 3781,
+      "negative_chars": 697
+    },
+    {
+      "slug": "12-curved-hem-tee",
+      "file": "12-curved-hem-tee.json",
+      "notes": "弧形短袖：下摆呈弧形（中间低两侧高）、宽领口",
+      "positive_chars": 3380,
+      "negative_chars": 578
+    },
+    {
+      "slug": "13-mens-tank",
+      "file": "13-mens-tank.json",
+      "notes": "男士背心：宽肩带、罗纹圆领、无袖宽松",
+      "positive_chars": 2692,
+      "negative_chars": 544
+    },
+    {
+      "slug": "14-dolman-tee",
+      "file": "14-dolman-tee.json",
+      "notes": "成人牛角袖：插肩双色（身子白、袖子+领口才是这个色）",
+      "positive_chars": 3785,
+      "negative_chars": 667
+    },
+    {
+      "slug": "15-mid-shorts",
+      "file": "15-mid-shorts.json",
+      "notes": "中短裤：松紧腰+抽绳、两个裤腿、及膝以上",
+      "positive_chars": 2801,
+      "negative_chars": 563
+    },
+    {
+      "slug": "16-sports-shorts",
+      "file": "16-sports-shorts.json",
+      "notes": "运动短裤：短裤腿、圆抽绳、侧缝与裤脚白色撞色滚边",
+      "positive_chars": 2953,
+      "negative_chars": 573
+    },
+    {
+      "slug": "17-kids-cropped-tee",
+      "file": "17-kids-cropped-tee.json",
+      "notes": "童装短款：衣长到腰线以上、儿童版型",
+      "positive_chars": 3125,
+      "negative_chars": 589
+    },
+    {
+      "slug": "18-halter-tank",
+      "file": "18-halter-tank.json",
+      "notes": "挂脖背心：绕颈挂脖、露肩背、无袖修身",
+      "positive_chars": 3012,
+      "negative_chars": 743
+    },
+    {
+      "slug": "19-u-neck-tee",
+      "file": "19-u-neck-tee.json",
+      "notes": "U领T：深宽 U 领、修身罗纹、短袖",
+      "positive_chars": 3304,
+      "negative_chars": 579
+    },
+    {
+      "slug": "20-distressed-tee",
+      "file": "20-distressed-tee.json",
+      "notes": "做旧T恤：酸洗做旧、颜色刻意不均、oversize",
+      "positive_chars": 3382,
+      "negative_chars": 591
     },
     {
       "slug": "21-kids-sorona-tee",
       "file": "21-kids-sorona-tee.json",
       "notes": "童装索罗娜：儿童宽松短袖、平口",
-      "positive_chars": 2849,
+      "positive_chars": 2864,
       "negative_chars": 522
     },
     {
       "slug": "23-sorona-tee",
       "file": "23-sorona-tee.json",
       "notes": "索罗娜短袖：宽松落肩、短袖、平口折边",
-      "positive_chars": 2853,
+      "positive_chars": 2868,
       "negative_chars": 522
     },
     {
       "slug": "24-long-sleeve",
       "file": "24-long-sleeve.json",
       "notes": "长袖成人：常规直筒、袖到腕、平口折边（无罗纹）",
-      "positive_chars": 2969,
+      "positive_chars": 2984,
       "negative_chars": 529
     },
     {
       "slug": "25-kids-long-sleeve",
       "file": "25-kids-long-sleeve.json",
       "notes": "长袖童装：儿童常规长袖、平口折边（无罗纹）",
-      "positive_chars": 2991,
+      "positive_chars": 3006,
       "negative_chars": 529
+    },
+    {
+      "slug": "26-cropped-sorona-tee",
+      "file": "26-cropped-sorona-tee.json",
+      "notes": "露脐索罗娜：方版露脐短款、宽短袖、罗纹圆领",
+      "positive_chars": 3347,
+      "negative_chars": 589
     },
     {
       "slug": "28-kids-sweatshirt",
       "file": "28-kids-sweatshirt.json",
       "notes": "卫衣童装：儿童圆领卫衣、罗纹袖口下摆、无帽",
-      "positive_chars": 2102,
+      "positive_chars": 2117,
       "negative_chars": 417
     },
     {
       "slug": "29-kids-washed-tee",
       "file": "29-kids-washed-tee.json",
       "notes": "水洗童装：儿童 oversize 水洗短袖、平口",
-      "positive_chars": 2845,
+      "positive_chars": 2860,
       "negative_chars": 522
+    },
+    {
+      "slug": "31-ink-wash-tee",
+      "file": "31-ink-wash-tee.json",
+      "notes": "水墨T：面料本身是水墨/大理石晕染纹理",
+      "positive_chars": 3688,
+      "negative_chars": 655
     },
     {
       "slug": "crewneck-sweatshirt",
       "file": "crewneck-sweatshirt.json",
       "notes": "",
-      "positive_chars": 2170,
+      "positive_chars": 2185,
       "negative_chars": 417
     },
     {
       "slug": "hoodie",
       "file": "hoodie.json",
       "notes": "",
-      "positive_chars": 2769,
+      "positive_chars": 2784,
       "negative_chars": 693
     },
     {
       "slug": "short-sleeve",
       "file": "short-sleeve.json",
       "notes": "",
-      "positive_chars": 2843,
+      "positive_chars": 2858,
       "negative_chars": 522
     }
   ]

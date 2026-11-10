@@ -339,8 +339,14 @@ def cuff_clause(garment: GarmentType, *, reference: bool = False) -> str:
     """按款式的袖口工艺给出构造约束；没有 cuff 信息时默认平口（T 恤更多、更怕画错）。
 
     ``reference=True``（带着效果图重塑版型）时不写"袖筒到边保持原宽度"，
-    否则紧身款的袖型会被这句话拉宽。
+    否则紧身款的袖型会被这句话拉宽。下装换成腰头/裤脚，背心换成袖笼/领口那一段。
     """
+    kind = getattr(garment, "kind", "")
+    sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    if kind == "bottom":
+        return CUFF_HEM_BOTTOM_CLAUSE
+    if kind == "vest" or sleeve == "none":
+        return CUFF_HEM_VEST_CLAUSE
     cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
     if cuff == "ribbed":
         return CUFF_RIBBED_CLAUSE
@@ -349,6 +355,18 @@ def cuff_clause(garment: GarmentType, *, reference: bool = False) -> str:
 
 def cuff_negative(garment: GarmentType) -> str:
     """袖口相关的否定词（只加跟该款式匹配的那一组）。"""
+    kind = getattr(garment, "kind", "")
+    sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    if kind == "bottom":
+        return (
+            "Do not add ribbed leg cuffs, do not add gathered or elasticated leg openings, and do "
+            "not change the shape of the leg hems this style has."
+        )
+    if kind == "vest" or sleeve == "none":
+        return (
+            "Do not add a rib-knit or elastic band to the armholes or the hem, do not gather or "
+            "cinch the armhole edge, and do not add a contrast trim to the armhole or hem."
+        )
     cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
     if cuff == "ribbed":
         return (
@@ -378,10 +396,52 @@ SLEEVE_SHORT_CLAUSE = (
     "or wrist-length sleeves, do not push or roll the sleeves up, and do not cover the forearm."
 )
 
+#: 背心 / 挂脖 / 无袖：**没有袖子**，所以肩线、袖口那些句子一句都不能留（模型会照着补袖子）。
+SLEEVE_NONE_CLAUSE = (
+    "SLEEVE LENGTH — NO SLEEVES AT ALL: this garment is sleeveless. The armholes are cut open and "
+    "finished with a narrow self-fabric binding or a turned-and-stitched edge, and the shoulder or "
+    "neck straps run straight from the front panel to the back panel over the shoulders. There is "
+    "no sleeve head, no cap sleeve, no short sleeve and no long sleeve anywhere. If the source "
+    "photo shows a T-shirt, sweatshirt or any sleeved top, cut the sleeves off completely and "
+    "rebuild the bodice with clean armholes and straps."
+)
+
+#: 下装（短裤）：整件衣服换成了裤子，袖长/袖口的句子全部不适用。
+LEG_SHORTS_CLAUSE = (
+    "GARMENT PART — SHORTS, NOT A TOP: the finished garment is a pair of shorts worn on the lower "
+    "body. It has a waistband at the top, a crotch, and TWO separate legs, each with its own leg "
+    "opening, ending above the knee. It has no sleeves, no neckline, no collar and no bodice. If "
+    "the source photo shows a T-shirt, sweatshirt, hoodie or any top, remove that entire top and "
+    "build the shorts in its place, keeping the printed artwork on the fabric where it still "
+    "makes sense. Do not return a T-shirt, a dress, long trousers or a skirt."
+)
+
+#: 短裤的下摆/腰头工艺（平口那套「袖口」措辞对裤子没有意义）。
+#: 注意：16 运动短裤本来就带白色撞色滚边，所以这里不能写成「没有撞色」这种绝对句。
+CUFF_HEM_BOTTOM_CLAUSE = (
+    "HEM & WAIST CONSTRUCTION — the top is a clean elasticated rib-knit waistband; each leg opening "
+    "ends in the hem finish this style actually has (a plain turned-and-stitched hem, or the contrast "
+    "piping the product shows). Keep the hem line clean and continuous around each leg, with no ribbed "
+    "leg cuff and no gathered leg opening, and keep any trim exactly where the reference puts it."
+)
+
+#: 背心（无袖）没有袖口，只有袖笼和领口：别让模型去找"袖子的边缘"。
+CUFF_HEM_VEST_CLAUSE = (
+    "ARMHOLE & HEM CONSTRUCTION — the armholes are finished with a narrow self-fabric binding (or a "
+    "turned-and-stitched edge where the photo shows one) that follows the armhole curve smoothly, and "
+    "the neckline edge is finished the same way this style shows. The bottom hem is a plain straight "
+    "self-fabric hem. There is NO sleeve opening to build, and no rib-knit band, elastic band or "
+    "gathered edge anywhere on the armhole or the hem."
+)
+
 
 def sleeve_clause(garment: GarmentType) -> str:
-    """按款式的袖长给出构造约束。"""
+    """按款式的袖长给出构造约束（背心/短裤单独一套，不能套上衣服的句子）。"""
+    if getattr(garment, "kind", "") == "bottom":
+        return LEG_SHORTS_CLAUSE
     sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    if sleeve == "none":
+        return SLEEVE_NONE_CLAUSE
     if sleeve == "long":
         return SLEEVE_LONG_CLAUSE
     return SLEEVE_SHORT_CLAUSE
@@ -389,7 +449,18 @@ def sleeve_clause(garment: GarmentType) -> str:
 
 def sleeve_negative(garment: GarmentType) -> str:
     """袖长否定词（跟 cuff 那组分开写，模型更容易守）。"""
+    if getattr(garment, "kind", "") == "bottom":
+        return (
+            "Do not turn the shorts into a T-shirt, a sweatshirt, a dress, long trousers or a "
+            "skirt; do not add a neckline, sleeves or a bodice; do not merge the two legs into one."
+        )
     sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    if sleeve == "none":
+        return (
+            "Do not add sleeves, cap sleeves, shoulder sleeves, short sleeves or long sleeves; do "
+            "not turn this sleeveless top into a T-shirt or a sweatshirt, and keep the armholes and "
+            "the straps exactly as this design has them."
+        )
     if sleeve == "long":
         return (
             "Do not produce short sleeves, half sleeves, three-quarter sleeves, rolled-up sleeves "
@@ -1296,13 +1367,30 @@ _HOOD_FREE_HINT = ("no hood", "not a hoodie", "no drawstring", "no kangaroo pock
 
 
 def garment_forbidden(garment: GarmentType) -> str:
-    """按款式给出「不许出现」的部件清单。卫衣类才允许帽兜/抽绳/罗纹。"""
+    """按款式给出「不许出现」的部件清单。卫衣类才允许帽兜/抽绳/罗纹。
+
+    背心（无袖）和短裤（下装）单独一套：对它们说「no long sleeves / no rib-knit cuffs」
+    这类上衣措辞等于没说到点上，真正要禁的是「给它加上袖子」「把它画成上衣」。
+    """
     phrase = str(getattr(garment, "phrase", "") or "").lower()
     slug = str(getattr(garment, "slug", "") or "").lower()
+    kind = str(getattr(garment, "kind", "") or "").strip().lower()
     is_hood = "hoodie" in phrase or "hoodie" in slug or "hood" in phrase.replace("no hood", "")
     cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
     sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
     items: list[str] = []
+    if kind == "bottom":
+        # 短裤的「不该出现」跟上衣完全不同：不许加上衣的部件，也不许变成一条长裤/裙子；
+        # 抽绳、松紧腰这些下装本来就有的东西**不能**列进来（15/16 都带抽绳）
+        return ", ".join(
+            [
+                "no sleeves",
+                "no neckline or collar",
+                "no bodice with a waist seam",
+                "no single skirt-like tube",
+                "no long trousers reaching the ankle",
+            ]
+        )
     if not is_hood:
         items += [
             "no hood",
@@ -1310,6 +1398,8 @@ def garment_forbidden(garment: GarmentType) -> str:
             "no kangaroo pocket",
             "no sweatshirt or fleece body",
         ]
+    if kind == "vest" or sleeve == "none":
+        return ", ".join(items + ["no sleeves", "no cap sleeves", "no shoulder sleeves"])
     if cuff != "ribbed":
         items += ["no rib-knit cuffs", "no rib-knit hem", "no elastic gathered cuff or hem"]
     if sleeve == "short":
@@ -1416,8 +1506,8 @@ CONVERT_TEMPLATE = (
     "CONVERT THE GARMENT TYPE (highest priority) — whatever garment the wearer has on in the source, "
     "the result must be exactly this garment: {phrase}. Rebuild it inside the scene instead of "
     "recolouring what is there: {strip}. The garment's fabric must {fabric_link} rather than the "
-    "source, and it must not gain {forbidden}. Only the printed artwork, the wearer, the scene and "
-    "any text overlays are preserved."
+    "source, and none of these may appear on it: {forbidden}. Only the printed artwork, the wearer, "
+    "the scene and any text overlays are preserved."
 )
 
 
@@ -1457,7 +1547,23 @@ def convert_clause(garment: GarmentType | None, *, reference_image: bool = True)
         return ""
     phrase = " ".join(str(getattr(garment, "phrase", "") or "").split()) or garment.slug
     cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
-    if cuff == "ribbed":
+    kind = str(getattr(garment, "kind", "") or "").strip().lower()
+    if kind == "bottom":
+        strip = (
+            "if the source shows a t-shirt, sweatshirt, hoodie, dress or any other top, remove that "
+            "top completely and build the shorts in its place: a waistband at the waist, a crotch and "
+            "two separate legs, each with its own opening, ending above the knee"
+        )
+        fabric = "lightweight knit with a clean elasticated waistband and the leg hems this style has"
+    elif kind == "vest" or str(getattr(garment, "sleeve", "") or "").strip().lower() == "none":
+        strip = (
+            "if the source shows a T-shirt, sweatshirt or any sleeved garment, cut the sleeves off "
+            "completely: rebuild the bodice sleeveless with clean armholes finished by a narrow "
+            "self-fabric binding, and keep only the straps this design has (shoulder straps or a "
+            "halter strap that fastens behind the neck)"
+        )
+        fabric = "soft stretch jersey with plain bound armholes and a plain hem"
+    elif cuff == "ribbed":
         strip = (
             "if the source shows a plain folded cuff or a straight plain hem, replace them with real "
             "1x1 rib-knit cuffs and a rib-knit hem band, slightly narrower than the sleeve and body"
@@ -1476,7 +1582,13 @@ def convert_clause(garment: GarmentType | None, *, reference_image: bool = True)
         phrase=phrase, strip=strip, fabric_link=fabric_link, forbidden=garment_forbidden(garment)
     )
     sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
-    if sleeve == "long":
+    if kind == "bottom":
+        text += (
+            " The result has two separate legs and one waistband, and no sleeves or neckline at all."
+        )
+    elif kind == "vest" or sleeve == "none":
+        text += " The result is sleeveless, with clean bound armholes and no sleeve heads."
+    elif sleeve == "long":
         text += " The sleeves must be full length, reaching the wrist."
     elif sleeve == "short":
         text += " The sleeves must be genuine short sleeves ending above the elbow."

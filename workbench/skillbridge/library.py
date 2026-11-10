@@ -19,11 +19,13 @@ from .style_prompts import load_style_prompt
 from .skill import (
     CUFF_PLAIN,
     CUFF_VALUES,
+    KIND_VALUES,
     SLEEVE_VALUES,
     ColorRef,
     GarmentType,
     Skill,
     infer_cuff,
+    infer_kind,
     infer_sleeve,
     style_key_from,
 )
@@ -143,10 +145,14 @@ def load_library(
         cuff = str(item.get("cuff") or "").strip().lower()
         if cuff not in CUFF_VALUES:
             cuff = infer_cuff(slug, aliases, phrase)
-        # 袖长：短袖 / 长袖（画错就「不是这件衣服」，跟着款式走）
+        # 袖长：短袖 / 长袖 / 无袖（画错就「不是这件衣服」，跟着款式走）
         sleeve = str(item.get("sleeve") or "").strip().lower()
         if sleeve not in SLEEVE_VALUES:
             sleeve = infer_sleeve(slug, aliases, phrase)
+        # 品类：上衣 / 背心 / 下装（袖口和下摆那几段是按上衣写的）
+        kind = str(item.get("kind") or "").strip().lower()
+        if kind not in KIND_VALUES:
+            kind = infer_kind(slug, aliases, phrase, sleeve)
         fixed = phrase_for_cuff(phrase, cuff)
         if fixed != " ".join(phrase.split()) and warnings is not None:
             warnings.append(
@@ -168,6 +174,7 @@ def load_library(
                 colors=colors,
                 cuff=cuff,
                 sleeve=sleeve,
+                kind=kind,
                 name_en=name_en,
                 fit=str(item.get("fit") or "").strip(),
                 style_positive=(style_prompt.positive if style_prompt else ""),

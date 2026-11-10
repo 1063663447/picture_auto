@@ -139,12 +139,12 @@ def main() -> int:
     check("2MB 限制", bench.skill.max_bytes == 2_000_000, str(bench.skill.max_bytes))
     check("解析无警告", not bench.skill.warnings, str(bench.skill.warnings))
 
-    print("\n[1.5] 款式库（墨西哥款式代号表）")
+    print("\n[1.5] 款式库（菲律宾款式代号表，27 款 121 色）")
     lib_bench = build_bench("library", library=True)
     lib_types = [s for s in lib_bench.skill.types if s[0].isdigit()]
-    check("叠加 10 个款式", len(lib_types) == 10, str(lib_types))
+    check("叠加 27 个款式", len(lib_types) == 27, str(lib_types))
     total_colors = sum(len(lib_bench.skill.types[s].colors) for s in lib_types)
-    check("共 49 个颜色", total_colors == 49, str(total_colors))
+    check("共 121 个颜色", total_colors == 121, str(total_colors))
     missing = [
         f"{slug}/{c.label}"
         for slug in lib_types
@@ -152,6 +152,15 @@ def main() -> int:
         if not c.path.is_file()
     ]
     check("每色都有参考图", not missing, str(missing[:4]))
+    missing_effect = [
+        f"{slug}/{c.label}"
+        for slug in lib_types
+        for c in lib_bench.skill.types[slug].colors
+        if c.effect is None or not c.effect.is_file()
+    ]
+    check("每色都有官方效果图", not missing_effect, str(missing_effect[:4]))
+    kinds = {lib_bench.skill.types[s].kind for s in lib_types}
+    check("品类覆盖上衣/背心/下装", kinds == {"top", "vest", "bottom"}, str(kinds))
     check(
         "版型短语非空",
         all(lib_bench.skill.types[s].phrase for s in lib_types),

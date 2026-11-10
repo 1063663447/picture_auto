@@ -497,7 +497,15 @@
   }
   // 袖口工艺标：平口 = T 恤折边，螺纹 = 卫衣罗纹（画错是硬伤，所以摆在款式标题上）
   function cuffTag(type) {
-    if (!type || !type.cuff_zh) return "";
+    if (!type) return "";
+    // 背心没有袖子、短裤没有袖口：这两类标「无袖 / 下装」，别再用平口/罗纹那套上衣说法
+    if (type.kind === "vest" || type.sleeve === "none") {
+      return ` <span class="cuff-tag plain" title="无袖款：袖笼是包边，没有任何袖子">无袖</span>`;
+    }
+    if (type.kind === "bottom") {
+      return ` <span class="cuff-tag plain" title="下装款：松紧腰 + 两条裤腿">下装</span>`;
+    }
+    if (!type.cuff_zh) return "";
     const plain = type.cuff === "plain";
     const tip = plain
       ? "袖口/下摆为平口折边（T 恤工艺），不是卫衣罗纹"
@@ -554,10 +562,14 @@
     const slugs=Object.keys(state.skill.types);
     box.innerHTML=state.styles.map((item,index)=>{
       const type=styleType(item.slug),colors=type?.colors||[],expanded=index===openStyle;
-      const options=slugs.map(slug=>{
+      // 27 个款式按品类分组（上衣 / 背心 / 下装），下拉菜单不再是三十条平铺
+      const groups=[["上衣",[]],["背心",[]],["下装",[]]];
+      slugs.forEach(slug=>{
         const t=styleType(slug),used=state.styles.some((s,i)=>i!==index&&s.slug===slug);
-        return `<option value="${esc(slug)}"${slug===item.slug?" selected":""}${used?" disabled":""}>${esc(t.display_name)} · ${t.colors.length} 色</option>`;
-      }).join("");
+        const group=groups.find(g=>g[0]===(t.kind_zh||"上衣"))||groups[0];
+        group[1].push(`<option value="${esc(slug)}"${slug===item.slug?" selected":""}${used?" disabled":""}>${esc(t.display_name)} · ${t.colors.length} 色</option>`);
+      });
+      const options=groups.filter(g=>g[1].length).map(g=>`<optgroup label="${g[0]}（${g[1].length}）">${g[1].join("")}</optgroup>`).join("");
       const chips=colors.map(color=>`<button class="chip${item.colors.has(color.label)?" sel":""}" type="button" data-color="${esc(color.label)}" title="${esc(color.name_zh)} ${esc(color.hex)}${color.effect?" · 有官方效果参考":""}" aria-pressed="${item.colors.has(color.label)}"><span class="dot" style="background:${esc(color.hex)}"></span>${esc(color.name_zh)}</button>`).join("");
       return `<div class="style-block${expanded?" expanded":""}" data-index="${index}">
         <button class="style-summary" type="button" data-toggle-style="${index}" aria-expanded="${expanded}" aria-controls="style-editor-${index}"><span class="style-mini style-number">${index+1}</span><span class="style-summary-name"><b>${esc(type?.display_name||item.slug)}</b><span class="mini-swatches">${miniSwatches(item)}</span></span><span class="style-count">${item.colors.size} 色</span><span class="chevron" aria-hidden="true">⌄</span></button>

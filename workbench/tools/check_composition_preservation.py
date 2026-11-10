@@ -30,6 +30,7 @@ from skillbridge.job import Job
 from skillbridge.providers.base import EditRequest, Provider
 from skillbridge.runner import JobRunner
 from skillbridge.skill import ColorRef, GarmentType, Skill
+from skillbridge.swatch import swatch_path
 
 
 @contextmanager
@@ -300,6 +301,12 @@ class CompositionChecks(unittest.TestCase):
         self.assertNotIn("IMAGE 3", provider.requests[0].prompt)
         self.assertEqual(task.attempts, 1)
 
+    def expected_color_ref(self, runner) -> Path:
+        """派生色实际发的是「面料色卡」（9.4.8 起：只给颜色，不给衣服形状）。"""
+        made = swatch_path(self.effect, runner.root / "work" / "color-swatches")
+        self.assertIsNotNone(made, "面料色卡应当生成成功")
+        return made
+
     def test_master_derivation_adds_original_as_image3_only_when_supported(self):
         for capacity in (3, 2, 1):
             runner, provider = self.make_runner(capacity=capacity)
@@ -311,7 +318,7 @@ class CompositionChecks(unittest.TestCase):
             request = provider.requests[1]
             expected = [runner.root / master.out]
             if capacity > 1:
-                expected.append(self.effect)
+                expected.append(self.expected_color_ref(runner))
             if capacity > 2:
                 expected.append(source.resolve())
                 self.assertIn("IMAGE 3 is the customer's ORIGINAL UPLOAD", request.prompt)
@@ -341,7 +348,11 @@ class CompositionChecks(unittest.TestCase):
         task = runner.job.tasks[0]
         source = runner.root / task.source
         asyncio.run(runner._execute_color_task(task, source_override=source))
-        self.assertEqual(provider.requests[0].images, [source, self.effect])
+        # 有 source_override（派生色）→ 第 2 张是面料色卡；只要不是「原图发了两次」就对
+        images = provider.requests[0].images
+        self.assertEqual(images[0], source)
+        self.assertEqual(len(images), 2)
+        self.assertEqual(images[1], self.expected_color_ref(runner))
         self.assertNotIn("ORIGINAL UPLOAD REFERENCE", provider.requests[0].prompt)
         self.assertEqual(len(provider.requests), 1)
 
@@ -366,7 +377,7 @@ class CompositionChecks(unittest.TestCase):
             for request, payload in zip(provider.requests[1:], provider.payloads[1:]):
                 self.assertEqual(len(request.images), capacity)
                 if capacity > 1:
-                    self.assertEqual(request.images[1], self.effect)
+                    self.assertEqual(request.images[1], self.expected_color_ref(runner))
                 if capacity > 2:
                     self.assertEqual(request.images[2], original.resolve())
                     self.assertEqual(payload[2], before)

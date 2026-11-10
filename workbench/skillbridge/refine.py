@@ -95,7 +95,8 @@ def _sanitize_brief(text: str) -> str:
     改图只附 1 张参考图，如果照抄上一轮的「CONVERT / REFERENCE ROLES — IMAGE 2 是官方效果图…」，
     模型会以为还挂着第二张图，反而更乱。这里：
     1. 去掉款式转换段（从标记到句末）；
-    2. 把 IMAGE 1/2 的说法改成「源图/参考图」。
+    2. 去掉上一轮的效果图/色卡/版型锁「角色合同」（它们在改图里会被重新定义）；
+    3. 把 IMAGE 1/2 的说法改成「源图/参考图」。
     """
     out = " ".join(str(text or "").split())
     marker = "CONVERT THE GARMENT TYPE"
@@ -107,6 +108,9 @@ def _sanitize_brief(text: str) -> str:
             out = out[:start].strip()
             break
         out = (out[:start] + " " + out[end + len(end_marker):]).strip()
+    # 上一轮「原图 + 官方效果图」的双图角色说明必须撤掉，否则改图提示词会再宣布一次
+    # 「第 2 张是官方产品图」，而改图附的其实是当前成品 / 原始上传。
+    out = prompts._strip_production_reference_roles(out)
     out = out.replace("IMAGE 2", "the reference photo").replace("IMAGE 1", "the source photo")
     # 上一轮如果是「只有衣服」批次，brief 里会带着「把人物整个去掉」的段落 ——
     # 抄进真人改图里就自相矛盾（"保留同一个人" vs "REMOVE the original wearer"），必须删掉

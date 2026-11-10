@@ -33,28 +33,53 @@ EXPECTED_LONG_SLEEVE = {
 }
 
 EXPECTED_PLAIN = {
-    "23-sorona-tee",
+    "01-cotton-tee",
+    "04-milk-silk-tee",
+    "05-cropped-tee",
     "07-washed-tee",
+    "09-kids-cotton-tee",
     "10-stretch-tee",
+    "11-kids-dolman-tee",
+    "12-curved-hem-tee",
+    "14-dolman-tee",
+    "17-kids-cropped-tee",
+    "19-u-neck-tee",
+    "20-distressed-tee",
     "21-kids-sorona-tee",
+    "23-sorona-tee",
     "24-long-sleeve",
     "25-kids-long-sleeve",
+    "26-cropped-sorona-tee",
     "29-kids-washed-tee",
+    "31-ink-wash-tee",
     "short-sleeve",
 }
+#: 无袖（背心/挂脖）：没有袖口，只有袖笼 + 领口，提示词换成袖笼那一段
+EXPECTED_VEST = {"08-tank-top", "13-mens-tank", "18-halter-tank"}
+#: 下装（短裤）：整件衣服换成了裤子，腰头 + 两个裤腿
+EXPECTED_BOTTOM = {"15-mid-shorts", "16-sports-shorts"}
 
 LONG_MARK = "FULL-LENGTH LONG SLEEVES"
 SHORT_MARK = "GENUINE SHORT SLEEVES"
+NONE_MARK = "NO SLEEVES AT ALL"
+LEG_MARK = "SHORTS, NOT A TOP"
 LONG_NEG = "the sleeves must reach the wrists"
 SHORT_NEG = "the sleeves must end above the elbow"
+NONE_NEG = "Do not add sleeves"
+LEG_NEG = "Do not turn the shorts into a T-shirt"
 
 PLAIN_MARK = "PLAIN, FLAT"
 PLAIN_NEG = "Do not add ribbed cuffs"
 RIBBED_MARK = "rib-knit (1x1 rib)"
 RIBBED_NEG = "Do not replace the ribbed cuffs"
+VEST_HEM_MARK = "ARMHOLE & HEM CONSTRUCTION"
+VEST_HEM_NEG = "Do not add a rib-knit or elastic band to the armholes"
+BOTTOM_HEM_MARK = "HEM & WAIST CONSTRUCTION"
+BOTTOM_HEM_NEG = "Do not add ribbed leg cuffs"
 
 #: 2026-11-10：卫衣 promo 图改成长袖童装时，袖口还是罗纹 —— 现在提示词第一段是「款式转换」，
 #: 平口款必须写明去掉罗纹收口，罗纹款反过来要求补上。
+#: 2026-11-11（菲律宾款式表）：背心没有袖子、短裤没有袖口，转换段也换成对应措辞。
 CONVERT_MARK = "CONVERT THE GARMENT TYPE"
 
 
@@ -64,7 +89,12 @@ def check_convert(garment, prompt: str, style_only: str, show: bool) -> None:
     check(style_only.find(CONVERT_MARK) >= 0,
           f"{garment.slug}：两段式第一阶段也有转换段", show)
     low = prompt.lower()
-    if garment.cuff == CUFF_RIBBED:
+    kind = getattr(garment, "kind", "")
+    if kind == "bottom":
+        check("remove that top completely" in low, f"{garment.slug}：下装要求把上衣整件换掉", show)
+    elif kind == "vest" or str(getattr(garment, "sleeve", "")) == "none":
+        check("cut the sleeves off completely" in low, f"{garment.slug}：背心要求把袖子去掉", show)
+    elif garment.cuff == CUFF_RIBBED:
         check("rib-knit cuffs" in low and "remove all of that" not in low,
               f"{garment.slug}：罗纹款要求补罗纹带", show)
     else:
@@ -93,6 +123,8 @@ def main() -> int:
 
     for slug, garment in sorted(types.items()):
         cuff = garment.cuff
+        kind = getattr(garment, "kind", "top")
+        sleeve = getattr(garment, "sleeve", "")
         check(cuff in CUFF_VALUES, f"{slug}：cuff 取值合法（{cuff}）", show)
         prompt_single = prompts.build_single_pass(skill, garment, garment.colors[0], subject="person")
         style_only = prompts.build_style_only(garment, subject="person", effect=True)
@@ -101,6 +133,10 @@ def main() -> int:
             check(cuff == CUFF_RIBBED, f"{slug}：卫衣系按螺纹处理", show)
         if slug in EXPECTED_PLAIN:
             check(cuff == CUFF_PLAIN, f"{slug}：T 恤系按平口处理", show)
+        if slug in EXPECTED_VEST:
+            check(kind == "vest", f"{slug}：背心按无袖（vest）处理", show)
+        if slug in EXPECTED_BOTTOM:
+            check(kind == "bottom", f"{slug}：短裤按下装（bottom）处理", show)
 
         color = garment.colors[0] if garment.colors else None
         if color is None:
@@ -108,7 +144,17 @@ def main() -> int:
         p = prompts.preview(skill, garment, color)
         lower = garment.phrase.lower()
 
-        if cuff == CUFF_RIBBED:
+        if kind == "bottom":
+            check("ribbed cuff" not in lower, f"{slug}：版型描述不提袖口", show)
+            check(BOTTOM_HEM_MARK in p["single_pass"], f"{slug}：single_pass 有腰头/裤脚约束", show)
+            check(BOTTOM_HEM_MARK in p["style_only"], f"{slug}：style_only 有腰头/裤脚约束", show)
+            check(BOTTOM_HEM_NEG in p["negative"], f"{slug}：否定词禁止罗纹裤脚", show)
+        elif kind == "vest" or sleeve == "none":
+            check("ribbed cuff" not in lower, f"{slug}：版型描述不提袖口", show)
+            check(VEST_HEM_MARK in p["single_pass"], f"{slug}：single_pass 有袖笼/下摆约束", show)
+            check(VEST_HEM_MARK in p["style_only"], f"{slug}：style_only 有袖笼/下摆约束", show)
+            check(VEST_HEM_NEG in p["negative"], f"{slug}：否定词禁止给袖笼加罗纹", show)
+        elif cuff == CUFF_RIBBED:
             check("ribbed" in lower, f"{slug}：版型描述写明 ribbed", show)
             check(RIBBED_MARK in p["single_pass"], f"{slug}：single_pass 有螺纹约束", show)
             check(RIBBED_MARK in p["style_only"], f"{slug}：style_only 有螺纹约束", show)
@@ -127,14 +173,24 @@ def main() -> int:
                 show,
             )
 
-        # 袖长：长袖款必须写长袖、短袖款必须写短袖，否则「短袖跑进长袖分类」
-        sleeve = getattr(garment, "sleeve", "")
-        check(sleeve in ("long", "short"), f"{slug}：sleeve 取值合法（{sleeve}）", show)
+        # 袖长：长袖款必须写长袖、短袖款必须写短袖，背心/短裤必须写「没有袖子」
+        if kind == "top":
+            check(sleeve in ("long", "short"), f"{slug}：sleeve 取值合法（{sleeve}）", show)
+        else:
+            check(sleeve == "none", f"{slug}：无袖/下装 sleeve 必须是 none（{sleeve}）", show)
         if slug in EXPECTED_LONG_SLEEVE:
             check(sleeve == "long", f"{slug}：按长袖处理", show)
         elif slug in EXPECTED_PLAIN:
             check(sleeve == "short", f"{slug}：按短袖处理", show)
-        if sleeve == "long":
+        if kind == "bottom":
+            check(LEG_MARK in p["single_pass"], f"{slug}：single_pass 写明是短裤不是上衣", show)
+            check(LEG_MARK in p["style_only"], f"{slug}：style_only 写明是短裤不是上衣", show)
+            check(LEG_NEG in p["negative"], f"{slug}：否定词禁止变回上衣", show)
+        elif kind == "vest" or sleeve == "none":
+            check(NONE_MARK in p["single_pass"], f"{slug}：single_pass 写明没有袖子", show)
+            check(NONE_MARK in p["style_only"], f"{slug}：style_only 写明没有袖子", show)
+            check(NONE_NEG in p["negative"], f"{slug}：否定词禁止加袖子", show)
+        elif sleeve == "long":
             check(LONG_MARK in p["single_pass"], f"{slug}：single_pass 有长袖子句", show)
             check(LONG_MARK in p["style_only"], f"{slug}：style_only 有长袖子句", show)
             check(LONG_NEG in p["negative"], f"{slug}：否定词禁止短袖", show)

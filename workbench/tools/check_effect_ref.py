@@ -150,12 +150,14 @@ def main() -> int:
     check(ROLES in task.prompt, "任务提示词带角色说明", show)
     asyncio.run(runner.run())
     check(len(provider.requests) == 1, "发出 1 次请求", show)
-    if provider.requests:
+    black = garment.color("black")
+    black_effect = black.effect if black is not None else None
+    if provider.requests and black_effect is not None:
         images = provider.requests[0].images
         check(len(images) == 2, f"请求带 2 张图（实际 {len(images)}）", show)
         if len(images) == 2:
             check(Path(images[0]).name == "item-01.png", "第 1 张是客户原图", show)
-            check(Path(images[1]).name == first.effect.name, "第 2 张是效果图", show)
+            check(Path(images[1]).name == black_effect.name, "第 2 张是效果图", show)
             check(Path(images[1]).parent.name == "23-sorona-tee", "第 2 张来自 effects/<款式>/", show)
 
     if provider.requests:

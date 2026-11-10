@@ -98,20 +98,45 @@ COLOR_CODES: dict[str, str] = {
 }
 
 
-#: 袖长：short（短袖 T 恤）/ long（长袖 T 恤、卫衣、帽衫）
+#: 袖长：short（短袖 T 恤）/ long（长袖 T 恤、卫衣、帽衫）/ none（背心、无袖、短裤）
 SLEEVE_SHORT = "short"
 SLEEVE_LONG = "long"
-SLEEVE_VALUES = (SLEEVE_SHORT, SLEEVE_LONG)
-SLEEVE_ZH = {SLEEVE_SHORT: "短袖", SLEEVE_LONG: "长袖"}
+SLEEVE_NONE = "none"
+SLEEVE_VALUES = (SLEEVE_SHORT, SLEEVE_LONG, SLEEVE_NONE)
+SLEEVE_ZH = {SLEEVE_SHORT: "短袖", SLEEVE_LONG: "长袖", SLEEVE_NONE: "无袖"}
 LONG_SLEEVE_HINTS = ("long-sleeve", "long sleeve", "sweatshirt", "hoodie", "卫衣", "帽衫", "长袖")
+SLEEVELESS_HINTS = ("背心", "挂脖", "无袖", "tank top", "tank", "halter", "sleeveless", "camisole")
+
+#: 品类。提示词里「袖长 / 袖口 / 下摆」那几段是按**上衣**写的：
+#: 背心和短裤直接套上去就自相矛盾（背心没有袖口，短裤没有袖子），所以款式必须交代品类。
+KIND_TOP = "top"
+KIND_VEST = "vest"
+KIND_BOTTOM = "bottom"
+KIND_VALUES = (KIND_TOP, KIND_VEST, KIND_BOTTOM)
+KIND_ZH = {KIND_TOP: "上衣", KIND_VEST: "背心", KIND_BOTTOM: "下装"}
+BOTTOM_HINTS = ("短裤", "长裤", "裤", "shorts", "trousers", "pants")
 
 
 def infer_sleeve(slug: str, aliases: Iterable[str] | None = None, phrase: str = "") -> str:
-    """推断袖长：描述/款式名里有长袖、卫衣、帽衫 → 长袖；其余按短袖。"""
+    """推断袖长：背心/挂脖 → 无袖；长袖、卫衣、帽衫 → 长袖；其余按短袖。"""
     text = " ".join([str(slug or ""), *(str(a) for a in (aliases or [])), str(phrase or "")]).lower()
+    if any(hint in text for hint in SLEEVELESS_HINTS):
+        return SLEEVE_NONE
     if any(hint in text for hint in LONG_SLEEVE_HINTS):
         return SLEEVE_LONG
     return SLEEVE_SHORT
+
+
+def infer_kind(
+    slug: str, aliases: Iterable[str] | None = None, phrase: str = "", sleeve: str = ""
+) -> str:
+    """推断品类：短裤/长裤 → 下装；背心/挂脖/无袖 → 背心；其余按上衣。"""
+    text = " ".join([str(slug or ""), *(str(a) for a in (aliases or [])), str(phrase or "")]).lower()
+    if any(hint in text for hint in BOTTOM_HINTS):
+        return KIND_BOTTOM
+    if str(sleeve or "").strip().lower() == SLEEVE_NONE:
+        return KIND_VEST
+    return KIND_TOP
 
 
 def style_key_from(style_code: str, aliases: Iterable[str] | None = None) -> str:
@@ -188,8 +213,10 @@ class GarmentType:
     colors: list[ColorRef] = field(default_factory=list)
     #: "plain"（平口折边，T 恤）/ "ribbed"（罗纹，卫衣）
     cuff: str = CUFF_PLAIN
-    #: "short"（短袖 T 恤）/ "long"（长袖 T 恤、卫衣、帽衫）
+    #: "short"（短袖 T 恤）/ "long"（长袖 T 恤、卫衣、帽衫）/ "none"（背心、无袖、短裤）
     sleeve: str = SLEEVE_SHORT
+    #: "top"（上衣）/ "vest"（背心无袖）/ "bottom"（短裤等下装）
+    kind: str = KIND_TOP
     #: 款式英文代号，形如 `24CXCR`（= 代号 24 + 字母 CXCR，来自款式表），成品文件名/文件夹用它
     name_en: str = ""
     #: 版型描述（照着效果图写：紧身/常规/宽松、肩线、袖型、下摆），带效果图时写进提示词
@@ -202,6 +229,18 @@ class GarmentType:
     @property
     def sleeve_zh(self) -> str:
         return SLEEVE_ZH.get(self.sleeve, SLEEVE_ZH[SLEEVE_SHORT])
+
+    @property
+    def kind_zh(self) -> str:
+        return KIND_ZH.get(self.kind, KIND_ZH[KIND_TOP])
+
+    @property
+    def is_bottom(self) -> bool:
+        return self.kind == KIND_BOTTOM
+
+    @property
+    def is_sleeveless(self) -> bool:
+        return self.kind == KIND_VEST or self.sleeve == SLEEVE_NONE
 
     @property
     def file_key(self) -> str:
@@ -262,6 +301,8 @@ class GarmentType:
             "cuff_zh": self.cuff_zh,
             "sleeve": self.sleeve,
             "sleeve_zh": self.sleeve_zh,
+            "kind": self.kind,
+            "kind_zh": self.kind_zh,
             "batch_name": self.batch_name,
             "colors": [c.as_dict() for c in self.colors],
         }
