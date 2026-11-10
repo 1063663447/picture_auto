@@ -1194,12 +1194,8 @@ def build_single_pass(
 
     want_effect = has_effect(color) if effect is None else bool(effect)
     parts = [
-        convert_clause(garment),
-        drawstring_clause(garment),
+        style_positive(garment, reference=want_effect),
         prompt,
-        garment_lock(garment),
-        sleeve_clause(garment),
-        cuff_clause(garment, reference=want_effect),
         color_hint(color).strip(),
     ]
     effect_text = effect_clause(color, effect, getattr(garment, "fit", ""))
@@ -1239,12 +1235,9 @@ def build_single_pass(
 def build_style_only(garment: GarmentType, *, subject: str = "", effect: bool = False) -> str:
     base = STYLE_ONLY_TEMPLATE.replace(PRESERVE_CLAUSE, preserve_clause(subject))
     return enforce_composition_rule(enforce_subject_rule(tidy_articles(
-        convert_clause(garment)
+        style_positive(garment, reference=effect)
         + " "
         + base.format(phrase=garment.phrase)
-        + " " + sleeve_clause(garment)
-        + " " + cuff_clause(garment, reference=effect)
-        + " " + drawstring_clause(garment)
         + (" " + EFFECT_CLAUSE if effect else "")
     ), subject))
 
@@ -1275,12 +1268,7 @@ def build_recolor_only(
         )
     if garment is not None:
         # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长/把帽绳画串：把这几条再钉一次
-        base = (
-            base
-            + " " + sleeve_clause(garment)
-            + " " + cuff_clause(garment, reference=want_effect)
-            + " " + drawstring_clause(garment)
-        )
+        base = base + " " + style_positive(garment, reference=want_effect)
     effect_text = effect_clause(color, effect, getattr(garment, "fit", "") if garment else "")
     if effect_text:
         base = base + " " + effect_text
@@ -1369,6 +1357,46 @@ def drawstring_negative(garment: GarmentType | None) -> str:
         "white or silver cords on a dark hoodie, do not put charcoal cords on a light hoodie, do not "
         "borrow the cord colour of another colourway, do not make the cords glossy or metallic, and "
         "do not leave the cords uncoloured while the garment is recoloured."
+    )
+
+
+#: ---------------------------------------------------------------------------
+#: 款式级提示词：每个款式一套专属默认（library/prompts/<slug>.json）
+#:   `garment.style_positive` / `garment.style_negative` 有值就用它，
+#:   没有就回落到「按属性拼装」（convert + 款式锁 + 袖长 + 袖口 + 帽绳）。
+#: ---------------------------------------------------------------------------
+def style_positive(garment: GarmentType | None, *, reference: bool = True) -> str:
+    """这个款式的「正向核心段」：怎么拆掉源图特征、怎么建目标款式。"""
+    if garment is None:
+        return ""
+    core = " ".join(str(getattr(garment, "style_positive", "") or "").split())
+    if core:
+        return core
+    return " ".join(
+        part for part in (
+            convert_clause(garment),
+            garment_lock(garment),
+            sleeve_clause(garment),
+            cuff_clause(garment, reference=reference),
+            drawstring_clause(garment),
+        ) if part
+    )
+
+
+def style_negative(garment: GarmentType | None) -> str:
+    """这个款式专属的否定词（没有专属文件时按属性拼）。"""
+    if garment is None:
+        return ""
+    core = " ".join(str(getattr(garment, "style_negative", "") or "").split())
+    if core:
+        return core
+    return " ".join(
+        part for part in (
+            sleeve_negative(garment),
+            cuff_negative(garment),
+            garment_negative(garment),
+            drawstring_negative(garment),
+        ) if part
     )
 
 
@@ -1483,13 +1511,7 @@ def build_master_recolor(
         color_name=color.name_zh, color_label=color.label, color_hex=color.hex
     )
     if garment is not None:
-        base = (
-            base
-            + " " + garment_lock(garment)
-            + " " + sleeve_clause(garment)
-            + " " + cuff_clause(garment, reference=want_effect)
-            + " " + drawstring_clause(garment)
-        )
+        base = base + " " + style_positive(garment, reference=want_effect)
     if swatch:
         # 派生色改发面料色卡：形状只能看基准，色卡里没有任何衣服形状
         roles = SWATCH_CLAUSE
@@ -1520,13 +1542,9 @@ def full_negative(
     if mode == "preserve":
         extra += " " + NEGATIVE_ARTWORK_TOPOLOGY
     if garment is not None:
-        extra = extra + " " + sleeve_negative(garment) + " " + cuff_negative(garment)
-        hood_negative = garment_negative(garment)
-        if hood_negative:
-            extra = extra + " " + hood_negative
-        cords_negative = drawstring_negative(garment)
-        if cords_negative:
-            extra = extra + " " + cords_negative
+        style_neg = style_negative(garment)
+        if style_neg:
+            extra = extra + " " + style_neg
     return enforce_subject_negative((base + " " + extra).strip(), subject)
 
 

@@ -1,0 +1,96 @@
+{
+  "note": "每个款式一套专属默认提示词；缺文件的款式回落到按属性拼装",
+  "styles": [
+    {
+      "slug": "03-crewneck-sweatshirt",
+      "file": "03-crewneck-sweatshirt.json",
+      "notes": "圆领卫衣：无帽、罗纹领口/袖口/下摆、抓绒",
+      "positive_chars": 2126,
+      "negative_chars": 417
+    },
+    {
+      "slug": "06-hoodie",
+      "file": "06-hoodie.json",
+      "notes": "连帽卫衣：帽子+帽绳（绳与衣身同色系）、袋鼠兜、罗纹袖口下摆",
+      "positive_chars": 2811,
+      "negative_chars": 693
+    },
+    {
+      "slug": "07-washed-tee",
+      "file": "07-washed-tee.json",
+      "notes": "水洗T恤：oversize 落肩、水洗做旧面料、平口",
+      "positive_chars": 2895,
+      "negative_chars": 522
+    },
+    {
+      "slug": "10-stretch-tee",
+      "file": "10-stretch-tee.json",
+      "notes": "弹力短袖：紧身弹力针织、贴身、平口",
+      "positive_chars": 2847,
+      "negative_chars": 522
+    },
+    {
+      "slug": "21-kids-sorona-tee",
+      "file": "21-kids-sorona-tee.json",
+      "notes": "童装索罗娜：儿童宽松短袖、平口",
+      "positive_chars": 2849,
+      "negative_chars": 522
+    },
+    {
+      "slug": "23-sorona-tee",
+      "file": "23-sorona-tee.json",
+      "notes": "索罗娜短袖：宽松落肩、短袖、平口折边",
+      "positive_chars": 2853,
+      "negative_chars": 522
+    },
+    {
+      "slug": "24-long-sleeve",
+      "file": "24-long-sleeve.json",
+      "notes": "长袖成人：常规直筒、袖到腕、平口折边（无罗纹）",
+      "positive_chars": 2969,
+      "negative_chars": 529
+    },
+    {
+      "slug": "25-kids-long-sleeve",
+      "file": "25-kids-long-sleeve.json",
+      "notes": "长袖童装：儿童常规长袖、平口折边（无罗纹）",
+      "positive_chars": 2991,
+      "negative_chars": 529
+    },
+    {
+      "slug": "28-kids-sweatshirt",
+      "file": "28-kids-sweatshirt.json",
+      "notes": "卫衣童装：儿童圆领卫衣、罗纹袖口下摆、无帽",
+      "positive_chars": 2102,
+      "negative_chars": 417
+    },
+    {
+      "slug": "29-kids-washed-tee",
+      "file": "29-kids-washed-tee.json",
+      "notes": "水洗童装：儿童 oversize 水洗短袖、平口",
+      "positive_chars": 2845,
+      "negative_chars": 522
+    },
+    {
+      "slug": "crewneck-sweatshirt",
+      "file": "crewneck-sweatshirt.json",
+      "notes": "",
+      "positive_chars": 2170,
+      "negative_chars": 417
+    },
+    {
+      "slug": "hoodie",
+      "file": "hoodie.json",
+      "notes": "",
+      "positive_chars": 2769,
+      "negative_chars": 693
+    },
+    {
+      "slug": "short-sleeve",
+      "file": "short-sleeve.json",
+      "notes": "",
+      "positive_chars": 2843,
+      "negative_chars": 522
+    }
+  ]
+}

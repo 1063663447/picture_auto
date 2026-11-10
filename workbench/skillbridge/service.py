@@ -140,6 +140,13 @@ class Workbench:
         self._load_existing()
 
     # ------------------------------------------------------------------ setup #
+    @property
+    def library_dir(self) -> Path:
+        """款式库目录（library/prompts 就在它下面）。"""
+        block = self.config.get("library") or {}
+        candidate = Path(str(block.get("dir") or "library"))
+        return candidate if candidate.is_absolute() else WORKBENCH_DIR / candidate
+
     def reload_skill(self) -> Skill:
         self.skill = load_skill(self.config["skill_root"])
         base_slugs = list(self.skill.types)     # 原 skill 自带的款式

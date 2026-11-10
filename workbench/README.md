@@ -959,6 +959,15 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **每个款式一套专属提示词（9.4.9）**：以前所有款式共用一套「按属性拼装」逻辑（袖长/袖口/帽兜分支），
+  改一个款会连带影响别的款，属性组合也会爆炸。现在拆成两层：
+  **共享骨架**（代码：图案锁 / 材质锁 / 效果图与色卡分工 / 主体规则）+
+  **款式专属核心**（`library/prompts/<slug>.json` 的 `positive` / `negative`，一款一份，可独立编辑）。
+  没文件的款式自动回落到按属性拼装，所以新款式可以先跑再补。已生成 13 份（10 业务款 + 3 个 skill 通用款）。
+  - 看覆盖：`python tools/build_style_prompts.py --list`
+  - 新款式：`python tools/build_style_prompts.py --new <slug>`，再改 `library/prompts/<slug>.json`
+  - 回归：`python tools/check_style_prompts.py`（覆盖/生效/隔离/新增/回退）
+
 - **派生色改用「面料色卡」（9.4.8）**：飞书 1526~1542 出现「基准色对、个别派生色跑款」
   （21 童装索罗娜·黑色 变成了带帽卫衣）。根因是派生色还在发整张效果图 —— 效果图带版型，
   模型偶尔会把版型也一起搬过来。
@@ -1140,6 +1149,8 @@ python tools/check_cuff.py           # 袖口工艺 + 款式转换段回归（�
 python tools/check_request_boundary.py  # 请求边界：不支持 negative 的接口要把否定词并进提示词（离线）
 python tools/check_hood_cords.py     # 连帽卫衣帽绳：跟衣身同色系（离线）
 python tools/check_swatch.py         # 派生色只发面料色卡（不带版型）（离线）
+python tools/check_style_prompts.py  # 每个款式一套专属提示词：覆盖/生效/隔离（离线）
+python tools/build_style_prompts.py --list   # 查看哪些款式已有专属提示词
 python tools/check_no_person.py      # 主体约束回归：平铺图禁止补模特 / 真人图保留同一个人（离线）
 python tools/check_no_person.py --live --source=library/refs/23-sorona-tee/white.jpg  # 真跑一张（≈¥0.006）看成品有没有人
 python tools/import_style_catalog.py  # 从《墨西哥-服装款式代号表》导入每色效果图（library/effects）

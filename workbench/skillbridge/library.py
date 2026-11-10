@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .style_prompts import load_style_prompt
 from .skill import (
     CUFF_PLAIN,
     CUFF_VALUES,
@@ -156,6 +157,8 @@ def load_library(
         name_en = str(item.get("name_en") or "").strip().upper()
         if not name_en:
             name_en = style_key_from(str(item.get("style_code") or ""), aliases)
+        # 每个款式一套专属默认提示词（没有文件就回落到按属性拼装）
+        style_prompt = load_style_prompt(root, slug)
         types.append(
             GarmentType(
                 slug=slug,
@@ -167,6 +170,8 @@ def load_library(
                 sleeve=sleeve,
                 name_en=name_en,
                 fit=str(item.get("fit") or "").strip(),
+                style_positive=(style_prompt.positive if style_prompt else ""),
+                style_negative=(style_prompt.negative if style_prompt else ""),
             )
         )
     types.sort(key=lambda g: g.slug)

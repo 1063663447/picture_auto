@@ -194,6 +194,10 @@ class GarmentType:
     name_en: str = ""
     #: 版型描述（照着效果图写：紧身/常规/宽松、肩线、袖型、下摆），带效果图时写进提示词
     fit: str = ""
+    #: **该款式专属的默认提示词**（library/prompts/<slug>.json）；为空时回落到按属性拼装
+    style_positive: str = ""
+    #: 该款式专属的否定词
+    style_negative: str = ""
 
     @property
     def sleeve_zh(self) -> str:
