@@ -1186,6 +1186,7 @@ def build_single_pass(
         garment_lock(garment),
         sleeve_clause(garment),
         cuff_clause(garment, reference=want_effect),
+        drawstring_clause(garment),
         color_hint(color).strip(),
     ]
     effect_text = effect_clause(color, effect, getattr(garment, "fit", ""))
@@ -1230,6 +1231,7 @@ def build_style_only(garment: GarmentType, *, subject: str = "", effect: bool = 
         + base.format(phrase=garment.phrase)
         + " " + sleeve_clause(garment)
         + " " + cuff_clause(garment, reference=effect)
+        + " " + drawstring_clause(garment)
         + (" " + EFFECT_CLAUSE if effect else "")
     ), subject))
 
@@ -1259,11 +1261,12 @@ def build_recolor_only(
             color_name=color.name_zh, color_label=color.label, color_hex=color.hex
         )
     if garment is not None:
-        # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长：把这两条再钉一次
+        # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长/把帽绳画串：把这几条再钉一次
         base = (
             base
             + " " + sleeve_clause(garment)
             + " " + cuff_clause(garment, reference=want_effect)
+            + " " + drawstring_clause(garment)
         )
     effect_text = effect_clause(color, effect, getattr(garment, "fit", "") if garment else "")
     if effect_text:
@@ -1313,6 +1316,47 @@ def garment_forbidden(garment: GarmentType) -> str:
     elif sleeve == "long":
         items += ["no short sleeves", "no rolled-up sleeves"]
     return ", ".join(items) if items else "no change to the garment type"
+
+
+#: **帽绳约束**（只对连帽款注入）。
+#: 起因（2026-11-10）：客户反馈「连帽卫衣的带子容易串」—— 生成出来的两条帽绳互相交叉成 X、
+#: 打结、或者从错误的位置钻出来，甚至压着图案乱穿。帽绳是卫衣最容易画崩的部件，必须单独钉住。
+DRAWSTRING_CLAUSE = (
+    "HOOD DRAWSTRINGS — the hood has exactly TWO cords, one coming out of each eyelet, with the two "
+    "metal or plastic eyelets sitting symmetrically on the neckline, left and right of centre. Both "
+    "cords hang DOWN in the same direction, side by side and parallel, spaced apart, gently curved "
+    "by gravity: they must NOT cross each other, NOT twist around each other, NOT form an X or a "
+    "loop, NOT be knotted, NOT be looped back into the hood, NOT be pulled up over the face, and NOT "
+    "be threaded through the print. Keep them the colour, width and texture of the source cords, with "
+    "two clean cord ends (metal, plastic or heat-sealed aglets) hanging free at the same height. The "
+    "printed artwork stays continuous and readable: a cord may pass naturally IN FRONT of the print "
+    "as a single thin line, never merging with it, splitting it, or being confused with an outline of "
+    "the graphic. No extra cords, no third cord, no string tied to the pocket or the sleeves."
+)
+
+
+def is_hooded(garment: GarmentType | None) -> bool:
+    """这个款式有没有帽兜（决定要不要注入帽绳约束）。"""
+    if garment is None:
+        return False
+    phrase = str(getattr(garment, "phrase", "") or "").lower().replace("no hood", "")
+    slug = str(getattr(garment, "slug", "") or "").lower()
+    return "hoodie" in slug or "hoodie" in phrase or "hood" in phrase
+
+
+def drawstring_clause(garment: GarmentType | None) -> str:
+    return DRAWSTRING_CLAUSE if is_hooded(garment) else ""
+
+
+def drawstring_negative(garment: GarmentType | None) -> str:
+    if not is_hooded(garment):
+        return ""
+    return (
+        "Do not cross the two hood cords over each other, do not let them form an X, a loop or a "
+        "knot, do not twist the cords together, do not thread a cord through the printed artwork, "
+        "do not merge a cord into the print outline, do not add a third cord or a stray string, do "
+        "not tuck the cord ends back into the hood, and do not attach cords to the sleeves or pocket."
+    )
 
 
 def garment_lock(garment: GarmentType | None) -> str:
@@ -1430,6 +1474,7 @@ def build_master_recolor(
             + " " + garment_lock(garment)
             + " " + sleeve_clause(garment)
             + " " + cuff_clause(garment, reference=want_effect)
+            + " " + drawstring_clause(garment)
         )
     roles = master_effect_clause(color, effect)
     if not roles:
@@ -1461,6 +1506,9 @@ def full_negative(
         hood_negative = garment_negative(garment)
         if hood_negative:
             extra = extra + " " + hood_negative
+        cords_negative = drawstring_negative(garment)
+        if cords_negative:
+            extra = extra + " " + cords_negative
     return enforce_subject_negative((base + " " + extra).strip(), subject)
 
 

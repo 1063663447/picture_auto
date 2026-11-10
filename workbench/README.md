@@ -959,6 +959,12 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **帽绳约束（9.4.6）**：客户反馈「连帽卫衣的带子容易串」（交叉成 X、打结、压着印花）。
+  连帽款现在注入 `HOOD DRAWSTRINGS`：正好两条绳、左右鸡眼扣对称、同向并排下垂、
+  禁止交叉/成环/打结/缠绕/穿进印花/加第三条；并追加对应否定词。
+  一次到位、派生、只换色、两段式第一阶段四条路径都覆盖；非连帽款继续写「no drawstrings」。
+  真机对照 `data/test/hood-cords/`，回归 `tools/check_hood_cords.py`。
+
 - **款式转换段 + 负面约束真正生效（9.4.5）**：2026-11-10 运营反馈「圣诞卫衣 promo 图改成 25 长袖童装，
   出图还是卫衣、袖口还是罗纹」。查出两个真问题：
   1. **negative 从来没发出去**：65535/a6api/fal 这类接口没有 negative_prompt 字段，
@@ -1122,6 +1128,7 @@ python tools/repair_job.py --all          # 搬回缓存目录 + 重新打包，
 python tools/check_price_table.py    # 打印飞书定价表现状（三位小数 / 分档）
 python tools/check_cuff.py           # 袖口工艺 + 款式转换段回归（离线）
 python tools/check_request_boundary.py  # 请求边界：不支持 negative 的接口要把否定词并进提示词（离线）
+python tools/check_hood_cords.py     # 连帽卫衣帽绳：两条绳不交叉/不打结/不穿图案（离线）
 python tools/check_no_person.py      # 主体约束回归：平铺图禁止补模特 / 真人图保留同一个人（离线）
 python tools/check_no_person.py --live --source=library/refs/23-sorona-tee/white.jpg  # 真跑一张（≈¥0.006）看成品有没有人
 python tools/import_style_catalog.py  # 从《墨西哥-服装款式代号表》导入每色效果图（library/effects）
