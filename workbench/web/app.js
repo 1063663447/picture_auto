@@ -1522,7 +1522,9 @@
         if (masterId) adopt[masterId] = `${reworkJobId}::${task.id}`;
       });
       button.disabled = true;
-      approveMaster(button, adopt).finally(() => { button.disabled = false; });
+      // 只确认对话卡片对应的那几张（以前不传 ids，会把其它待确认的基准图一起确认掉）
+      const onlyIds = (masterIds || []).filter(Boolean);
+      approveMaster(button, adopt, onlyIds).finally(() => { button.disabled = false; });
     });
     wrap.querySelector("[data-master-act='edit']")?.addEventListener("click", () => {
       const input = $("harnessInput");
