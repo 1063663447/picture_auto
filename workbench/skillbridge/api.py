@@ -23,7 +23,9 @@ from fastapi.staticfiles import StaticFiles
 
 from . import agent, auth, feishu, feishu_export, harness, prompts, refine
 from . import subject as subject_mod
+from . import style_memory
 from .harness_media import HarnessImage, inspect_images, rework_images
+from .sources import job_image_path, original_uploads
 from .harness_context import batch_context, batch_prompt, job_selections, target_requirements, validate_selections
 from .config import WORKBENCH_DIR
 from .providers.base import ProviderError
@@ -467,6 +469,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         subject: str = Form(""),
         retry_on_person: bool = Form(False),
         shape_lock: str = Form(""),
+        review_master: bool | None = Form(None),
         start: bool = Form(True),
     ):
         bench = wb(request)
@@ -523,6 +526,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             subject=subject,
             retry_on_person=retry_on_person,
             shape_lock=shape_lock,
+            review_master=review_master,
             account=current_account(request),
         )
         if start:
@@ -621,9 +625,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
         instruction = str(body.get("instruction") or "")
         job_id = str(body.get("job_id") or "")
         draft_id = str(body.get("draft_id") or "")
-        if mode not in {"intake", "rework"} or (mode == "rework" and not job_id):
-            return JSONResponse({"ok": False, "error": "返工需要有效的原任务"}, status_code=400)
-        mode = "rework" if job_id else mode
+        if mode not in {"intake", "rework", "master"} or (
+            mode in {"rework", "master"} and not job_id
+        ):
+            return JSONResponse(
+                {"ok": False, "error": "返工/基准图审核需要有效的原任务"}, status_code=400
+            )
+        if job_id and mode == "intake":
+            mode = "rework"          # 带任务进来又说「开工前沟通」= 按返工处理（老行为）
         task_ids = body.get("task_ids") or []
         if not isinstance(task_ids, list) or any(not isinstance(t, str) or not t for t in task_ids):
             return JSONResponse({"ok": False, "error": "task_ids 必须是任务编号数组"}, status_code=400)
@@ -645,8 +654,83 @@ def create_app(config_path: str | None = None) -> FastAPI:
         target_prompts: list[dict] = []
         task_context: list[dict] | None = None
         inherited: dict = {}
+        master_job = None
         try:
-            if job_id:
+            if job_id and mode == "master":
+                # 基准图审核：把「基准」当成本轮的主角（还没出图也能先对话讨论需求）
+                master_job = bench.get_job(job_id)
+                inherited = master_job.params
+                masters = [t for t in master_job.tasks if t.master]
+                pending = [t for t in master_job.tasks if t.master_task]
+                ready = [t for t in masters if t.out]
+                task_ids = [t.id for t in (ready or masters)]
+                count = len(pending) or max(1, len(masters))
+                source_count = len({str(t.source) for t in masters})
+                task_context = []
+                rows = []
+                for task in masters:
+                    picked = bench.skill.type_by_alias(task.garment or inherited.get("garment_type"))
+                    ref = picked.color(str(task.color))
+                    code = ref.file_code if ref else ""
+                    task_context.append({"task_id": task.id, "garment_type": picked.slug,
+                                         "garment_name": task.garment_name or picked.display_name,
+                                         "color": task.color, "color_name": task.color_name,
+                                         "hex": task.color_hex, "source": task.source, "code": code,
+                                         "approved": bool(task.approved),
+                                         "has_image": bool(task.out),
+                                         "item": task.item, "view": task.view,
+                                         "subject": getattr(task, "subject", "")})
+                    rows.append({"garment_type": picked.slug, "color": task.color,
+                                 "name_zh": task.color_name, "hex": task.color_hex, "code": code})
+                    target_prompts.append({"task_id": task.id, "garment_type": picked.slug,
+                                           "color": task.color, "prompt": task.prompt,
+                                           "subject": subject_choice if subject_choice != "auto"
+                                           else subject_mod.task_kind(master_job, task, bench.get_job)})
+                image_assets = []
+                image_notes = []
+                for task in ready:
+                    path = job_image_path(master_job, task.out)
+                    if path is not None:
+                        image_assets.append(
+                            HarnessImage(path, "master",
+                                         f"基准图（待确认）· {task.color_name} · 任务 {task.id}")
+                        )
+                for task in masters:
+                    for upload in original_uploads(master_job, task, bench.get_job)[:1]:
+                        if len(image_assets) >= agent.MAX_IMAGES:
+                            break
+                        image_assets.append(
+                            HarnessImage(upload.path, "original",
+                                         f"原始上传图 · {upload.name}")
+                        )
+                if not ready:
+                    image_notes.append("基准图还没生成出来，本轮只按文字需求对齐。")
+                image_paths = [row.path for row in image_assets]
+                garment = bench.skill.type_by_alias(rows[0]["garment_type"]) if rows else None
+                color = rows[0]["name_zh"] if len(rows) == 1 else ""
+                subject_kind = subject_kind or (
+                    subject_mod.task_kind(master_job, masters[0], bench.get_job) if masters else ""
+                )
+                model_choice = model_choice or str(inherited.get("model") or "")
+                provider_name = provider_name or str(inherited.get("provider") or "")
+                parsed_selections = []
+                for row in rows:
+                    picked = bench.skill.type_by_alias(row["garment_type"])
+                    selected = next(
+                        (s for s in parsed_selections if s["garment_type"] == picked.slug), None
+                    )
+                    if selected is None:
+                        selected = {"garment_type": picked.slug,
+                                    "garment_name": picked.display_name,
+                                    "colors": [], "color_details": []}
+                        parsed_selections.append(selected)
+                    if row["color"] not in selected["colors"]:
+                        selected["colors"].append(row["color"])
+                        selected["color_details"].append(
+                            {"label": row["color"], "name_zh": row["name_zh"],
+                             "hex": row["hex"], "code": row["code"]}
+                        )
+            elif job_id:
                 job = bench.get_job(job_id)
                 inherited = job.params
                 ready = [t for t in job.tasks if t.out and t.id in task_ids]
@@ -737,6 +821,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
         estimate = bench.pricer.estimate(model_choice, count, settings["size"], provider=provider_obj.name)
         context = batch_context(selections=parsed_selections, source_count=source_count,
                                 output_count=count, settings=settings, estimate=estimate, tasks=task_context)
+        if master_job is not None:
+            # 基准图审核期：把审核状态塞进上下文，agent / 前端都用同一份事实
+            context["review"] = master_job.as_dict(
+                with_tasks=False, with_log=False
+            ).get("review") or {}
+            context["master_gate"] = True
         if not job_id:
             for selected in parsed_selections:
                 picked = bench.skill.type_by_alias(selected["garment_type"])
@@ -904,12 +994,112 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     f"完成 {stats['done']}/{stats['total']} 失败 {stats['failed']}"
                 )
 
+            async def tool_master_status() -> str:
+                if master_job is None:
+                    return "当前不是基准图审核阶段"
+                review = master_job.as_dict(with_tasks=False, with_log=False).get("review") or {}
+                stats = master_job.counts()
+                lines = [
+                    f"任务 {master_job.id} · {master_job.status} · {master_job.stage}",
+                    f"基准图 {len(review.get('master_ids') or [])} 张"
+                    f"（待确认 {len(review.get('pending_ids') or [])}，"
+                    f"已确认 {len(review.get('approved_ids') or [])}）；"
+                    f"其余颜色 {review.get('derived_done') or 0}/{review.get('derived_total') or 0} 已出",
+                ]
+                if review.get("awaiting"):
+                    lines.append("现在就等用户确认基准图；确认后才会花钱给其它颜色改色。")
+                elif review.get("can_approve"):
+                    lines.append("基准图可确认。")
+                if stats["failed"]:
+                    lines.append(f"有 {stats['failed']} 张失败，可重试或换模型。")
+                return "\n".join(lines)
+
+            async def tool_approve(note: str) -> str:
+                if master_job is None:
+                    return "失败：当前不是基准图审核阶段"
+                review = master_job.as_dict(with_tasks=False, with_log=False).get("review") or {}
+                if not review.get("can_approve"):
+                    return "失败：还没有可确认的基准图（可能还在生成，或已经确认过了）"
+                ids = list(review.get("pending_ids") or []) or list(review.get("master_ids") or [])
+                payload = await bench.approve_master(master_job.id, ids, note=note or "")
+                learned = 0
+                if (note or "").strip():
+                    try:
+                        learned = len(
+                            await asyncio.to_thread(bench.learn_from_review, master_job.id, ids)
+                        )
+                    except Exception:  # noqa: BLE001 - 沉淀失败不影响出图
+                        learned = 0
+                review_after = payload.get("review") or {}
+                return (
+                    f"成功：基准图已确认，开始按它给 "
+                    f"{review_after.get('derived_total') or 0} 个颜色改色"
+                    + (f"；顺手记了 {learned} 条款式规则" if learned else "")
+                )
+
+            async def tool_reject(instruction: str) -> str:
+                if master_job is None:
+                    return "失败：当前不是基准图审核阶段"
+                rework = await bench.reject_master(master_job.id, instruction)
+                created["job_id"] = rework.id
+                return (
+                    f"成功：修改任务 {rework.id} 已提交（基于这张基准图重画），"
+                    f"出图后你可以看新图再决定确认"
+                )
+
+            async def tool_style_skill() -> str:
+                slug = garment.slug if garment is not None else ""
+                if not slug:
+                    return "当前没有选定款式"
+                picked = bench.skill.type_by_alias(slug)
+                lessons = style_memory.load_lessons(bench.library_dir, picked.slug)
+                lines = [
+                    f"款式：{picked.display_name}（{picked.slug}）"
+                    f" {picked.sleeve_zh}/{picked.cuff_zh}/{picked.kind_zh}",
+                    f"提示词核心 {len(picked.style_positive)} 字，否定词 {len(picked.style_negative)} 字",
+                ]
+                if lessons:
+                    lines.append(f"已记住的规则 {len(lessons)} 条：")
+                    lines.extend(
+                        f"  {index}) {item.get('zh') or item.get('clause')}"
+                        for index, item in enumerate(lessons[:6], start=1)
+                    )
+                else:
+                    lines.append("这个款式还没有记住任何规则。")
+                return "\n".join(lines)
+
+            async def tool_save_rule(text: str) -> str:
+                slug = garment.slug if garment is not None else ""
+                if not slug:
+                    return "失败：当前没有选定款式，无法沉淀规则"
+                picked = bench.skill.type_by_alias(slug)
+                item = await asyncio.to_thread(
+                    style_memory.remember,
+                    bench.library_dir,
+                    picked.slug,
+                    text,
+                    source={"job_id": master_job.id if master_job is not None else job_id,
+                            "origin": "assistant"},
+                    llm_cfg=bench.distill_cfg(),
+                )
+                if item is None:
+                    return "失败：这条规则太短，写清楚一点"
+                await asyncio.to_thread(bench.reload_skill)
+                flag = "（已存在，累加确认次数）" if item.get("duplicate") else ""
+                return f"成功：已记进 {picked.display_name} 的款式规则{flag}：{item.get('clause')}"
+
             ctx.list_models = tool_list_models
             ctx.inspect = tool_inspect
             ctx.estimate = tool_estimate
             ctx.submit_generation = tool_submit
             ctx.submit_rework = tool_rework
             ctx.job_status = tool_status
+            if master_job is not None:
+                ctx.master_status = tool_master_status
+                ctx.approve_master = tool_approve
+                ctx.reject_master = tool_reject
+                ctx.style_skill = tool_style_skill
+                ctx.save_rule = tool_save_rule
             for row in image_assets:
                 data_url = await asyncio.to_thread(agent.encode_image, row.path)
                 if data_url:
@@ -1125,6 +1315,126 @@ def create_app(config_path: str | None = None) -> FastAPI:
         if start:
             bench.start(job.id)
         return {"ok": True, "job": job.as_dict(with_tasks=True, with_log=True)}
+
+    # --------------------------------------------- 基准图审核（先出基准） --
+    @app.post("/api/jobs/{job_id}/approve")
+    async def approve_master(request: Request, job_id: str):
+        """确认基准图 → 按这张基准图给其余颜色改色（对话框「确定」按钮走这里）。"""
+        bench = wb(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            return JSONResponse({"ok": False, "error": "请求必须是对象"}, status_code=400)
+        task_ids = body.get("task_ids") or []
+        if not isinstance(task_ids, list) or any(not isinstance(t, str) for t in task_ids):
+            return JSONResponse({"ok": False, "error": "task_ids 必须是任务编号数组"}, status_code=400)
+        adopt = body.get("adopt") or {}
+        if not isinstance(adopt, dict):
+            return JSONResponse({"ok": False, "error": "adopt 必须是 {基准任务: 来源任务}"}, status_code=400)
+        note = str(body.get("note") or "")
+        learn = body.get("learn", True)
+        try:
+            payload = await bench.approve_master(job_id, task_ids, adopt=adopt, note=note)
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        learned: list[dict] = []
+        if learn and note.strip():
+            try:
+                learned = await asyncio.to_thread(bench.learn_from_review, job_id, task_ids)
+            except Exception as exc:  # noqa: BLE001 - 沉淀失败不影响出图
+                payload.setdefault("log", []).append(
+                    {"t": 0, "level": "warn", "msg": f"沉淀款式规则失败：{exc}"}
+                )
+        return {"ok": True, "job": payload, "learned": learned}
+
+    @app.post("/api/jobs/{job_id}/reject")
+    async def reject_master(request: Request, job_id: str):
+        """基准图不满意 → 以它为准改一次图；改好后回对话框确认即可。"""
+        bench = wb(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            return JSONResponse({"ok": False, "error": "请求必须是对象"}, status_code=400)
+        instruction = str(body.get("instruction") or "").strip()
+        if not instruction:
+            return JSONResponse({"ok": False, "error": "请说清楚基准图哪里要改"}, status_code=400)
+        task_ids = body.get("task_ids") or []
+        if not isinstance(task_ids, list) or any(not isinstance(t, str) for t in task_ids):
+            return JSONResponse({"ok": False, "error": "task_ids 必须是任务编号数组"}, status_code=400)
+        try:
+            job = await bench.reject_master(
+                job_id,
+                instruction,
+                task_ids,
+                provider=str(body.get("provider") or "") or None,
+                model=str(body.get("model") or "") or None,
+                account=current_account(request),
+            )
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return {"ok": True, "job": job.as_dict(with_tasks=True, with_log=True), "source_job": job_id}
+
+    # ------------------------------------------------------- 款式记忆 lessons --
+    @app.get("/api/styles/{slug}/lessons")
+    async def style_lessons(request: Request, slug: str):
+        """看某个款式「记住了什么」（审核/对齐沉淀下来的规则）。"""
+        bench = wb(request)
+        try:
+            garment = bench.skill.type_by_alias(slug)
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"款式不存在：{slug}"}, status_code=404)
+        return {
+            "ok": True,
+            "slug": garment.slug,
+            "display_name": garment.display_name,
+            "lessons": style_memory.load_lessons(bench.library_dir, garment.slug),
+        }
+
+    @app.post("/api/styles/{slug}/lessons")
+    async def add_style_lesson(request: Request, slug: str):
+        bench = wb(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            return JSONResponse({"ok": False, "error": "请求必须是对象"}, status_code=400)
+        try:
+            garment = bench.skill.type_by_alias(slug)
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"款式不存在：{slug}"}, status_code=404)
+        text = str(body.get("text") or "").strip()
+        if not text:
+            return JSONResponse({"ok": False, "error": "请填写要记住的规则"}, status_code=400)
+        item = await asyncio.to_thread(
+            style_memory.remember,
+            bench.library_dir,
+            garment.slug,
+            text,
+            source={"job_id": str(body.get("job_id") or ""), "origin": "manual"},
+            llm_cfg=bench.distill_cfg(),
+        )
+        if item is None:
+            return JSONResponse({"ok": False, "error": "这条规则太短或没意义"}, status_code=400)
+        bench.reload_skill()          # 立刻生效（下一条提示词就带上）
+        return {
+            "ok": True,
+            "lesson": item,
+            "lessons": style_memory.load_lessons(bench.library_dir, garment.slug),
+        }
+
+    @app.delete("/api/styles/{slug}/lessons/{lesson_id}")
+    async def drop_style_lesson(request: Request, slug: str, lesson_id: str):
+        bench = wb(request)
+        try:
+            garment = bench.skill.type_by_alias(slug)
+        except KeyError:
+            return JSONResponse({"ok": False, "error": f"款式不存在：{slug}"}, status_code=404)
+        removed = await asyncio.to_thread(
+            style_memory.forget, bench.library_dir, garment.slug, lesson_id
+        )
+        if not removed:
+            return JSONResponse({"ok": False, "error": "没有这条规则"}, status_code=404)
+        bench.reload_skill()
+        return {
+            "ok": True,
+            "lessons": style_memory.load_lessons(bench.library_dir, garment.slug),
+        }
 
     @app.get("/api/jobs/{job_id}/export")
     async def export_selected(request: Request, job_id: str, tasks: str = "", fmt: str = ""):

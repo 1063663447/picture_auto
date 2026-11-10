@@ -85,6 +85,14 @@ def _runner(bench: Workbench, job) -> JobRunner:
 
 async def run_job(bench: Workbench, job) -> None:
     await _runner(bench, job).run()
+    # 9.6.0 起多色批次先出基准图，确认后才按基准改色；自检要整批跑完，这里扮演运营确认
+    if job.status == "review":
+        for task in job.tasks:
+            if task.master:
+                task.approved = True
+        job.params["phase"] = "derived"
+        job.save()
+        await _runner(bench, job).run()
 
 
 def zip_entries(job) -> list[str]:

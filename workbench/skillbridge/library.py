@@ -165,6 +165,11 @@ def load_library(
             name_en = style_key_from(str(item.get("style_code") or ""), aliases)
         # 每个款式一套专属默认提示词（没有文件就回落到按属性拼装）
         style_prompt = load_style_prompt(root, slug)
+        lessons = [
+            " ".join(str(item.get("clause") or "").split())
+            for item in (style_prompt.lessons if style_prompt else [])
+            if isinstance(item, dict) and str(item.get("clause") or "").strip()
+        ]
         types.append(
             GarmentType(
                 slug=slug,
@@ -179,6 +184,7 @@ def load_library(
                 fit=str(item.get("fit") or "").strip(),
                 style_positive=(style_prompt.positive if style_prompt else ""),
                 style_negative=(style_prompt.negative if style_prompt else ""),
+                style_lessons=lessons,
             )
         )
     types.sort(key=lambda g: g.slug)

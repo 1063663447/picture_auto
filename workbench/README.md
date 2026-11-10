@@ -21,7 +21,11 @@
 
 > **2026-11-06 · 正式网页 9.0.0 BLACK GLASS**：已接入确认的纯黑／深紫毛玻璃与屏幕平面粒子设计，保留真实多款多色、双参考、版型派生、队列、返工、分层下载、飞书和账号业务，并修复提交／轮询竞态与个人用量范围。详见 [`CHANGELOG_BLACKGLASS_9.0.0.md`](CHANGELOG_BLACKGLASS_9.0.0.md)（文件清单、真实单图测试、回归结果、启用与回退）。前端无构建步骤，旧浏览器 Ctrl+F5；本轮后端用量修复需重启服务加载。
 
-> **2026-11-11 · 当前版本 9.5.0 菲律宾款式表整合**：《菲律宾-服装款式代号表》27 个款式 / 121 个色号全部建档，
+> **2026-11-11 · 当前版本 9.6.0 先出基准图 + 对话确认**：生成改成两段——先出基准图，运营在对话框里确认或提修改，确认后才按这张基准图给其余颜色改色；
+> 每次确认 / 修改都会沉淀成该款式的长期规则（`library/prompts/<slug>.json` 的 `lessons`）。对话框新增 5 个工具：看状态 / 确认 / 打回 / 看规则 / 记规则。
+> 详见 [`CHANGELOG_MASTER_GATE_9.6.0.md`](CHANGELOG_MASTER_GATE_9.6.0.md)。
+
+> **2026-11-11 · 9.5.0 菲律宾款式表整合**：《菲律宾-服装款式代号表》27 个款式 / 121 个色号全部建档，
 > 每款一套专属提示词（`library/prompts/`，共 30 份），新增「品类」维度（上衣 / 背心 / 下装）——背心不再被补袖子、
 > 短裤不再被当成 T 恤。详见 [`CHANGELOG_STYLES_9.5.0.md`](CHANGELOG_STYLES_9.5.0.md)。
 
@@ -963,6 +967,32 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **先出基准图 → 对话确认 → 按基准改色（9.6.0）**：客户要求「先出基准图，通过 harness 与用户对齐，
+  最终再以基准图改色减少错误率，并把对齐结果沉淀成该款式的 skill」。现在多色批次走两段：
+  1. **只出基准图**：任务停在 `review`（不打包、不派生），界面顶部出现基准图审核条；
+  2. **确认或修改**：点「确定，按它改色」→ 其余颜色以**这张基准成品**为参考图改色（派生色第 2 张发面料色卡）；
+     不满意就点「说要改哪里（对话）」，对着基准图说一句 → 生成改图任务；改好后「采纳」回来当新基准。
+  确认前不花派生色那笔钱；已出图的任务不会被重复购买（`_run_single_pass` 只跑没出图的）。
+  单色批次没有派生色，闸门自动关闭；`POST /api/jobs` 可传 `review_master=false` 关掉。
+  - 接口：`POST /api/jobs/{id}/approve`（确认 + 改色）、`/reject`（打回改图）、`job.review`（状态）
+  - 回归：`python tools/check_master_gate.py`（记录型接口，不发真实请求）
+  - 界面验收：`python tools/make_review_fixture.py` 造一个「基准待确认」假任务（不花钱、不写飞书）
+
+- **款式记忆 lessons：对齐结果变成长效规则（9.6.0）**：审核时写的确认备注、对话里说「记住这条」，
+  都会写进该款式 `library/prompts/<slug>.json` 的 `lessons`（含原话、英文约束、来源任务、命中次数）。
+  生成时 `prompts.style_positive()` 把它拼成 `STYLE RULES LEARNED FROM PREVIOUS APPROVED BATCHES`
+  （最多 6 条），所以同一句要求只说一次。翻译用 harness 的对话模型；模型不可用时回落成
+  `Operator-confirmed rule …: 原话`，绝不因为翻译失败丢掉规则。
+  - 接口：`GET/POST /api/styles/{slug}/lessons`、`DELETE /api/styles/{slug}/lessons/{id}`
+  - 上限 12 条 / 每次注入 6 条，重复只累加命中次数
+
+- **AI 助手：对话框里能确认和打回基准图（9.6.0）**：harness agent 新增 5 个工具 ——
+  `master_status`（到哪一步了）、`approve_master`（确认并要求改色）、`reject_master`（说哪里要改）、
+  `get_style_skill`（这个款式现在的规则）、`save_style_rule`（把要求记成长期规则）。
+  新模式 `mode="master"` 会把「基准待确认 + 其余颜色进度」写进开场上下文，并附上基准图与原始上传图；
+  系统提示词明确「不要替用户确认、不要催、一次只问一句、一次性要求不进规则」。
+  - 回归：`python tools/check_assistant.py`
+
 - **27 个款式全部建档，一款一套「skill」（9.5.0）**：客户给了《菲律宾-服装款式代号表》
   （27 个款式 sheet + 目录，121 个色号，每款每色一张官方效果图），要求「整合到每个款式的 skill 里去」。
   以前款式库只有 10 款 49 色，且**只按上衣建模**（袖长 + 袖口工艺两个维度）。

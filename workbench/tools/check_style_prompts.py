@@ -93,7 +93,20 @@ def main() -> int:
         loaded = load_style_prompt(tmp, "fixture-style")
         check(loaded is not None and loaded.positive == sample.positive, "能按 slug 读回来", show)
         raw = json.loads(saved.read_text(encoding="utf-8"))
-        check(set(raw) == {"slug", "notes", "positive", "negative"}, f"文件字段固定：{sorted(raw)}", show)
+        # lessons（款式记住的规则）是可选的第五个字段：没有规则时不写进文件
+        check(set(raw) <= {"slug", "notes", "positive", "negative", "lessons"},
+              f"文件字段只有约定的那几个：{sorted(raw)}", show)
+        check({"slug", "positive", "negative"} <= set(raw), "必备字段都在", show)
+        # 有规则时，能把 lessons 一起写盘并读回
+        sample_lesson = {"id": "fixture-1", "clause": "Keep the cuffs narrow.",
+                         "zh": "袖口窄一点", "source": {}, "created_at": 0, "hits": 1}
+        sample.lessons = [sample_lesson]
+        saved = save_style_prompt(tmp, sample)
+        reloaded = load_style_prompt(tmp, "fixture-style")
+        check(reloaded is not None and reloaded.lessons
+              and reloaded.lessons[0]["clause"] == sample_lesson["clause"],
+              "款式规则（lessons）能落盘并读回", show)
+        sample.lessons = []
 
     print("⑤ 回退：没有文件的款式仍然能出提示词（按属性拼装）")
     bare = type(wb.skill.type_by_alias("24-long-sleeve"))(

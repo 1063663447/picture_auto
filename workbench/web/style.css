@@ -586,3 +586,22 @@ select option:disabled { color: var(--fg-subtle); }
 @media (max-width: 720px) {
   .who-chip { max-width: 120px; }
 }
+
+/* ---------------------------------------------------------- 基准图审核条 --
+   先出基准 → 运营确认 → 再按基准改色。放在画布顶部，不抢主流程。 */
+.review-bar{margin:0 0 10px;padding:12px 14px;border-radius:14px;display:flex;flex-direction:column;gap:10px;
+  background:linear-gradient(180deg,rgba(122,92,255,.16),rgba(122,92,255,.05));
+  border:1px solid rgba(150,126,255,.34)}
+.review-bar[hidden]{display:none}
+.review-head{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#ded8f6;flex-wrap:wrap}
+.review-head b{font-size:13px;color:#fff;font-weight:600}
+.review-badge{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:999px;
+  background:rgba(150,126,255,.22);border:1px solid rgba(150,126,255,.4);color:#d9d2ff}
+.review-thumbs{display:flex;gap:10px;flex-wrap:wrap}
+.review-thumbs figure{margin:0;display:flex;flex-direction:column;gap:4px;align-items:center}
+.review-thumbs img{width:132px;height:132px;object-fit:contain;border-radius:10px;background:#fff;
+  border:1px solid rgba(255,255,255,.16);cursor:zoom-in}
+.review-thumbs figcaption{font-size:11px;color:#cfc8ea}
+.review-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.review-note{font-size:11.5px;color:#b8b0d6}
+.review-note[data-warn="1"]{color:#ffb4a8}

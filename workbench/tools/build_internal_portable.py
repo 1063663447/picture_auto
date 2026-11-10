@@ -19,7 +19,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 WB = ROOT / 'workbench'
-VERSION = '9.5.0'
+VERSION = '9.6.0'
 
 
 def sha(path: Path) -> str:
@@ -110,7 +110,7 @@ def main() -> int:
     add_tree(ROOT / 'apparel-style-recolor', stage / 'apparel-style-recolor')
     for name in ['serve.py', 'cli.py', 'requirements.txt', 'pricing.json',
                  'CHANGELOG_PORTABLE_9.3.0.md', 'CHANGELOG_WORKFLOW_9.4.0.md', 'CHANGELOG_ARTWORK_9.4.1.md',
-                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md',
+                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md', 'CHANGELOG_MASTER_GATE_9.6.0.md',
                  'HANDOVER.md', 'REVIEW_9.4.1.md']:
         copy_file(WB / name, stage / 'workbench' / name)
     machine_keys={'WORKBENCH_DATA_DIR','WORKBENCH_HOST','WORKBENCH_PORT','WORKBENCH_SESSION_SECRET','WORKBENCH_AUTH_TOKEN','PORT'}
@@ -129,7 +129,7 @@ def main() -> int:
     copy_file(WB / 'portable/start.bat', stage / '一键启动.bat')
     repair_bat = (WB / 'portable/start.bat').read_text(encoding='ascii').replace('bootstrap.ps1\" %*', 'bootstrap.ps1\" -Repair -CheckOnly %*')
     (stage / '一键检查修复.bat').write_bytes(repair_bat.replace('\r\n', '\n').replace('\n', '\r\n').encode('ascii'))
-    (stage / '使用说明.txt').write_text(f'生图工作台 {VERSION} · 内部便携版\n\n完整解压到可写目录，双击“一键启动.bat”。自动检查并启动、打开浏览器，无需安装Python、Node或Three.js，无需填写API。适用Windows 10/11 x64 Intel/AMD。\n保持运行窗口打开；关闭窗口停止服务。重复启动会打开已运行工作台。\n文件缺失先从包内offline-cache修复，缓存缺失才从华为云/阿里云国内HTTPS源下载，显示进度并校验SHA256。图片API和AI仍需网络。\n各电脑记录位于workbench/data，不带原电脑历史任务。升级前先停止旧程序、备份旧目录，完整解压新版后可将旧workbench/data复制到对应位置；不要覆盖正在运行的目录。\n9.5.0 本版要点：菲律宾款式表 27 个款式 / 121 个色号全部建档（每色一张官方效果图）；新增「品类」维度——背心不再被补袖子、短裤不再被画成上衣；17 个新款式各写一段结构细节（插肩双色 / 露脐 / 弧形下摆 / U 领 / 挂脖 / 水墨 / 酸洗 / 运动短裤白色滚边…）；30 份款式专属提示词；款式下拉按品类分组。9.4.9 之前的能力（模型只列有报价的、派生色款式锁、grok quality 收敛、款式转换段、帽绳同色系、面料色卡）全部保留。详见 workbench 目录下的 CHANGELOG_STYLES_9.5.0.md 与 CHANGELOG_9.4.2~9.4.9。\n包内已包含当前内部主备API、AI与飞书配置，仅供团队内部流转。日志在logs目录。\n', encoding='utf-8-sig')
+    (stage / '使用说明.txt').write_text(f'生图工作台 {VERSION} · 内部便携版\n\n完整解压到可写目录，双击“一键启动.bat”。自动检查并启动、打开浏览器，无需安装Python、Node或Three.js，无需填写API。适用Windows 10/11 x64 Intel/AMD。\n保持运行窗口打开；关闭窗口停止服务。重复启动会打开已运行工作台。\n文件缺失先从包内offline-cache修复，缓存缺失才从华为云/阿里云国内HTTPS源下载，显示进度并校验SHA256。图片API和AI仍需网络。\n各电脑记录位于workbench/data，不带原电脑历史任务。升级前先停止旧程序、备份旧目录，完整解压新版后可将旧workbench/data复制到对应位置；不要覆盖正在运行的目录。\n9.6.0 本版要点：出图改成两段——先出「基准图」，运营在对话框里确认或提修改，确认后才按这张基准图给其它颜色改色（确认前不花那笔钱，已出的图也不会重复计费）；每次确认/修改都会沉淀成该款式的长期规则（library/prompts 的 lessons），下次同款自动带上；对话框新增 5 个工具：看基准状态 / 确认改色 / 打回修改 / 看款式规则 / 记住这条规则。9.5.0 的 27 款 121 色、9.4.x 的模型报价/款式锁/帽绳/面料色卡等能力全部保留。详见 workbench 目录下的 CHANGELOG_MASTER_GATE_9.6.0.md 与 CHANGELOG_STYLES_9.5.0.md。\n包内已包含当前内部主备API、AI与飞书配置，仅供团队内部流转。日志在logs目录。\n', encoding='utf-8-sig')
     cache = stage / 'offline-cache';cache.mkdir(exist_ok=True)
     print('[2/6] Installing private embedded Python and bundled VC runtime DLLs', flush=True)
     runtime = stage / 'runtime';runtime.mkdir(exist_ok=True)

@@ -1455,22 +1455,47 @@ def drawstring_negative(garment: GarmentType | None) -> str:
 #:   `garment.style_positive` / `garment.style_negative` 有值就用它，
 #:   没有就回落到「按属性拼装」（convert + 款式锁 + 袖长 + 袖口 + 帽绳）。
 #: ---------------------------------------------------------------------------
+#: 款式「记住的规则」：审核/对齐时确认过的要求（见 style_memory），生成时追加在款式核心后面。
+#: 放在这里而不是写进 json：json 是「款式结构」，lessons 是「运营一次次教的习惯」，分开更清楚。
+LESSONS_TEMPLATE = (
+    " STYLE RULES LEARNED FROM PREVIOUS APPROVED BATCHES (this exact style — they held then and "
+    "still hold now unless the operator overrides them today): {items}"
+)
+
+
+def lessons_clause(garment: GarmentType | None, limit: int = 6) -> str:
+    """把该款式记住的规则拼成一段（没有就返回空串）。"""
+    if garment is None:
+        return ""
+    items: list[str] = []
+    for raw in list(getattr(garment, "style_lessons", []) or []):
+        clause = " ".join(str(raw or "").split())
+        if clause and clause not in items:
+            items.append(clause)
+        if len(items) >= max(1, limit):
+            break
+    if not items:
+        return ""
+    joined = "; ".join(f"{index}) {text.rstrip('.')}" for index, text in enumerate(items, start=1))
+    return LESSONS_TEMPLATE.format(items=joined + ".")
+
+
 def style_positive(garment: GarmentType | None, *, reference: bool = True) -> str:
     """这个款式的「正向核心段」：怎么拆掉源图特征、怎么建目标款式。"""
     if garment is None:
         return ""
     core = " ".join(str(getattr(garment, "style_positive", "") or "").split())
-    if core:
-        return core
-    return " ".join(
-        part for part in (
-            convert_clause(garment),
-            garment_lock(garment),
-            sleeve_clause(garment),
-            cuff_clause(garment, reference=reference),
-            drawstring_clause(garment),
-        ) if part
-    )
+    if not core:
+        core = " ".join(
+            part for part in (
+                convert_clause(garment),
+                garment_lock(garment),
+                sleeve_clause(garment),
+                cuff_clause(garment, reference=reference),
+                drawstring_clause(garment),
+            ) if part
+        )
+    return (core + " " + lessons_clause(garment)).strip()
 
 
 def style_negative(garment: GarmentType | None) -> str:

@@ -124,6 +124,13 @@ class Task:
     master_task: str = ""
     #: 实际用作参考图的文件（版型锁定时是基准成品；否则等同上图 source）
     reference: str = ""
+    #: 基准图审核（先出基准 → 运营确认 → 其余颜色按基准改色）：
+    #: approved=True 表示这张基准图已被确认/采纳，可以拿它去派生其它颜色
+    approved: bool = False
+    #: 审核备注：运营确认时的一句话（会沉淀进该款式的 lessons）
+    review_note: str = ""
+    #: 这张成品是哪一次审核采纳进来的（返工任务 id，便于溯源）
+    adopted_from: str = ""
     #: pending（还没轮到）| queued（在飞书队列里排队）| running（正在生成）
     #: | done | failed | skipped | canceled
     status: str = "pending"
@@ -170,6 +177,9 @@ class Task:
             "master": self.master,
             "master_task": self.master_task,
             "reference": self.reference,
+            "approved": self.approved,
+            "review_note": self.review_note,
+            "adopted_from": self.adopted_from,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
         }
@@ -245,6 +255,23 @@ class Job:
                 1,
             ),
         }
+        masters = [t for t in self.tasks if t.master]
+        if (self.params or {}).get("review_gate") or masters:
+            payload["review"] = {
+                "enabled": bool((self.params or {}).get("review_gate")),
+                "awaiting": self.status == "review",
+                "phase": str((self.params or {}).get("phase") or ""),
+                "master_ids": [t.id for t in masters],
+                "pending_ids": [t.id for t in masters if t.out and not t.approved],
+                "approved_ids": [t.id for t in masters if t.approved],
+                "derived_total": sum(1 for t in self.tasks if t.master_task),
+                "derived_done": sum(1 for t in self.tasks if t.master_task and t.out),
+                "can_approve": (
+                    self.status == "review"
+                    and any(t.out for t in masters)
+                    and any(t.master_task for t in self.tasks)
+                ),
+            }
         if with_tasks:
             queue_map = (self.params or {}).get("queue_tasks") or {}
             items = []

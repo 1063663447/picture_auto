@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 PROMPT_DIR = "prompts"
@@ -31,6 +31,8 @@ class StylePrompt:
     negative: str = ""
     notes: str = ""
     source: str = ""
+    #: 该款式「记住的规则」：审核/对齐时确认过的要求，生成时追加进提示词（见 style_memory）
+    lessons: list = field(default_factory=list)
 
     @property
     def ready(self) -> bool:
@@ -43,6 +45,7 @@ class StylePrompt:
             "negative": self.negative,
             "notes": self.notes,
             "source": self.source,
+            "lessons": list(self.lessons),
         }
 
 
@@ -67,6 +70,7 @@ def load_style_prompt(library_dir: Path | str, slug: str) -> StylePrompt | None:
         negative=" ".join(str(payload.get("negative") or "").split()),
         notes=str(payload.get("notes") or ""),
         source=str(path),
+        lessons=[item for item in (payload.get("lessons") or []) if isinstance(item, dict)],
     )
     return prompt if prompt.ready else None
 
@@ -93,6 +97,8 @@ def save_style_prompt(library_dir: Path | str, prompt: StylePrompt) -> Path:
         "positive": prompt.positive,
         "negative": prompt.negative,
     }
+    if prompt.lessons:
+        payload["lessons"] = list(prompt.lessons)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
 

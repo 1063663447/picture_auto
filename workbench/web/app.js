@@ -29,6 +29,15 @@
     "整体亮度提高一点",
     "这图能改吗？大概多少钱",
   ];
+  // 基准图审核期的话术：都是「对着基准图说一句」，点一下就能填进输入框
+  const QUICK_MASTER = [
+    "可以，就按这张基准图改其它颜色",
+    "领口再小一点，别太大",
+    "颜色偏亮了，往效果图的颜色靠",
+    "印花和文字必须原样，不要重画",
+    "这条要记住，以后这个款都这样做",
+  ];
+
   const QUICK_REWORK = [
     "图案改小 10%",
     "两行文字间距收紧",
@@ -1140,9 +1149,94 @@
     return {terminal,packaging,successful:job.status==="done"&&!Number(stats.failed||0),progress:Math.max(0,Math.min(terminal?100:99,Number(job.progress)||0))};
   }
 
+  /* ---------------------------------------------------------- 基准图审核 -- */
+  // 先出基准 → 运营确认 → 再按基准改色。审核期由后端 job.status="review" + job.review 给出。
+  function reviewInfo(job) {
+    const info = (job && job.review) || null;
+    return info && info.enabled ? info : null;
+  }
+  let reviewBound = false;
+  function bindReviewActions() {
+    if (reviewBound) return;
+    reviewBound = true;
+    $("approveMasterBtn")?.addEventListener("click", (event) => approveMaster(event.currentTarget));
+    $("talkMasterBtn")?.addEventListener("click", () => talkMaster());
+  }
+  function renderReview(job) {
+    bindReviewActions();
+    const bar = $("reviewBar");
+    if (!bar) return;
+    const info = reviewInfo(job);
+    const masters = (job?.tasks || []).filter((t) => t.master && t.thumb_small);
+    const show = Boolean(info && (info.awaiting || info.pending_ids?.length));
+    bar.hidden = !show;
+    if (!show) return;
+    const stage = $("reviewStage"), note = $("reviewNote");
+    if (info.awaiting) {
+      stage.textContent = `这张满意就点「确定」，之后才会按它给其它 ${info.derived_total || 0} 个颜色改色；不满意就在右边对着说。`;
+      note.textContent = "确认前不会出其它颜色，也不花钱";
+      note.dataset.warn = "0";
+    } else if (info.phase === "derived") {
+      stage.textContent = `基准已确认，正在按它改其它颜色（${info.derived_done || 0}/${info.derived_total || 0}）`;
+      note.textContent = "改色中…";
+      note.dataset.warn = "0";
+    } else {
+      stage.textContent = "基准图还没出来，稍等一下";
+      note.textContent = "";
+    }
+    const box = $("reviewThumbs");
+    if (box) {
+      box.innerHTML = masters.map((task) => `
+        <figure>
+          <img src="${esc(task.thumb_small)}" alt="${esc(task.color_name || task.color)} 基准图"
+               data-preview="${esc(task.preview || task.thumb || "")}" data-task="${esc(task.id)}" />
+          <figcaption>${esc(task.color_name || task.color)}${task.approved ? " · 已确认" : " · 待确认"}</figcaption>
+        </figure>`).join("");
+      box.querySelectorAll("img[data-preview]").forEach((img) => {
+        img.addEventListener("click", () => openLightbox?.(img.dataset.preview, img.dataset.task));
+      });
+    }
+    const approve = $("approveMasterBtn");
+    if (approve) {
+      approve.disabled = !info.can_approve;
+      approve.textContent = info.phase === "derived" ? "已确认" : "确定，按它改色";
+    }
+  }
+
+  async function approveMaster(button) {
+    const jobId = state.jobId;
+    if (!jobId || state.job?.id !== jobId) return;
+    const info = reviewInfo(state.job);
+    if (!info || !info.can_approve) { toast("bad", "现在还没有可确认的基准图"); return; }
+    const ids = [...(info.pending_ids || [])].length ? [...info.pending_ids] : [...(info.master_ids || [])];
+    await withLoading(button, async () => {
+      try {
+        const res = await api(`/api/jobs/${jobId}/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task_ids: ids, note: state.reviewNote || "", learn: true }),
+        });
+        const learned = (res?.learned || []).length;
+        toast("ok", `基准图已确认，开始按它改色${learned ? `（顺手记了 ${learned} 条款式规则）` : ""}`);
+        if (res?.job) renderJob(res.job);
+        watchJob(jobId);
+      } catch (err) {
+        toast("bad", err.message);
+      }
+    }, "确认中…");
+  }
+
+  function talkMaster() {
+    if (!state.job?.id) { toast("bad", "还没有可讨论的任务"); return; }
+    const info = reviewInfo(state.job);
+    if (!info) { toast("bad", "这一批没有基准图审核"); return; }
+    openHarness("master", info.pending_ids?.length ? info.pending_ids : info.master_ids, state.job.id);
+  }
+
   function renderJob(job) {
     if(job.id!==state.jobId)return;
     state.job=job;
+    renderReview(job);
     const phase=jobPhase(job);
     if(state.jobLoading)setJobLoading(false);
     const params = job.params || {};
@@ -1854,11 +1948,32 @@
   }
 
   function harnessContextKey(){
-    if(state.harnessMode==="rework")return "";
+    // 返工 / 基准图审核都是「对着已有成品说话」，不参与「素材已变化」的判定
+    if(state.harnessMode==="rework"||state.harnessMode==="master")return "";
     return JSON.stringify({files:state.files.map(e=>[e.file.name,e.file.size,e.file.lastModified]),selections:selectionsPayload(),provider:$("provider").value,model:currentModel(),size:currentSize(),quality:$("quality").value,subject:$("subject").value,pattern:currentPatternMode(),format:currentOutputFormat(),brief:briefText()});
   }
   function harnessContextChanged(){return state.harnessMode==="intake"&&!!state.harnessContextKey&&state.harnessContextKey!==harnessContextKey();}
-  async function openHarness(mode,taskIds){
+  async function openHarness(mode,taskIds,jobId){
+    // master 模式：基准图审核期（对着基准图说改哪里 / 说确定），不要求重新准备素材
+    if(mode==="master"){
+      const target=(jobId||state.jobId);
+      if(!target||!state.job||state.job.id!==target){toast("bad","请先选中这条任务");return false;}
+      const info=reviewInfo(state.job);
+      if(!info){toast("bad","这条任务没有基准图审核");return false;}
+      state.harnessMode="master";state.reworkTargets=taskIds||info.master_ids||[];state.reworkSourceJob=target;
+      const params=state.job?.params||{};
+      state.reworkMeta={provider:String(params.provider||""),model:String(params.model||""),size:String(params.size||"auto")};
+      resetChat();state.harnessContextKey=harnessContextKey();
+      $("harnessTitle").textContent="AI 基准图确认";
+      $("harnessSub").textContent="先看基准图：满意就确认改色，不满意直接说改哪里";
+      $("harnessApply").textContent="按对话执行";
+      $("harnessDefault").textContent="返回画廊";
+      $("reworkModel").hidden=true;
+      renderQuick(QUICK_MASTER);openDrawer("harness");updateSummary();
+      chatBubble("assistant",`这是这批的基准图。满意就说「可以」或点「确定」，我再按它给其它 ${info.derived_total||0} 个颜色改色；不满意就直接说哪里要改，比如「领口再小一点」。`);
+      window.AIWorkflow?.start("master");window.AIWorkflow?.phase('idle','对着基准图说明要改的地方，或直接确认。');
+      return true;
+    }
     const blocked=submissionBlockedReason();if(blocked){toast("bad",blocked);return false;}
     if(mode==="rework"&&(!state.job||state.job.id!==state.jobId))return false;
     if(mode!=="rework"){const reason=startBlockedReason();if(reason){toast("bad",reason);return false;}}
@@ -2060,10 +2175,18 @@
 
   function harnessPayload(text) {
     const payload = {
-      mode: state.harnessMode === "rework" ? "rework" : "intake",
+      mode: state.harnessMode === "master"
+        ? "master"
+        : (state.harnessMode === "rework" ? "rework" : "intake"),
       instruction: text,
     };
-    if (state.harnessMode === "rework") {
+    if (state.harnessMode === "master") {
+      payload.job_id = state.reworkSourceJob || state.jobId;
+      payload.task_ids = state.reworkTargets || [];
+      const params = state.job?.params || {};
+      payload.provider = String(params.provider || "");
+      payload.model = String(params.model || "");
+    } else if (state.harnessMode === "rework") {
       // 改图必须带上对话框里选的那个接口/模型，否则会退回左侧主面板（= 原接口）
       const choice = reworkChoice();
       payload.job_id = state.reworkSourceJob;
@@ -2092,10 +2215,15 @@
   }
 
   async function sendHarnessMessage(){
-    const blocked=submissionBlockedReason()||harnessModelBlockedReason();if(blocked){toast("bad",blocked);return;}
+    // 基准图审核期：任务状态是 review（不算运行中），这里只确认有任务在审；
+    // 否则对话框会被「本轮任务仍在运行」挡死，运营没法确认或提修改。
+    const blocked=state.harnessMode==="master"
+      ? (state.job&&state.job.id?"":"请先选中基准图待确认的任务")
+      : (submissionBlockedReason()||harnessModelBlockedReason());
+    if(blocked){toast("bad",blocked);return;}
     if(state.harnessSubmittedJob){closeHarness();return;}
     if(harnessContextChanged()){window.AIWorkflow?.phase('stale');toast("bad","本轮素材或设定已变化，请关闭后重新点击生成");return;}
-    if(state.harnessMode!=="rework"){
+    if(state.harnessMode!=="rework"&&state.harnessMode!=="master"){
       const reason=startBlockedReason();if(reason){toast("bad",reason);return;}
       if(!state.draftId){window.AIWorkflow?.error("素材尚未准备完成，请重新点击生成。");return;}
     }

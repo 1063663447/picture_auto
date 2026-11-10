@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 
 from . import feishu as feishu_mod
-from . import prompts, refine
+from . import prompts, refine, style_memory
 from . import subject as subject_module
 from .config import WORKBENCH_DIR, load_config, load_env
 from .gate import GateConfig, RemoteGate
@@ -551,6 +551,7 @@ class Workbench:
         subject: str = "",
         retry_on_person: bool = False,
         shape_lock: str = "",
+        review_master: bool | None = None,
         account: str = "",
     ) -> Job:
         if not uploads:
@@ -628,6 +629,12 @@ class Workbench:
                 target = target_dir / f"{Path(safe).stem}-{index}{suffix}"
             target.write_bytes(data)
 
+        params_shape_lock = (
+            "off"
+            if str(shape_lock or defaults.get("shape_lock") or "master").strip().lower()
+            in {"off", "0", "false", "no", "none", "不锁"}
+            else "master"
+        )
         params = {
             "garment_type": garment.slug,
             "garment_name": garment.display_name,
@@ -677,11 +684,13 @@ class Workbench:
             # 版型锁定：master（先出基准色再改色，同款各色版型一致）/ off（每色独立生成）
             # 版型一致性（内部行为，界面无开关）：先出基准色，其余颜色以它为参考图只改色。
             # 传 shape_lock=off 可退回「每色独立生成」（命令行/接口用）。
-            "shape_lock": (
-                "off"
-                if str(shape_lock or defaults.get("shape_lock") or "master").strip().lower()
-                in {"off", "0", "false", "no", "none", "不锁"}
-                else "master"
+            "shape_lock": params_shape_lock,
+            # 基准图审核：先只出基准图 → 运营确认/修改 → 再按基准图改其余颜色。
+            # 单色任务没有派生色，闸门没有意义，自动关掉。
+            "review_gate": bool(
+                (defaults.get("review_master", True) if review_master is None else review_master)
+                and params_shape_lock == "master"
+                and sum(len(cols) for _g, cols in plan) > 1
             ),
             "account": str(account or ""),
             "estimate": self.pricer.estimate(chosen_model, 0, str(size or "auto"), provider_obj.name),
@@ -1832,6 +1841,190 @@ class Workbench:
     def _forget(self, job_id: str, task: asyncio.Task) -> None:
         if self._tasks.get(job_id) is task:
             self._tasks.pop(job_id, None)
+
+    # ------------------------------------------------- 基准图审核（先出基准） --
+    def review_payload(self, job: Job) -> dict:
+        """基准图审核状态：哪些基准待确认、哪些已确认、能不能继续改色。"""
+        masters = [t for t in job.tasks if t.master]
+        pending = [t.id for t in masters if t.out and not t.approved]
+        approved = [t.id for t in masters if t.approved]
+        derived = [t for t in job.tasks if t.master_task]
+        return {
+            "enabled": bool((job.params or {}).get("review_gate")),
+            "awaiting": str(job.status) == "review",
+            "phase": str((job.params or {}).get("phase") or ""),
+            "master_ids": [t.id for t in masters],
+            "pending_ids": pending,
+            "approved_ids": approved,
+            "derived_total": len(derived),
+            "derived_done": sum(1 for t in derived if t.out),
+            "can_approve": str(job.status) == "review" and bool(pending or approved) and bool(derived),
+            "note": "确认后才会按基准图改其余颜色（确认前不花这笔钱）",
+        }
+
+    def _master_targets(
+        self, job: Job, task_ids: list[str] | None
+    ) -> list[Task]:
+        wanted = {str(t) for t in (task_ids or [])}
+        masters = [t for t in job.tasks if t.master and t.id in wanted] if wanted else [
+            t for t in job.tasks if t.master
+        ]
+        if not masters:
+            masters = [t for t in job.tasks if t.master]
+        return [t for t in masters if t.out]
+
+    async def approve_master(
+        self,
+        job_id: str,
+        task_ids: list[str] | None = None,
+        *,
+        adopt: dict | None = None,
+        note: str = "",
+    ) -> dict:
+        """确认基准图 → 按这张基准图给其余颜色改色。
+
+        `adopt`：{基准任务 id: "任务id::task_id"}，用于「对话框里改完，采纳这次结果当基准」。
+        """
+        job = self.get_job(job_id)
+        if job_id in self._tasks and not self._tasks[job_id].done():
+            raise WorkbenchError("任务正在运行中，等这一轮结束再确认")
+        adopt = adopt or {}
+        state = self.review_payload(job)
+        if not adopt and not state["awaiting"]:
+            # 已经确认过 / 压根没开审核的任务：别再点一次，也别把它翻成 running
+            raise WorkbenchError(
+                "这条任务现在不在「基准图待确认」状态（可能已经确认过或没开审核）"
+            )
+        targets = self._master_targets(job, task_ids)
+        # 采纳：把返工/另一批的成品复制过来，当成这张基准图
+        for master_id, source_task in adopt.items():
+            master = next((t for t in job.tasks if t.id == master_id), None)
+            if master is None:
+                raise WorkbenchError(f"没有这张基准任务：{master_id}")
+            src_job_id, _, src_task_id = str(source_task).partition("::")
+            if not src_task_id:
+                src_job_id, src_task_id = job_id, str(source_task)
+            src_job = self.get_job(src_job_id)
+            src = next((t for t in src_job.tasks if t.id == src_task_id and t.out), None)
+            if src is None:
+                raise WorkbenchError(f"要采纳的成品不存在：{source_task}")
+            src_root = src_job.root or self.job_dir(src_job_id)
+            data = (src_root / str(src.out)).read_bytes()
+            master.out = master.out or str(Path("outputs") / f"{master.id}.png")
+            target = (job.root or self.job_dir(job_id)) / str(master.out)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            master.status = "done"
+            master.bytes = len(data)
+            master.finished_at = max(master.finished_at or 0, src.finished_at or 0) or time.time()
+            master.adopted_from = f"{src_job_id}::{src.id}"
+            job.add_log(f"已采纳 {src_job_id} / {src.id} 的成品作为基准图")
+
+        if not targets:
+            raise WorkbenchError("没有可确认的基准图（基准还没生成出来）")
+        note = " ".join((note or "").split())
+        for task in targets:
+            task.approved = True
+            if note and not task.review_note:
+                task.review_note = note[:300]
+        job.params["phase"] = "derived"
+        job.params["master_approved"] = True
+        job.params["awaiting_review"] = False
+        job.params["approved_at"] = time.time()
+        job.status = "running"
+        job.stage = "基准已确认，按基准图改色"
+        job.add_log(
+            f"基准图已确认（{len(targets)} 张）：其余 "
+            f"{sum(1 for t in job.tasks if t.master_task)} 张按这张基准改色"
+            + (f"；确认备注：{note}" if note else "")
+        )
+        job.save()
+        try:
+            runner = self._runner_for(job)
+            task = asyncio.create_task(runner.run(), name=f"job-{job_id}-derived")
+            self._tasks[job_id] = task
+            task.add_done_callback(
+                lambda finished, jid=job_id: (
+                    self._record_after(jid, finished), self._forget(jid, finished)
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            job.status = "partial"
+            job.error = str(exc)
+            job.add_log(f"改色启动失败：{exc}", level="error")
+            job.save()
+            raise WorkbenchError(f"改色启动失败：{exc}") from exc
+        return job.as_dict(with_tasks=True, with_log=True, with_prompts=False)
+
+    async def reject_master(
+        self,
+        job_id: str,
+        instruction: str,
+        task_ids: list[str] | None = None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        account: str = "",
+    ) -> Job:
+        """基准图不满意 → 以它为准做一次改图（改完可以再采纳回来确认）。
+
+        不改变原任务状态：原任务继续停在「基准待确认」，等运营把改好的图采纳进来。
+        """
+        job = self.get_job(job_id)
+        targets = self._master_targets(job, task_ids)
+        if not targets:
+            raise WorkbenchError("没有可修改的基准图")
+        text = " ".join((instruction or "").split())
+        if not text:
+            raise WorkbenchError("请说清楚基准图哪里要改")
+        rework = await self.create_rework_job(
+            job_id,
+            [t.id for t in targets],
+            text,
+            provider=provider or str(job.params.get("provider") or ""),
+            model=model or str(job.params.get("model") or ""),
+            account=account,
+        )
+        job.params.setdefault("master_reviews", []).append(
+            {
+                "at": time.time(),
+                "instruction": text,
+                "rework_job": rework.id,
+                "master_ids": [t.id for t in targets],
+            }
+        )
+        job.stage = "基准图修改中：改好后在对话框里确认，就会按新图改色"
+        job.add_log(f"基准图打回修改：{text}（返工任务 {rework.id}）")
+        job.save()
+        self.start(rework.id)
+        return rework
+
+    def learn_from_review(self, job_id: str, task_ids: list[str] | None = None) -> list[dict]:
+        """把本次确认的备注/审核记录沉淀进该款式的 lessons（供下次生成直接用）。"""
+        job = self.get_job(job_id)
+        targets = self._master_targets(job, task_ids)
+        added: list[dict] = []
+        for task in targets:
+            notes = [task.review_note] if task.review_note else []
+            for review in (job.params.get("master_reviews") or []):
+                if isinstance(review, dict) and task.id in (review.get("master_ids") or []):
+                    notes.append(str(review.get("instruction") or ""))
+            for text in notes:
+                item = style_memory.remember(
+                    self.library_dir,
+                    task.garment or str(job.params.get("garment_type") or ""),
+                    str(text),
+                    source={"job_id": job_id, "task_id": task.id},
+                    llm_cfg=self.distill_cfg(),
+                )
+                if item:
+                    added.append(item)
+        return added
+
+    def distill_cfg(self) -> dict:
+        cfg = dict(self.defaults().get("harness") or {})
+        cfg["api_key"] = str(self.env.get(str(cfg.get("api_key_env") or ""), ""))
+        return cfg
 
     def retry(
         self, job_id: str, task_ids: list[str] | None = None, *, only: str = ""

@@ -155,6 +155,10 @@ class JobRunner:
         self.shape_lock = str(params.get("shape_lock") or "master").strip().lower() != "off"
         if str(params.get("mode") or "") == "two_phase":
             self.shape_lock = False      # 两段式本身就是「先改款再换色」，不再套第二层
+        # 基准图审核闸门：先只出基准图，运营在对话框里确认/修改，确认后才按基准图改其余颜色。
+        # phase=derived 表示「已经确认过，这一趟只跑派生色」，不再拦截。
+        self.phase = str(params.get("phase") or "").strip().lower()
+        self.review_gate = bool(params.get("review_gate", False)) and self.shape_lock and self.phase != "derived"
         self.negative = prompts.full_negative(self.skill, self.pattern_mode, subject=self.subject_override)
         # 多款式时每个款式有各自的袖口工艺（平口/螺纹），否定词必须按款取，
         # 不能共用第一款的：否则长袖 T 恤会拿到卫衣的否定、或者反过来
@@ -439,10 +443,11 @@ class JobRunner:
                     return
 
             self.job.status = "running"
-            self.job.stage = "生成中"
+            self.job.stage = "生成中" if self.phase != "derived" else "按确认的基准图改色"
             self.job.add_log(
                 f"开始处理：{len(self.job.tasks)} 个任务，并发 {self.concurrency}，"
                 f"模式 {self.mode}，接口 {self.provider.name}"
+                + ("（本轮=确认后派生改色）" if self.phase == "derived" else "")
             )
             self._save(force=True)
 
@@ -458,6 +463,12 @@ class JobRunner:
                 self.job.status = "canceled"
                 self.job.stage = "已取消"
                 self.job.add_log("任务已取消", level="warn")
+                self._save(force=True)
+                return
+
+            if self.job.status == "review":
+                # 基准图审核：停在这里等运营确认，不打包、不派生其它颜色
+                self.job.params["awaiting_review"] = True
                 self._save(force=True)
                 return
 
@@ -505,15 +516,37 @@ class JobRunner:
             # （实测报 "provider 未初始化"）。统一在服务退出时关闭。
 
     async def _run_single_pass(self) -> None:
-        masters = [t for t in self.job.tasks if t.master]
-        derived = [t for t in self.job.tasks if t.master_task]
-        plain = [t for t in self.job.tasks if not t.master and not t.master_task]
-        if not derived:
-            await self._gather(self.job.tasks, self._execute_color_task)
+        def open_tasks(items: list[Task]) -> list[Task]:
+            """只跑还没出图的：重复点开始 / 确认后继续，都不能把已完成的图再买一次。"""
+            return [t for t in items if t.status not in {"done", "skipped"} and not t.out]
+
+        masters = open_tasks([t for t in self.job.tasks if t.master])
+        derived = open_tasks([t for t in self.job.tasks if t.master_task])
+        plain = open_tasks([t for t in self.job.tasks if not t.master and not t.master_task])
+        if not any(t.master_task for t in self.job.tasks):
+            await self._gather(
+                open_tasks(self.job.tasks), self._execute_color_task
+            )
             return
         # ① 先把基准色出完（同款各色共用这一版版型）
         if masters:
             await self._gather(masters, self._execute_color_task)
+        if self.review_gate:
+            # 基准图审核闸门：这一趟只出基准，停下来等运营确认（不打包、不派生）
+            stuck = [t for t in self.job.tasks if t.master and not t.out]
+            if stuck:
+                self.job.status = "review"
+                self.job.stage = f"基准图没出来（{len(stuck)} 张失败），请重试或换模型"
+                self.job.add_log("基准图未能生成，无法进入审核", level="warn")
+            else:
+                self.job.status = "review"
+                self.job.stage = "基准图已出，等你确认（确认后按这张图改其余颜色）"
+                self.job.add_log(
+                    "先出基准图：确认没问题再按它改色；不满意就直接说要改哪里，"
+                    "改好再确认（确认前不会花钱出其它颜色）"
+                )
+            self._save(force=True)
+            return
         # ② 其余颜色以基准成品为参考图，只改面料颜色
         await self._gather(derived + plain, self._execute_shape_task)
 

@@ -77,6 +77,21 @@ SYSTEM_PROMPT = """你是服装电商改图工作台的 AI 助手，直接和运
   直接把那个方向当作要求提交（返工 → submit_rework 的 instruction 里写清楚的完整要求）。
 - 每轮最多问一个问题；问过了就别再问。信息已经够了就直接做。
 
+**基准图优先的工作方式（很重要）**
+现在出图分两段：先出一张「基准图」，用户看过、确认之后，系统才拿这张基准图去给其它颜色改色。
+所以：
+- 用户说「先出一张看看 / 先出基准」→ 照常提交生成（submit_generation），出来的就是基准图。
+- 基准图出来后：**不要催、不要自己替用户确认**。先说清「这张是基准图，确认后才会给其它颜色改色」，
+  再问一句哪里要不要调（最多一句）。
+- 用户说「可以 / 没问题 / 就这样 / 确定」→ 调用 approve_master（note 里带上他顺口说的要求）。
+- 用户说「领口再小点 / 颜色太亮 / 印花别动」这类修改 → 调用 reject_master（instruction 写清楚），
+  不要用 submit_generation 重开一批。
+- 用户是新手：他讲到什么程度就做到什么程度，专业名词先解释半句再用；
+  拿不准的地方给一个推荐选项（「我建议先这样，行不行？」），别一次问三四个问题。
+- **沉淀规则**：只在用户明确认可某条「以后这个款式都要这样」时才调用 save_style_rule；
+  一次性要求不要记。拿不准就问一句「这条要不要记住，下次这个款直接用？」
+- 报价前先 master_status 看还剩几张要出，别把整批价格说成单张。
+
 风格：中文、口语、短句；不要 markdown 标题，不要复述整段提示词；
 每次回复控制在 6 行以内，把"会动什么 / 锁死什么"讲清楚即可。
 """
@@ -187,6 +202,81 @@ TOOL_DEFS = [
     {
         "type": "function",
         "function": {
+            "name": "master_status",
+            "description": (
+                "看当前任务的基准图状态：基准出来了吗、确认了吗、其余颜色改到哪了。"
+                "用户问「到哪一步了 / 好了没 / 还要多久」时调用。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "approve_master",
+            "description": (
+                "确认这张基准图 OK，并按它给其余所有颜色改色（会产生真实费用）。"
+                "只有用户明确说「可以 / 就这样 / 确定 / 继续」时才调用。"
+                "note 填用户这次同意的附加要求（没有就留空），会一起记进这个款式的长期规则。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "string",
+                        "description": "确认时用户额外交代的一句要求（中文，没有就留空）",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reject_master",
+            "description": (
+                "基准图不满意，按用户说的改一次（以这张基准图为参考图重新生成，会产生真实费用）。"
+                "instruction 写清楚要改哪里；改完后等用户看新图再决定是否确认。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "instruction": {"type": "string", "description": "这次要改什么（中文）"}
+                },
+                "required": ["instruction"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_style_skill",
+            "description": "看这个款式现在的专属规则（提示词要点 + 已经记住的长期规则），判断要不要补。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_style_rule",
+            "description": (
+                "把一条「这个款式以后都要遵守」的要求记进款式规则（下次同款自动带上）。"
+                "只记长期规则，不要记这一张图的一次性要求；用户明确说「记住」或明确认可的"
+                "款式级要求才调用。text 用中文写清规则。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "要记住的规则（中文一句话）"}
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_prompt",
             "description": "查看当前会提交给生图接口的提示词（会自动截断，前面是主要约束）。",
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -223,6 +313,12 @@ class AgentContext:
     submit_generation: Callable[[str], Awaitable[str]] | None = None
     submit_rework: Callable[[str], Awaitable[str]] | None = None
     job_status: Callable[[str], Awaitable[str]] | None = None
+    #: 基准图审核期（mode=master）：确认 / 打回 / 看款式规则 / 记款式规则
+    master_status: Callable[[], Awaitable[str]] | None = None
+    approve_master: Callable[[str], Awaitable[str]] | None = None
+    reject_master: Callable[[str], Awaitable[str]] | None = None
+    style_skill: Callable[[], Awaitable[str]] | None = None
+    save_rule: Callable[[str], Awaitable[str]] | None = None
     # 图片（base64 data url）随首轮请求一起发，供模型真正"看"
     images: list[str] = field(default_factory=list)
     image_labels: list[str] = field(default_factory=list)
@@ -344,6 +440,26 @@ async def _call_tool(ctx: AgentContext, name: str, args: dict) -> str:
             return result
         if name == "job_status" and ctx.job_status:
             return await ctx.job_status(str(args.get("job_id") or ""))
+        if name == "master_status" and ctx.master_status:
+            return await ctx.master_status()
+        if name == "approve_master" and ctx.approve_master:
+            if ctx.mode not in {"master", "intake"}:
+                return "失败：现在不是基准图审核阶段"
+            return await ctx.approve_master(str(args.get("note") or ""))
+        if name == "reject_master" and ctx.reject_master:
+            if ctx.mode not in {"master", "intake"}:
+                return "失败：现在不是基准图审核阶段"
+            text = str(args.get("instruction") or "").strip()
+            if not text:
+                return "失败：要写清楚改哪里"
+            return await ctx.reject_master(text)
+        if name == "get_style_skill" and ctx.style_skill:
+            return await ctx.style_skill()
+        if name == "save_style_rule" and ctx.save_rule:
+            text = str(args.get("text") or "").strip()
+            if len(text) < 3:
+                return "失败：规则太短"
+            return await ctx.save_rule(text)
         if name == "get_prompt":
             if ctx.batch_context:
                 return describe_context(ctx.batch_context) + "\n特殊要求逐目标应用：" + (ctx.requirements or "无")
@@ -497,7 +613,20 @@ async def run_agent(
 
 
 def _intake_intro(ctx: AgentContext, user_message: str) -> str:
-    parts = [f"当前模式：{'返工' if ctx.mode == 'rework' else '开工前沟通'}"]
+    mode_label = {
+        "rework": "返工",
+        "master": "基准图审核（先出基准，用户确认后才按基准改色）",
+    }.get(ctx.mode, "开工前沟通")
+    parts = [f"当前模式：{mode_label}"]
+    if ctx.mode == "master" and ctx.batch_context:
+        review = ctx.batch_context.get("review") or {}
+        if review:
+            parts.append(
+                "基准图状态："
+                + ("待用户确认" if review.get("awaiting") else "已确认 / 未开始")
+                + f"；基准 {len(review.get('master_ids') or [])} 张，"
+                f"其余颜色 {review.get('derived_done') or 0}/{review.get('derived_total') or 0} 已出"
+            )
     if ctx.subject == "garment":
         parts.append("画面主体=garment：默认只有衣服；如运营明确要求指定人物编辑，遵循该次明确要求，不误删其余人物")
     elif ctx.subject == "person":

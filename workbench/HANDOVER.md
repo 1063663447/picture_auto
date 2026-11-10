@@ -135,7 +135,13 @@ workbench/
 - `workbench/library/styles.json`：**款式库叠加层**（27 个业务款式的代号、颜色、版型短语、袖型/袖口、kind 品类、fit、effect），
   `library.load_library()` 合并进 `skill.types`（同 slug 以 skill 为准）
 - 本工作台实际用的是「款式库」那 27 个款式；skill 自带的 3 个通用款（短袖/圆领卫衣/连帽卫衣）仍可用
-- 每个款式都有 `kind` 品类（`top` 上衣 / `vest` 背心 / `bottom` 下装）：背心没有袖子、短裤没有袖口，提示词里的袖长/袖口段落按品类整段替换，别再用上衣那套句子
+- 每个款式都有 `kind` 品类（`top` 上衣 / `vest` 背心 / `bottom` 下装）
+- **生成是两段式（9.6.0）**：多色批次先只出「基准图」，任务停在 `review`，运营在界面/对话框里确认后才按这张基准图给其余颜色改色；不满意就对话提修改，改完「采纳」成新基准。
+  - 代码：`runner._run_single_pass`（闸门 + `open_tasks` 防重复计费）、`service.approve_master / reject_master / learn_from_review`、`job.Task.approved/adopted_from`
+  - 接口：`POST /api/jobs/{id}/approve`、`POST /api/jobs/{id}/reject`、`GET /api/jobs/{id}` 里的 `review` 块
+  - 对话框：`/api/harness/stream` 的 `mode=master`，工具 `master_status / approve_master / reject_master / get_style_skill / save_style_rule`（见 `skillbridge/agent.py`）
+- **款式记忆（lessons）**：`skillbridge/style_memory.py` 把审核确认过的要求写进 `library/prompts/<slug>.json` 的 `lessons`，`prompts.style_positive()` 每次生成都带上（最多 6 条）。翻译走 harness 模型，失败回落成中文原话。
+- 自检：`tools/check_master_gate.py`（闸门全链路，不花钱）、`tools/check_assistant.py`（对话框工具）、`tools/make_review_fixture.py`（造「基准待确认」假任务做界面验收，关掉飞书与通知）：背心没有袖子、短裤没有袖口，提示词里的袖长/袖口段落按品类整段替换，别再用上衣那套句子
 
 ### 4.2 提示词是「拼」出来的，不是一个字符串
 `prompts.build_single_pass()` 的顺序：skill 模板 → 袖长 → 袖口工艺 → 色值锚点 →

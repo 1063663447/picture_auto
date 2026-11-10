@@ -113,6 +113,19 @@ async def run_job(bench: Workbench, job, *, retry_only: bool = False) -> None:
         bench.get_provider(job.params["provider"]), data_dir=bench.data_dir,
     )
     await runner.run(retry_failed_only=retry_only)
+    # 9.6.0 起多色批次先出「基准图」，等确认后才按基准改色。
+    # 自检要的是「整批能跑完」，所以这里扮演运营点一下确认（与 /approve 等价）。
+    if job.status == "review":
+        for task in job.tasks:
+            if task.master:
+                task.approved = True
+        job.params["phase"] = "derived"
+        job.save()
+        runner = JobRunner(
+            job, bench.skill, garment, garment.resolve_colors(job.params["colors"]),
+            bench.get_provider(job.params["provider"]), data_dir=bench.data_dir,
+        )
+        await runner.run()
 
 
 def zip_entries(job) -> list[str]:
