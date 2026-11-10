@@ -1182,11 +1182,11 @@ def build_single_pass(
     want_effect = has_effect(color) if effect is None else bool(effect)
     parts = [
         convert_clause(garment),
+        drawstring_clause(garment),
         prompt,
         garment_lock(garment),
         sleeve_clause(garment),
         cuff_clause(garment, reference=want_effect),
-        drawstring_clause(garment),
         color_hint(color).strip(),
     ]
     effect_text = effect_clause(color, effect, getattr(garment, "fit", ""))
@@ -1318,20 +1318,20 @@ def garment_forbidden(garment: GarmentType) -> str:
     return ", ".join(items) if items else "no change to the garment type"
 
 
-#: **帽绳约束**（只对连帽款注入）。
-#: 起因（2026-11-10）：客户反馈「连帽卫衣的带子容易串」—— 生成出来的两条帽绳互相交叉成 X、
-#: 打结、或者从错误的位置钻出来，甚至压着图案乱穿。帽绳是卫衣最容易画崩的部件，必须单独钉住。
+#: **帽绳色系约束**（只对连帽款注入，放在提示词靠前位置）。
+#: 客户原话「连帽卫衣的带子容易串」= **颜色串色**：黑卫衣生成出白帽绳。
+#: 只写「同色系」还不够（模型会把源图的白绳当设计保留），所以把「源图那根绳是旧色、必须换掉」
+#: 直接写死，并给出每种色的具体对照。
 DRAWSTRING_CLAUSE = (
-    "HOOD DRAWSTRINGS — the hood has exactly TWO cords, one coming out of each eyelet, with the two "
-    "metal or plastic eyelets sitting symmetrically on the neckline, left and right of centre. Both "
-    "cords hang DOWN in the same direction, side by side and parallel, spaced apart, gently curved "
-    "by gravity: they must NOT cross each other, NOT twist around each other, NOT form an X or a "
-    "loop, NOT be knotted, NOT be looped back into the hood, NOT be pulled up over the face, and NOT "
-    "be threaded through the print. Keep them the colour, width and texture of the source cords, with "
-    "two clean cord ends (metal, plastic or heat-sealed aglets) hanging free at the same height. The "
-    "printed artwork stays continuous and readable: a cord may pass naturally IN FRONT of the print "
-    "as a single thin line, never merging with it, splitting it, or being confused with an outline of "
-    "the graphic. No extra cords, no third cord, no string tied to the pocket or the sleeves."
+    "HOOD CORD COLOUR — the two hood cords must be the SAME colour as THIS hoodie's fabric: a black "
+    "or charcoal hoodie gets black / charcoal cords, a white or off-white hoodie gets off-white "
+    "cords, a navy hoodie gets navy cords. The cords are cut from the garment's own fabric, so they "
+    "share its hue family, its tonal bracket, its shading and its shadow; only the cord texture and "
+    "the cord ends stay as the photo shows. The cord colour in the source photo belongs to the OLD "
+    "colourway of that photo and must be REPLACED by this colourway's colour — never copied. If the "
+    "source shows white or contrast cords on a dark hoodie, those white cords must become the dark "
+    "fabric colour here. Same for every colourway in this batch: cords follow their own garment, not "
+    "the source and not another colourway."
 )
 
 
@@ -1352,10 +1352,10 @@ def drawstring_negative(garment: GarmentType | None) -> str:
     if not is_hooded(garment):
         return ""
     return (
-        "Do not cross the two hood cords over each other, do not let them form an X, a loop or a "
-        "knot, do not twist the cords together, do not thread a cord through the printed artwork, "
-        "do not merge a cord into the print outline, do not add a third cord or a stray string, do "
-        "not tuck the cord ends back into the hood, and do not attach cords to the sleeves or pocket."
+        "Do not give the hood cords a colour from outside the garment's colour family, do not put "
+        "white or silver cords on a dark hoodie, do not put charcoal cords on a light hoodie, do not "
+        "borrow the cord colour of another colourway, do not make the cords glossy or metallic, and "
+        "do not leave the cords uncoloured while the garment is recoloured."
     )
 
 

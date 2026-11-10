@@ -1,7 +1,7 @@
 """连帽卫衣帽绳回归：两条绳不能交叉、打结、穿过图案。
 
-背景（2026-11-10）：客户反馈「连帽卫衣的带子容易串」—— 生成出来两条帽绳互相交叉成 X、
-甚至穿过印花。现在连帽款会注入 `HOOD DRAWSTRINGS` 约束 + 对应的否定词，
+背景（2026-11-10）：客户反馈「连帽卫衣的带子容易串」—— 客户指的是**颜色串色**（黑卫衣画出白帽绳）。现在连帽款会注入
+`HOOD CORD COLOUR` 约束（绳色跟衣身同色系）+ 对应的否定词，
 其它款式反过来必须写「no drawstrings」。
 
 用法：python tools/check_hood_cords.py [--show]
@@ -19,14 +19,13 @@ from skillbridge.service import Workbench  # noqa: E402
 FAILURES: list[str] = []
 HOODED = {"06-hoodie"}
 MARKS = (
-    "exactly TWO cords",
-    "must NOT cross each other",
-    "NOT twist around each other",
-    "threaded through the print",
-    "two metal or plastic eyelets",
-    "No extra cords",
+    "HOOD CORD COLOUR",
+    "SAME colour as THIS hoodie's fabric",
+    "black or charcoal hoodie gets black / charcoal cords",
+    "belongs to the OLD colourway",
+    "must be REPLACED by this colourway's colour",
 )
-NEGATIVE_MARKS = ("cross the two hood cords", "form an x", "thread a cord through the printed")
+NEGATIVE_MARKS = ("outside the garment's colour family", "white or silver cords on a dark hoodie", "another colourway")
 
 
 def check(ok: bool, label: str, show: bool) -> None:
@@ -52,7 +51,7 @@ def main() -> int:
             "两段式第一阶段": prompts.build_style_only(garment, subject="person", effect=True),
         }
         for name, text in paths.items():
-            check("HOOD DRAWSTRINGS" in text, f"{slug} / {name}：含帽绳约束", show)
+            check("HOOD CORD COLOUR" in text, f"{slug} / {name}：含帽绳色系约束", show)
             for mark in MARKS:
                 check(mark in text, f"{slug} / {name}：写明「{mark}」", show)
         negative = prompts.full_negative(wb.skill, "preserve", garment, "person")
@@ -67,9 +66,9 @@ def main() -> int:
         text = prompts.build_single_pass(wb.skill, garment, garment.colors[0], subject="person")
         negative = prompts.full_negative(wb.skill, "preserve", garment, "person")
         check(not prompts.is_hooded(garment), f"{slug}：不是连帽款", show)
-        check("HOOD DRAWSTRINGS" not in text, f"{slug}：提示词不含帽绳约束", show)
+        check("HOOD CORD COLOUR" not in text, f"{slug}：提示词不含帽绳色系约束", show)
         check("no drawstrings" in text.lower(), f"{slug}：提示词要求没有抽绳", show)
-        check("cross the two hood cords" not in negative.lower(), f"{slug}：负面词不提帽绳交叉", show)
+        check("colour family" not in negative.lower(), f"{slug}：负面词不提帽绳色系", show)
 
     print()
     if FAILURES:

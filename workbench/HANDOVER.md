@@ -151,11 +151,12 @@ workbench/
   3. 平口袖口原句 "sleeve stays at full width" 与紧身款冲突 → 带效果图时用 `CUFF_PLAIN_CLAUSE_REF`
 - 接口只支持单图（`max_images<2`）或缺效果图 → 自动退回「原图 + 颜色参考图」
 
-### 4.3.7 帽绳约束（9.4.6，别再删）
-连帽款的帽绳是模型最爱画崩的部件（交叉成 X、打结、穿过印花）。`prompts.DRAWSTRING_CLAUSE` +
-`drawstring_negative()` 已钉住：两条绳、左右鸡眼扣、同向并排、禁止交叉/成环/打结/穿图/加第三条。
-四条路径（一次到位/派生/只换色/两段式第一阶段）都注入，非连帽款保持「no drawstrings」。
-回归：`tools/check_hood_cords.py`。
+### 4.3.7 帽绳要同色系（9.4.7，别再删）
+客户说的「带子容易串」是**颜色串色**（黑卫衣画出白帽绳），不是绳子交叉 —— 9.4.6 那套几何约束已回退。
+`prompts.DRAWSTRING_CLAUSE`（HOOD CORD COLOUR）+ `drawstring_negative()` 现在钉的是：
+绳色必须跟**本件衣身**同色系（黑→黑绳、白→米白绳），源图那根绳的颜色属于旧色系、必须替换。
+四条路径都注入，且**位置要靠前**（尾部时模型不理，实测有效位置是转换段之后）。
+非连帽款保持「no drawstrings」。回归：`tools/check_hood_cords.py`。
 
 ### 4.3.6 款式转换段 + 负面约束合并（9.4.5，别再删）
 - **negative 必须真的发出去**：65535/a6api/fal 没有 negative_prompt 字段，`runner._guarded_call`
