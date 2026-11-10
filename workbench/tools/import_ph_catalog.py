@@ -55,9 +55,37 @@ COLOR_CODE_RE = __import__("re").compile(r"^[A-Z]{1,5}\[\d+\]$")
 #:   想恢复：把这几个代号从这里删掉，再跑一次本脚本即可。
 EXCLUDE_CODES: set[str] = {"14", "15", "16"}
 
-#: 目录里有、但工作簿里没有 sheet 的款式（目前是 30扎染T 30#ZRT）：
-#: 没有颜色行和效果图就没法建档，等客户补 sheet 后再导。
-MISSING_SHEET_CODES = {"30": "30扎染T（30#ZRT）"}
+#: 目录里有、但工作簿里没有 sheet 的款式：目前只有 30扎染T，
+#: 客户另外发了款式图（尺寸表 + 3 个颜色实拍），由 `MANUAL_STYLES` 建档，不走 sheet。
+MISSING_SHEET_CODES: dict[str, str] = {}
+
+#: **没有 sheet、靠客户另发图片建档的款式**（效果图/缩略图先由
+#: `tools/add_style_30_tiedye.py` 从客户图片裁好放进 library/effects|refs/<slug>）。
+#: 这里的条目只在图片存在时才写进 styles.json，所以重跑导表不会把它们弄丢。
+MANUAL_STYLES: dict[str, dict] = {
+    "30": {
+        "slug": "30-tie-dye-tee",
+        "name": "30 扎染T",
+        "name_en": "30ZRT",
+        "phrase": "a loose short-sleeve tie-dye t-shirt in 100% polyester jersey whose CLOTH "
+                  "ITSELF carries a soft mottled marble tie-dye surface (irregular cloudy blotches "
+                  "with blurred edges, like 扎染), ribbed crew neckband, dropped shoulders, wide "
+                  "short sleeves, plain folded hems",
+        "fit": "loose boxy fit: dropped shoulders, wide short sleeves, straight body, plain hems; "
+               "the fabric surface is a soft mottled tie-dye marble with blurred irregular blotches "
+               "rather than a crisp printed graphic",
+        "cuff": "plain", "sleeve": "short", "kind": "top",
+        "aliases": ["30 扎染T", "扎染T", "扎染", "30#ZRT", "tie dye tee", "tie-dye t-shirt"],
+        "note": "扎染款：面料本身是扎染/晕染纹理，不是印上去的图案；表格目录里有、但工作簿没有 sheet，"
+                "图来自客户另发的款式图",
+        "source": "客户提供的 30#ZRT 款式图（尺寸表 + 颜色实拍）",
+        "colors": [
+            {"label": "white", "name_zh": "白色", "color_code": "WH[0]", "file": "white.jpg"},
+            {"label": "lotus-pink", "name_zh": "藕粉色", "color_code": "LPK[0]", "file": "lotus-pink.jpg"},
+            {"label": "milk-tea", "name_zh": "奶茶色", "color_code": "MTC[0]", "file": "milk-tea.jpg"},
+        ],
+    },
+}
 
 #: 新款式的建档元数据（老 10 款沿用 styles.json 里已经调好的 phrase / fit，不在这里覆盖）。
 #:   phrase  —— 写进「款式锁 / 款式转换段」的名词短语，**必须是这个款本身的准确描述**
@@ -511,6 +539,78 @@ def main() -> int:
                     }
                 )
             existing["colors"] = colors_out
+
+    # ---------------------------------------------------------- 手工建档 --
+    def apply_manual_styles() -> int:
+        """把 MANUAL_STYLES 里「图片已经就位」的款式写进 styles.json（幂等）。"""
+        added = 0
+        for code, meta in MANUAL_STYLES.items():
+            effect_dir = EFFECTS / meta["slug"]
+            if not effect_dir.is_dir():
+                print(f"  [skip] {code}#{meta['name_en']}：还没有效果图目录 {effect_dir.name}/")
+                continue
+            colors_out: list[dict] = []
+            for color in meta["colors"]:
+                effect_path = None
+                for suffix in (".jpg", ".jpeg", ".png", ".webp"):
+                    candidate = effect_dir / f"{color['color_code']}{suffix}"
+                    if candidate.is_file():
+                        effect_path = candidate
+                        break
+                if effect_path is None:
+                    print(f"  [skip] {code}#{meta['name_en']} / {color['name_zh']}：缺效果图")
+                    continue
+                ref_path = REFS / meta["slug"] / str(color["file"])
+                if ref_path.is_file():
+                    with Image.open(effect_path) as handle:
+                        hex_value, _ = fabric_hex(ImageOps.exif_transpose(handle).convert("RGB"))
+                    colors_out.append(
+                        {
+                            "label": color["label"],
+                            "name_zh": color["name_zh"],
+                            "color_code": color["color_code"],
+                            "hex": hex_value,
+                            "image": ref_path.relative_to(LIB).as_posix(),
+                            "effect": effect_path.relative_to(LIB).as_posix(),
+                            "effect_source": f"{code}#{meta['name_en']} / "
+                                             f"{color['name_zh']} / 客户款式图",
+                        }
+                    )
+                else:
+                    print(f"  [skip] {code}#{meta['name_en']} / {color['name_zh']}：缺缩略图")
+            if len(colors_out) != len(meta["colors"]):
+                print(f"  [skip] {code}#{meta['name_en']}：色图不全，先不建档")
+                continue
+            payload = {
+                "slug": meta["slug"],
+                "style_code": code,
+                "display_name": meta["name"],
+                "name_en": meta["name_en"],
+                "aliases": meta["aliases"],
+                "phrase": meta["phrase"],
+                "cuff": meta["cuff"],
+                "sleeve": meta["sleeve"],
+                "kind": meta["kind"],
+                "fit": meta["fit"],
+                "source": meta["source"],
+                "notes": meta["note"],
+                "colors": colors_out,
+            }
+            table = {str(item.get("style_code") or "").strip(): item for item in styles}
+            current = table.get(code)
+            if current is None:
+                styles.append(payload)
+                added += 1
+                print(f"  [新增] {code}#{meta['name_en']} {meta['name']}（{len(colors_out)} 色）")
+            else:
+                merged = {**current, **payload}
+                current.clear()
+                current.update(merged)
+                print(f"  [刷新] {code}#{meta['name_en']} {meta['name']}（{len(colors_out)} 色）")
+        return added
+
+    print()
+    apply_manual_styles()
 
     dropped = [
         s for s in styles

@@ -163,6 +163,13 @@
       "negative_chars": 522
     },
     {
+      "slug": "30-tie-dye-tee",
+      "file": "30-tie-dye-tee.json",
+      "notes": "扎染T：面料本身是扎染/晕染纹理（糊状斑块，不是硬边印花）",
+      "positive_chars": 3765,
+      "negative_chars": 726
+    },
+    {
       "slug": "31-ink-wash-tee",
       "file": "31-ink-wash-tee.json",
       "notes": "水墨T：面料本身是水墨/大理石晕染纹理",

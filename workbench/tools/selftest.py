@@ -152,12 +152,12 @@ def main() -> int:
     check("2MB 限制", bench.skill.max_bytes == 2_000_000, str(bench.skill.max_bytes))
     check("解析无警告", not bench.skill.warnings, str(bench.skill.warnings))
 
-    print("\n[1.5] 款式库（菲律宾款式代号表，24 款 112 色）")
+    print("\n[1.5] 款式库（菲律宾款式代号表 24 款 + 手工建档 30 扎染T = 25 款 115 色）")
     lib_bench = build_bench("library", library=True)
     lib_types = [s for s in lib_bench.skill.types if s[0].isdigit()]
-    check("叠加 24 个款式", len(lib_types) == 24, str(lib_types))
+    check("叠加 25 个款式", len(lib_types) == 25, str(lib_types))
     total_colors = sum(len(lib_bench.skill.types[s].colors) for s in lib_types)
-    check("共 112 个颜色", total_colors == 112, str(total_colors))
+    check("共 115 个颜色", total_colors == 115, str(total_colors))
     missing = [
         f"{slug}/{c.label}"
         for slug in lib_types

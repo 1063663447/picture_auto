@@ -605,3 +605,36 @@ select option:disabled { color: var(--fg-subtle); }
 .review-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .review-note{font-size:11.5px;color:#b8b0d6}
 .review-note[data-warn="1"]{color:#ffb4a8}
+
+/* ------------------------------------------------- 9.6.2 对话框瘦身 -------- */
+/* 客户反馈：聊天框太挤。头部只留一个「AI 助手」，相位压成一行，剩下的高度全给对话。 */
+body.flow-shell #harnessDrawer.ai-dialog .drawer-head{padding:8px 14px;min-height:0;gap:8px}
+body.flow-shell #harnessDrawer.ai-dialog .drawer-head>.avatar{width:26px;height:26px}
+#harnessDrawer .harness-title-compact{font-size:12px;font-weight:600;letter-spacing:.04em;color:#cfc8e6}
+#harnessDrawer .ai-workflow.ai-workflow-compact{
+  flex:none;display:flex;align-items:center;gap:8px;padding:7px 14px;
+  border-bottom:1px solid rgba(184,176,204,.10);background:rgba(10,9,14,.55)}
+#harnessDrawer .ai-workflow-compact .ai-orb{width:16px;height:16px;font-size:9px;flex:none}
+#harnessDrawer .ai-workflow-compact strong{font-size:11.5px;font-weight:550;color:#e6e1f7;white-space:nowrap}
+#harnessDrawer .ai-workflow-compact p{
+  font-size:10.5px;color:#8f88a4;margin:0;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#harnessDrawer .ai-workflow-compact .ai-elapsed{font-size:10px;color:#7d7691;flex:none}
+#harnessDrawer [hidden]{display:none !important}
+body.flow-shell #harnessDrawer.ai-dialog #chatLog{padding:14px 16px;min-height:220px}
+body.flow-shell #harnessDrawer.ai-dialog{height:min(88vh,860px)}
+
+/* 对话里的基准图卡片 + 一键操作 */
+#harnessDrawer .master-card{display:flex;flex-direction:column;gap:8px}
+#harnessDrawer .master-shots{display:flex;gap:8px;flex-wrap:wrap}
+#harnessDrawer .master-shots figure{margin:0;display:flex;flex-direction:column;gap:3px;align-items:center}
+#harnessDrawer .master-shots img{
+  max-height:190px;max-width:200px;object-fit:contain;border-radius:9px;background:#fff;
+  border:1px solid rgba(255,255,255,.16);cursor:zoom-in}
+#harnessDrawer .master-shots figcaption{font-size:10px;color:#a9a2c0}
+#harnessDrawer .chat-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+#harnessDrawer .chat-actions button{
+  border:1px solid rgba(150,126,255,.42);background:rgba(122,92,255,.16);color:#e9e4ff;
+  font-size:11.5px;padding:5px 10px;border-radius:999px;cursor:pointer}
+#harnessDrawer .chat-actions button.primary{background:rgba(122,92,255,.42);border-color:rgba(170,150,255,.7);color:#fff}
+#harnessDrawer .chat-actions button:disabled{opacity:.5;cursor:default}

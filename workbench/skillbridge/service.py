@@ -1931,6 +1931,26 @@ class Workbench:
         job.params["master_approved"] = True
         job.params["awaiting_review"] = False
         job.params["approved_at"] = time.time()
+        # 主动沉淀：确认这一刻就把「这次对齐过的要求」记进款式规则（不用用户说「记住」）
+        learned: list[dict] = []
+        if self.defaults().get("auto_learn", True):
+            signals = bool(note) or bool(job.params.get("master_reviews"))
+            if signals:
+                try:
+                    learned = self.learn_from_review(job_id, [t.id for t in targets])
+                except Exception as exc:  # noqa: BLE001 - 沉淀失败不影响出图
+                    job.add_log(f"自动沉淀款式规则失败：{exc}", level="warn")
+                if learned:
+                    job.params["learned_lessons"] = [
+                        {"slug": item.get("slug"), "clause": item.get("clause")}
+                        for item in learned
+                    ]
+                    job.add_log(
+                        "已自动记进款式规则 "
+                        f"{len(learned)} 条：" + "；".join(
+                            f"{item.get('slug')} ← {item.get('zh')}" for item in learned
+                        )
+                    )
         job.status = "running"
         job.stage = "基准已确认，按基准图改色"
         job.add_log(
@@ -1954,7 +1974,9 @@ class Workbench:
             job.add_log(f"改色启动失败：{exc}", level="error")
             job.save()
             raise WorkbenchError(f"改色启动失败：{exc}") from exc
-        return job.as_dict(with_tasks=True, with_log=True, with_prompts=False)
+        payload = job.as_dict(with_tasks=True, with_log=True, with_prompts=False)
+        payload["learned"] = learned
+        return payload
 
     async def reject_master(
         self,

@@ -45,6 +45,7 @@ DETAIL_MARKERS = {
     "18-halter-tank": "HALTER NECK",
     "20-distressed-tee": "ACID-WASH SURFACE",
     "31-ink-wash-tee": "INK-WASH FABRIC",
+    "30-tie-dye-tee": "TIE-DYE FABRIC",
     "26-cropped-sorona-tee": "CROPPED LENGTH",
     "05-cropped-tee": "CROPPED LENGTH",
     "17-kids-cropped-tee": "CROPPED KIDS LENGTH",
@@ -73,11 +74,11 @@ def main() -> int:
     rows = json.loads((LIB / "styles.json").read_text(encoding="utf-8"))
     rows = rows if isinstance(rows, list) else rows.get("styles") or []
 
-    print("① 数据：菲律宾款式表 24 款 / 112 色")
-    check(len(rows) == 24, f"styles.json 有 24 个款式（实际 {len(rows)}）", show)
+    print("① 数据：菲律宾款式表 24 款 + 手工建档 30 扎染T = 25 款 / 115 色")
+    check(len(rows) == 25, f"styles.json 有 25 个款式（实际 {len(rows)}）", show)
     total = sum(len(s.get("colors") or []) for s in rows)
-    check(total == 112, f"共 112 个色号（实际 {total}）", show)
-    check(len(types) == 27, f"工作台可选 27 款（24 + skill 自带 3，实际 {len(types)}）", show)
+    check(total == 115, f"共 115 个色号（实际 {total}）", show)
+    check(len(types) == 28, f"工作台可选 28 款（25 + skill 自带 3，实际 {len(types)}）", show)
     bad_files: list[str] = []
     bad_effect: list[str] = []
     for style in rows:
@@ -117,7 +118,7 @@ def main() -> int:
     print("③ 提示词：每款一份专属核心，且真的生效")
     on_disk = load_all(library)
     missing = [slug for slug in types if slug not in on_disk]
-    check(not missing, f"27 款都有专属提示词文件（缺 {missing}）", show)
+    check(not missing, f"28 款都有专属提示词文件（缺 {missing}）", show)
     for slug in sorted(catalog_slugs):
         garment = types[slug]
         if not garment.style_positive:

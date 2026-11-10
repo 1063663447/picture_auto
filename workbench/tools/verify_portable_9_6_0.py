@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.1-win-x64-internal.zip"
-VERSION = "9.6.1"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.2-win-x64-internal.zip"
+VERSION = "9.6.2"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -43,6 +43,7 @@ REQUIRED = [
     "workbench/skillbridge/agent.py",
     # 9.6.0 新增/改动的关键文件
     "workbench/skillbridge/style_memory.py",
+    "workbench/library/prompts/30-tie-dye-tee.json",
     "workbench/library/styles.json",
     "workbench/library/effects/manifest.json",
     "workbench/CHANGELOG_MASTER_GATE_9.6.0.md",
@@ -85,8 +86,8 @@ def main() -> int:
 
     styles = json.loads(z.read(TOP + "workbench/library/styles.json").decode("utf-8"))
     colours = sum(len(s.get("colors") or []) for s in styles)
-    check(len(styles) == 24, f"款式 24 个（实际 {len(styles)}）")
-    check(colours == 112, f"色号 112 个（实际 {colours}）")
+    check(len(styles) == 25, f"款式 25 个（实际 {len(styles)}）")
+    check(colours == 115, f"色号 115 个（实际 {colours}）")
 
     service = z.read(TOP + "workbench/skillbridge/service.py").decode("utf-8")
     check("approve_master" in service and "reject_master" in service,
@@ -115,7 +116,7 @@ def main() -> int:
     check("?v=9.6" in index, "前端资源版本 9.6.x")
 
     readme = z.read(TOP + "使用说明.txt").decode("utf-8-sig")
-    check(VERSION in readme, "使用说明写明 9.6.1")
+    check(VERSION in readme, f"使用说明写明 {VERSION}")
     check("基准图" in readme, "使用说明讲了先出基准图")
     info = json.loads(z.read(TOP + "package-info.json").decode("utf-8"))
     check(info.get("version") == VERSION, f"package-info 版本 {info.get('version')}")
@@ -124,10 +125,10 @@ def main() -> int:
         n for n in names
         if "/library/prompts/" in n and n.endswith(".json") and not n.endswith("index.json")
     ]
-    check(len(prompt_files) == 27, f"款式专属提示词 27 份（实际 {len(prompt_files)}）")
+    check(len(prompt_files) == 28, f"款式专属提示词 28 份（实际 {len(prompt_files)}）")
     effects = [n for n in names if "/library/effects/" in n and n.lower().endswith(
         (".jpg", ".jpeg", ".png", ".webp"))]
-    check(len(effects) == 112, f"效果图 112 张（实际 {len(effects)}）")
+    check(len(effects) == 115, f"效果图 115 张（实际 {len(effects)}）")
 
     z.close()
     summary = {
@@ -155,7 +156,7 @@ def main() -> int:
         for item in FAILURES:
             print("  -", item)
         return 1
-    print("全部通过：基准图闸门 + 款式记忆 + 对话工具都在包里，24 款 / 112 色齐全")
+    print("全部通过：基准图闸门 + 款式记忆 + 对话工具都在包里，25 款 / 115 色齐全")
     return 0
 
 

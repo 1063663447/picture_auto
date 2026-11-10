@@ -24,7 +24,7 @@ def main()->None:
     page=Page();page.feed(html)
     assert len(page.ids)==len(set(page.ids)), 'Duplicate DOM IDs'
     optional={'patternMode','sizePreview','outputFormat','downloadFmt','concurrency','rpm','garment','colors'}
-    dynamic={'jobLoadingSurface'}
+    dynamic={'jobLoadingSurface','masterStatus'}   # 运行时创建的节点（基准图进度行）
     referenced=set(re.findall(r'\$\("([A-Za-z][A-Za-z0-9]+)"\)',app))
     assert not referenced-set(page.ids)-optional-dynamic, f'Missing hooks: {referenced-set(page.ids)-optional-dynamic}'
     for resource in page.resources:

@@ -5,16 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=9.6.5" />
-<link rel="stylesheet" href="/aurora.css?v=9.6.5" />
-<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.5" />
-<link rel="stylesheet" href="/blackglass/type.css?v=9.6.5" />
-<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.5" />
-<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.5" />
-<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.5" />
-<link rel="stylesheet" href="/blackglass.css?v=9.6.5" />
-<link rel="stylesheet" href="/graphite.css?v=9.6.5" />
-<link rel="stylesheet" href="/ai-workflow.css?v=9.6.5" />
+<link rel="stylesheet" href="/style.css?v=9.6.7" />
+<link rel="stylesheet" href="/aurora.css?v=9.6.7" />
+<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.7" />
+<link rel="stylesheet" href="/blackglass/type.css?v=9.6.7" />
+<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.7" />
+<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.7" />
+<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.7" />
+<link rel="stylesheet" href="/blackglass.css?v=9.6.7" />
+<link rel="stylesheet" href="/graphite.css?v=9.6.7" />
+<link rel="stylesheet" href="/ai-workflow.css?v=9.6.7" />
 </head>
 <body class="flow-shell booting">
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -312,14 +312,20 @@
 <section class="drawer ai-dialog" id="harnessDrawer" hidden aria-modal="true" role="dialog" aria-labelledby="harnessTitle" data-ai-phase="preparing">
   <div class="drawer-head">
     <span class="avatar"><svg><use href="#i-spark"/></svg></span>
-    <div class="who"><div class="ai-eyebrow"><i></i>AI STUDIO / LIVE WORKFLOW</div><b id="harnessTitle">AI 创作工作室</b><span id="harnessSub">素材、需求和执行约束在这里对齐</span></div>
+    <div class="who">
+      <b id="harnessTitle" class="harness-title-compact">AI 助手</b>
+      <span id="harnessSub" hidden></span>
+    </div>
     <button class="btn btn-quiet btn-icon" type="button" id="harnessClose" aria-label="收起 AI 工作窗口" title="收起后可继续查看本轮进度"><svg><use href="#i-x"/></svg></button>
   </div>
-  <div class="ai-workflow">
-    <div class="ai-workflow-main"><div class="ai-orb" aria-hidden="true"><span>✧</span></div><div class="ai-stage-copy"><strong id="aiPhaseLabel" role="status" aria-live="polite">正在准备素材</strong><p id="aiPhaseDetail">整理原图、款色和本轮设定，不会提前提交生图任务。</p></div><output class="ai-elapsed" id="aiElapsed">已用时 0s</output></div>
-    <ol class="ai-pipeline" aria-label="AI 工作阶段"><li data-ai-step="prepare" data-state="active"><i>01</i><span>素材准备</span></li><li data-ai-step="align"><i>02</i><span>AI 对齐</span></li><li data-ai-step="confirm"><i>03</i><span>确认需求</span></li><li data-ai-step="submit"><i>04</i><span>提交生图</span></li></ol>
-    <div class="ai-progress" id="aiProgress" role="progressbar" aria-label="实际处理阶段" aria-valuetext="正在准备素材" aria-busy="true"></div>
-    <div class="ai-live-metrics"><span class="ai-signal" id="aiSignal">等待服务端响应</span><span id="aiCharacterCount">等待流式内容</span><span id="aiToolCount">工具按需执行</span></div>
+  <div class="ai-workflow ai-workflow-compact">
+    <span class="ai-orb" aria-hidden="true"><span>✧</span></span>
+    <strong id="aiPhaseLabel" role="status" aria-live="polite">正在准备素材</strong>
+    <p id="aiPhaseDetail">整理原图、款色和本轮设定</p>
+    <output class="ai-elapsed" id="aiElapsed">0s</output>
+    <ol class="ai-pipeline" aria-label="AI 工作阶段" hidden><li data-ai-step="prepare" data-state="active"><i>01</i><span>素材准备</span></li><li data-ai-step="align"><i>02</i><span>AI 对齐</span></li><li data-ai-step="confirm"><i>03</i><span>确认需求</span></li><li data-ai-step="submit"><i>04</i><span>提交生图</span></li></ol>
+    <div class="ai-progress" id="aiProgress" role="progressbar" aria-label="实际处理阶段" aria-valuetext="正在准备素材" aria-busy="true" hidden></div>
+    <div class="ai-live-metrics" hidden><span class="ai-signal" id="aiSignal">等待服务端响应</span><span id="aiCharacterCount">等待流式内容</span><span id="aiToolCount">工具按需执行</span></div>
   </div>
   <div class="chat" id="chatLog" aria-live="polite"></div>
   <div class="drawer-foot">
@@ -397,11 +403,11 @@
 <div class="scrim" id="usageScrim" hidden></div><aside class="drawer" id="usageDrawer" hidden aria-modal="true" role="dialog" aria-label="我的用量"><div class="drawer-head"><span class="avatar"><svg><use href="#i-coins"/></svg></span><div class="who"><b>我的用量与花费</b><span>按工作台用量记录计价</span></div><button class="btn btn-quiet btn-icon" id="usageClose" type="button" aria-label="关闭用量"><svg><use href="#i-x"/></svg></button></div><div class="chat" id="usageBody"></div><div class="drawer-foot"><button class="btn btn-ghost" id="usageReload" type="button">刷新用量</button></div></aside>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.5"></script>
-<script src="/blackglass/atmosphere.js?v=9.6.5"></script>
-<script src="/blackglass/effects.js?v=9.6.5"></script>
-<script src="/blackglass-ui.js?v=9.6.5"></script>
-<script src="/ai-workflow.js?v=9.6.5"></script>
-<script src="/app.js?v=9.6.5"></script>
+<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.7"></script>
+<script src="/blackglass/atmosphere.js?v=9.6.7"></script>
+<script src="/blackglass/effects.js?v=9.6.7"></script>
+<script src="/blackglass-ui.js?v=9.6.7"></script>
+<script src="/ai-workflow.js?v=9.6.7"></script>
+<script src="/app.js?v=9.6.7"></script>
 </body>
 </html>

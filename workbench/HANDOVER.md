@@ -102,9 +102,9 @@ workbench/
 │   ├── admin.html/admin.js  独立管理看板（SVG 曲线/柱状图）
 │   └── style.css / glass.css / aurora.css 旧基础与主题资源保留
 ├── library/                 款式库
-│   ├── styles.json          24 款式 / 112 色（含 fit 版型描述、kind 品类、effect 效果图字段）
+│   ├── styles.json          25 款式 / 115 色（含 fit 版型描述、kind 品类、effect 效果图字段）
 │   ├── refs/<slug>/<color>.jpg    颜色参考图（小色卡）
-│   └── effects/<slug>/<码>.jpg    官方效果图（1500×1500，112 张，导入而来）
+│   └── effects/<slug>/<码>.jpg    官方效果图（1500×1500，115 张，导入而来）
 ├── tools/                   50+ 个检查/运维脚本（见 §8）
 ├── data/                    **不进 git**：jobs/（每单一个目录）、drafts/、test/（验证产物）
 └── .skills/                 可选的 ui-ux skill（不参与生图）
@@ -132,10 +132,12 @@ workbench/
 ### 4.1 skill 是两层的
 - `apparel-style-recolor/SKILL.md`：**生图规范原文**（版型描述、提示词模板、负面词、打包规则），
   `skill.load_skill()` 用 `> 引用块` 解析出 `prompt_template` / `negative_prompt`
-- `workbench/library/styles.json`：**款式库叠加层**（24 个业务款式的代号、颜色、版型短语、袖型/袖口、kind 品类、fit、effect），
+- `workbench/library/styles.json`：**款式库叠加层**（25 个业务款式的代号、颜色、版型短语、袖型/袖口、kind 品类、fit、effect），
   `library.load_library()` 合并进 `skill.types`（同 slug 以 skill 为准）
-- 本工作台实际用的是「款式库」那 24 个款式；skill 自带的 3 个通用款（短袖/圆领卫衣/连帽卫衣）仍可用
+- 本工作台实际用的是「款式库」那 25 个款式；skill 自带的 3 个通用款（短袖/圆领卫衣/连帽卫衣）仍可用
 - 每个款式都有 `kind` 品类（`top` 上衣 / `vest` 背心 / `bottom` 下装）
+- **对话优先 + 主动沉淀（9.6.2）**：点生成后自动打开对话框（`startMasterChat` → `masterWatch`），基准图与改图结果都以图片卡片返到对话里（`chatMasterCard` / `chatReworkCard`），「采纳当基准」走 `POST /api/jobs/{id}/approve` 的 `adopt`；确认时 `service.approve_master` 自动调 `learn_from_review` 把对齐要求写进 `lessons`（`defaults.auto_learn`，默认开）。回归：`tools/check_auto_learn.py`。
+- **30 扎染T**：无 sheet 的款式走 `import_ph_catalog.MANUAL_STYLES` + `tools/add_style_30_tiedye.py` 裁图建档（图来自客户款式图，不是表格）。
 - **生成是两段式（9.6.0）**：多色批次先只出「基准图」，任务停在 `review`，运营在界面/对话框里确认后才按这张基准图给其余颜色改色；不满意就对话提修改，改完「采纳」成新基准。
   - 代码：`runner._run_single_pass`（闸门 + `open_tasks` 防重复计费）、`service.approve_master / reject_master / learn_from_review`、`job.Task.approved/adopted_from`
   - 接口：`POST /api/jobs/{id}/approve`、`POST /api/jobs/{id}/reject`、`GET /api/jobs/{id}` 里的 `review` 块
@@ -292,7 +294,7 @@ workbench/
 | a6api 单张耗时 | 1 并发 22.4s；10 并发 22–25s（wall 39s）；30 并发 p50 33 / p95 39.6（wall 75s）；100 并发 p50 51 / p95 84 / max 130（wall 246s） |
 | 并发甜点 | 单批 **20–30 张**；再往上只是尾巴变长 |
 | 版型漂移（修前） | 同款 3 色轮廓相似度只有 0.3–0.6 |
-| 款式库 | 24 款式 / 112 色 / 112 张效果图（约 37MB） |
+| 款式库 | 25 款式 / 115 色 / 115 张效果图（约 38MB） |
 
 ---
 
@@ -340,7 +342,7 @@ python tools/make_shape_compare.py       # 生成版型 A/B 对照图
 
 ## 9. 已知限制 / 待办
 
-1. **效果图覆盖 24 个款式**（款式表导入），skill 自带的通用款（短袖/圆领卫衣/连帽卫衣）没有效果图，
+1. **效果图覆盖 25 个款式**（款式表导入），skill 自带的通用款（短袖/圆领卫衣/连帽卫衣）没有效果图，
    走的是颜色参考图老路径。
 2. **`fit` 字段是人工按效果图填的**（`library/styles.json`），若某款描述不准，直接改这个词，
    提示词会立刻跟着变。理想做法是让模型读效果图自动生成版型描述。

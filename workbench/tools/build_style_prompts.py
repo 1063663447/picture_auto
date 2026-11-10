@@ -59,6 +59,7 @@ NOTES = {
     "26-cropped-sorona-tee": "露脐索罗娜：方版露脐短款、宽短袖、罗纹圆领",
     "28-kids-sweatshirt": "卫衣童装：儿童圆领卫衣、罗纹袖口下摆、无帽",
     "29-kids-washed-tee": "水洗童装：儿童 oversize 水洗短袖、平口",
+    "30-tie-dye-tee": "扎染T：面料本身是扎染/晕染纹理（糊状斑块，不是硬边印花）",
     "31-ink-wash-tee": "水墨T：面料本身是水墨/大理石晕染纹理",
 }
 
@@ -154,6 +155,15 @@ DETAIL = {
         "midriff is left bare. The cut is boxy with slightly dropped shoulders, wide short sleeves and "
         "a ribbed crew neckband, and the cropped hem is straight and level."
     ),
+    "30-tie-dye-tee": (
+        "TIE-DYE FABRIC — the cloth itself carries a soft mottled tie-dye / marble surface: "
+        "irregular cloudy blotches and cloudy flecks on a light base, with blurred edges where one "
+        "blotch bleeds into the next, spread across the whole body and both sleeves and thinning out "
+        "towards the hems. It is a fabric dye effect, not a crisp printed graphic, not a decal and not "
+        "a separate printed patch, and it must keep running across seams and folds. Keep the neckband, "
+        "sleeve ends and hem in the same fabric. Any artwork the source already carries sits on top of "
+        "that fabric and is preserved as is."
+    ),
     "31-ink-wash-tee": (
         "INK-WASH FABRIC — the cloth itself carries a soft grey ink-wash / marble pattern: blurred "
         "organic veins spreading across the whole body and the sleeves and fading out at the edges "
@@ -197,6 +207,11 @@ DETAIL_NEGATIVE = {
     "19-u-neck-tee": "Do not turn the U neckline into a crew neck or a V neck.",
     "20-distressed-tee": "Do not flatten the acid-wash mottling into one uniform solid colour.",
     "26-cropped-sorona-tee": "Do not lengthen the cropped body and do not lower the cropped hem.",
+    "30-tie-dye-tee": (
+        "Do not turn the tie-dye mottling into a hard-edged graphic, a decal, an all-over print or a "
+        "single flat colour, do not blow the blotches up into symmetrical shapes, and do not stop the "
+        "tie-dye at a seam."
+    ),
     "31-ink-wash-tee": (
         "Do not turn the ink-wash marbling into a hard-edged graphic, a decal or a single flat colour, "
         "and do not stop the veining at a seam."

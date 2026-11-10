@@ -93,7 +93,9 @@
       }
     ],
     "review_master": true,
-    "review_master_note": "先出基准图 → 运营在对话框里确认/修改 → 再按基准图改其余颜色；单色批次没有派生色，自动关闭"
+    "review_master_note": "先出基准图 → 运营在对话框里确认/修改 → 再按基准图改其余颜色；单色批次没有派生色，自动关闭",
+    "auto_learn": true,
+    "auto_learn_note": "确认基准图时自动把这次对齐的要求记进该款式的 lessons（主动沉淀，不用用户说“记住”）"
   },
   "providers": {
     "terra": {

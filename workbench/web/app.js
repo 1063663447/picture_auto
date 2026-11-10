@@ -69,6 +69,10 @@
     harnessBusy: false,
     harnessOpening: false,
     harnessSubmittedJob: "",
+    // 9.6.2 对话优先：正在盯的基准图任务（空=没在盯）
+    masterJobId: "",
+    masterShown: false,
+    masterDoneShown: false,
     harnessStreamDone: false,
     harnessHasResult: false,
     harnessContextKey: "",
@@ -1043,6 +1047,8 @@
       window.WorkbenchUI.endSubmission(true);
       if(fromHarness){state.harnessSubmittedJob=data.job.id;window.AIWorkflow?.submitted(data.job.id);}else closeHarness();
       watchJob(data.job.id, data.job);
+      // 9.6.2：多色批次先出基准图 → 直接拉出对话框，由 AI 返图给用户确认
+      if(data.job?.review?.enabled) startMasterChat(data.job.id);
       loadHistory();
       loadGate();
       setTimeout(loadPricing, 1500);   // 先让结果区渲染出来，用量芯片稍后再刷
@@ -1203,7 +1209,7 @@
     }
   }
 
-  async function approveMaster(button) {
+  async function approveMaster(button, adopt) {
     const jobId = state.jobId;
     if (!jobId || state.job?.id !== jobId) return;
     const info = reviewInfo(state.job);
@@ -1214,16 +1220,238 @@
         const res = await api(`/api/jobs/${jobId}/approve`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ task_ids: ids, note: state.reviewNote || "", learn: true }),
+          body: JSON.stringify({
+            task_ids: ids,
+            note: state.reviewNote || "",
+            learn: true,
+            adopt: adopt || {},
+          }),
         });
         const learned = (res?.learned || []).length;
-        toast("ok", `基准图已确认，开始按它改色${learned ? `（顺手记了 ${learned} 条款式规则）` : ""}`);
+        toast("ok", `基准图已确认，开始按它改色${learned ? `（已自动记下 ${learned} 条款式规则）` : ""}`);
+        chatBubble("assistant",
+          `收到，就按这张来。其余颜色开始改色${learned ? `；这次的 ${learned} 条要求我已记进这个款式的规则，下次同款直接用` : ""}。`);
         if (res?.job) renderJob(res.job);
         watchJob(jobId);
+        state.masterShown = true;
+        state.masterDoneShown = false;
+        if (state.harnessMode === "master") masterWatch(jobId);
       } catch (err) {
         toast("bad", err.message);
       }
     }, "确认中…");
+  }
+
+  /* ------------------------------------------------ 9.6.2 对话优先的确认流程 -- */
+  // 客户要求：放原图 + 选款式 → 点生成 → 直接拉出对话框；基准图在对话里返给用户看，
+  // 有歧义就在对话里说哪张要改，改完再返图，直到确认才开始改色。
+  function chatMasterCard(tasks, intro) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg assistant";
+    const figures = tasks.map((task) => {
+      const src = task.thumb_small || task.thumb || "";
+      return `<figure><img src="${esc(src)}" alt="${esc(task.color_name || task.color)} 基准图"
+        data-preview="${esc(task.preview || task.thumb || src)}" data-task="${esc(task.id)}" />
+        <figcaption>${esc(task.color_name || task.color)}</figcaption></figure>`;
+    }).join("");
+    wrap.innerHTML = `<span class="who">AI 助手</span>
+      <div class="bubble master-card">
+        <p style="margin:0">${esc(intro)}</p>
+        <div class="master-shots">${figures}</div>
+        <div class="chat-actions">
+          <button type="button" class="primary" data-master-act="approve">就按这张改色</button>
+          <button type="button" data-master-act="edit">我要改…</button>
+        </div>
+      </div>`;
+    $("chatLog").appendChild(wrap);
+    wrap.querySelectorAll("img[data-preview]").forEach((img) => {
+      img.addEventListener("click", () => openLightbox?.(img.dataset.preview, img.dataset.task));
+    });
+    wrap.querySelector("[data-master-act='approve']")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      approveMaster(button).finally(() => { button.disabled = false; });
+    });
+    wrap.querySelector("[data-master-act='edit']")?.addEventListener("click", () => {
+      const input = $("harnessInput");
+      if (!input) return;
+      if (!input.value) input.value = "这张图要改：";
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    scrollChat();
+    return wrap;
+  }
+
+  function masterStatusLine(text) {
+    // 同一条状态只更新文字，不刷屏
+    let node = $("masterStatus");
+    if (!node) {
+      node = document.createElement("div");
+      node.id = "masterStatus";
+      node.className = "msg assistant";
+      node.innerHTML = `<span class="who">AI 助手</span><div class="bubble"></div>`;
+      $("chatLog").appendChild(node);
+    }
+    node.querySelector(".bubble").textContent = text;
+    scrollChat();
+    return node;
+  }
+  function masterStatusDone() {
+    const node = $("masterStatus");
+    if (node) node.remove();
+  }
+
+  let masterTimer = 0;
+  function stopMasterWatch() {
+    if (masterTimer) { clearTimeout(masterTimer); masterTimer = 0; }
+    masterStatusDone();
+    state.masterJobId = "";
+    state.masterShown = false;
+  }
+
+  function startMasterChat(jobId) {
+    if (!jobId) return;
+    state.masterJobId = jobId;
+    state.masterShown = false;
+    if (state.harnessMode !== "master") {
+      const review = reviewInfo(state.job) || {};
+      openHarness("master", review.master_ids || [], jobId);
+    }
+    masterWatch(jobId);
+  }
+
+  async function masterWatch(jobId) {
+    if (masterTimer) { clearTimeout(masterTimer); masterTimer = 0; }
+    if (!jobId) return;
+    const drawer = $("harnessDrawer");
+    const alive = () => state.masterJobId === jobId
+      && drawer && !drawer.hidden && state.harnessMode === "master";
+    if (!alive()) { stopMasterWatch(); return; }
+    let delay = 2500;
+    try {
+      const data = await api(`/api/jobs/${jobId}`, { cache: "no-store" });
+      const job = data.job || {};
+      if (!alive()) return;
+      const review = job.review || {};
+      const tasks = (job.tasks || []);
+      const masters = tasks.filter((t) => t.master && (t.thumb_small || t.thumb));
+      const derivedTotal = review.derived_total || tasks.filter((t) => t.master_task).length;
+      const derivedDone = tasks.filter((t) => t.master_task && t.out).length;
+
+      if (review.awaiting) {
+        if (masters.length && !state.masterShown) {
+          state.masterShown = true;
+          masterStatusDone();
+          chatMasterCard(masters,
+            `基准图出来了（${masters.length} 张）。满意就点「就按这张改色」，我再给其余 `
+            + `${derivedTotal} 个颜色改色；要改就直接说改哪里，我改完再返图给你看。`);
+        } else if (!masters.length) {
+          masterStatusLine(`基准图生成中…（共 ${job.stats?.total || 0} 张，先出基准）`);
+        }
+      } else if (derivedTotal) {
+        if (derivedDone < derivedTotal) {
+          masterStatusLine(`基准已确认，正在按它给其余颜色改色：${derivedDone}/${derivedTotal}`);
+        } else {
+          masterStatusDone();
+          if (!state.masterDoneShown) {
+            state.masterDoneShown = true;
+            chatBubble("assistant",
+              `全部改色完成：${derivedDone} 张新颜色 + 1 张基准。右侧画廊可以直接下载或继续改图。`);
+          }
+          return;
+        }
+      } else if (TERMINAL.includes(job.status)) {
+        masterStatusDone();
+        return;
+      } else {
+        masterStatusLine(job.stage || "生成中…");
+      }
+    } catch (err) {
+      masterStatusLine(`进度读取失败，正在重试：${err.message}`);
+      delay = 4000;
+    }
+    if (alive()) masterTimer = setTimeout(() => masterWatch(jobId), delay);
+  }
+
+  /* ------------------------------------------- 9.6.2 改图返图 + 采纳当基准 --- */
+  // 用户在对话里说「领口小一点」→ AI 调 reject_master 生成改图任务 →
+  // 这里盯着那条改图任务，出图后在对话里返图，并给「用这张当基准」按钮（= 采纳 + 开始改色）。
+  let reworkTimer = 0;
+  function stopReworkWatch() {
+    if (reworkTimer) { clearTimeout(reworkTimer); reworkTimer = 0; }
+  }
+
+  function startReworkWatch(jobId, masterIds) {
+    stopReworkWatch();
+    const alive = () => state.harnessMode === "master" && $("harnessDrawer") && !$("harnessDrawer").hidden;
+    const tick = async () => {
+      if (!alive()) { stopReworkWatch(); return; }
+      let delay = 2500;
+      try {
+        const data = await api(`/api/jobs/${jobId}`, { cache: "no-store" });
+        const job = data.job || {};
+        const shots = (job.tasks || []).filter((t) => t.out && t.thumb_small);
+        if (shots.length) {
+          stopReworkWatch();
+          masterStatusDone();
+          chatReworkCard(shots, job.id, masterIds || []);
+          return;
+        }
+        if (TERMINAL.includes(job.status) && !shots.length) {
+          stopReworkWatch();
+          masterStatusLine(`改图没成功：${job.error || job.stage || "未知原因"}。可以再说一次要改哪里。`);
+          return;
+        }
+        masterStatusLine(`正在按你说的改…（${job.stage || "生成中"}）`);
+      } catch (err) {
+        masterStatusLine(`改图进度读取失败，正在重试：${err.message}`);
+        delay = 4000;
+      }
+      if (alive()) reworkTimer = setTimeout(tick, delay);
+    };
+    tick();
+  }
+
+  function chatReworkCard(shots, reworkJobId, masterIds) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg assistant";
+    const figures = shots.map((task) => `
+      <figure><img src="${esc(task.thumb_small)}" alt="${esc(task.color_name || task.color)} 改后"
+        data-preview="${esc(task.preview || task.thumb || task.thumb_small)}" data-task="${esc(task.id)}" />
+        <figcaption>${esc(task.color_name || task.color)} · 改后</figcaption></figure>`).join("");
+    wrap.innerHTML = `<span class="who">AI 助手</span>
+      <div class="bubble master-card">
+        <p style="margin:0">按你说的改好了。可以就换成这张，我再拿它给其余颜色改色；还要动就继续说。</p>
+        <div class="master-shots">${figures}</div>
+        <div class="chat-actions">
+          <button type="button" class="primary" data-master-act="adopt">用这张当基准，开始改色</button>
+          <button type="button" data-master-act="edit">还要改…</button>
+        </div>
+      </div>`;
+    $("chatLog").appendChild(wrap);
+    wrap.querySelectorAll("img[data-preview]").forEach((img) => {
+      img.addEventListener("click", () => openLightbox?.(img.dataset.preview, img.dataset.task));
+    });
+    wrap.querySelector("[data-master-act='adopt']")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      const adopt = {};
+      const ids = (masterIds && masterIds.length) ? masterIds : [null];
+      shots.forEach((task, index) => {
+        const masterId = ids[index] || ids[0];
+        if (masterId) adopt[masterId] = `${reworkJobId}::${task.id}`;
+      });
+      button.disabled = true;
+      approveMaster(button, adopt).finally(() => { button.disabled = false; });
+    });
+    wrap.querySelector("[data-master-act='edit']")?.addEventListener("click", () => {
+      const input = $("harnessInput");
+      if (!input) return;
+      if (!input.value) input.value = "这张还要改：";
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    scrollChat();
   }
 
   function talkMaster() {
@@ -1786,7 +2014,7 @@
     panel.classList.remove("on");scrim.classList.remove("on");clearTimeout(panelCloseTimers.get(panelId));
     panelCloseTimers.set(panelId,setTimeout(()=>{if(panel.dataset.panelEpoch===epoch){panel.hidden=true;scrim.hidden=true;}},240));
   }
-  function closeHarness(){closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
+  function closeHarness(){stopMasterWatch();stopReworkWatch();closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
   function closePrompt() { closePanel("promptDrawer", "promptScrim"); }
 
   /* ----------------------------------------------------------- harness chat */
@@ -1963,7 +2191,7 @@
       state.harnessMode="master";state.reworkTargets=taskIds||info.master_ids||[];state.reworkSourceJob=target;
       const params=state.job?.params||{};
       state.reworkMeta={provider:String(params.provider||""),model:String(params.model||""),size:String(params.size||"auto")};
-      resetChat();state.harnessContextKey=harnessContextKey();
+      resetChat();state.masterDoneShown=false;state.harnessContextKey=harnessContextKey();
       $("harnessTitle").textContent="AI 基准图确认";
       $("harnessSub").textContent="先看基准图：满意就确认改色，不满意直接说改哪里";
       $("harnessApply").textContent="按对话执行";
@@ -2100,6 +2328,13 @@
 
   function acceptHarnessJob(jobId){
     const id=String(jobId||"");if(!id||state.harnessSubmittedJob===id)return;
+    if(state.harnessMode==="master"){
+      // 基准图审核期：AI 建的是「改图任务」，出图后要返给用户看，不能算「已提交结束」
+      const review=reviewInfo(state.job)||{};
+      startReworkWatch(id, review.master_ids||[]);
+      loadHistory();toast("ok","已按你说的开始改图，出图后我会返给你看");
+      return;
+    }
     state.harnessSubmittedJob=id;window.AIWorkflow?.submitted(id);
     watchJob(id);loadHistory();loadGate();toast("ok","AI 已创建任务，可查看生成进度");
   }

@@ -1336,14 +1336,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
             payload = await bench.approve_master(job_id, task_ids, adopt=adopt, note=note)
         except (KeyError, ValueError, WorkbenchError) as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-        learned: list[dict] = []
-        if learn and note.strip():
-            try:
-                learned = await asyncio.to_thread(bench.learn_from_review, job_id, task_ids)
-            except Exception as exc:  # noqa: BLE001 - 沉淀失败不影响出图
-                payload.setdefault("log", []).append(
-                    {"t": 0, "level": "warn", "msg": f"沉淀款式规则失败：{exc}"}
-                )
+        # 沉淀在 approve_master 里就做了（主动学习）；这里只把结果转给前端
+        learned = payload.pop("learned", []) if isinstance(payload, dict) else []
+        if not learn and learned:
+            # 运营明确说这次不要记：把刚写进去的撤销太危险，这里只提示已记录
+            payload["learn_note"] = "本轮已按默认自动记录款式规则（如需删除请在款式规则里手动删）"
         return {"ok": True, "job": payload, "learned": learned}
 
     @app.post("/api/jobs/{job_id}/reject")
