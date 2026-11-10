@@ -967,6 +967,29 @@ def enforce_composition_rule(prompt: str) -> str:
     return " ".join(part for part in (COMPOSITION_CLAUSE, out) if part)
 
 
+#: **框选标注**：运营在基准图上画框标出「哪块要改」，并给每个框写了要求。
+#: 标注图只是「改动区域的地图」——框线、编号、标注文字都不是衣服设计，输出里绝不能出现；
+#: 改动只发生在框内，框外的一切（版型、印花、场景、光线）保持不动。
+ANNOTATION_CLAUSE = (
+    "OPERATOR ANNOTATION MAP — one of the attached images is a marked-up copy of the garment: it has "
+    "drawn boxes with numbers on it, and each box marks a region the operator wants changed. Treat "
+    "those boxes as a MAP of where to work, not as garment design: the box outlines, the numbers and "
+    "any note text on that image must NEVER appear in the result, and no box shape may become a "
+    "print, a border, a patch or a seam. Apply the requested change only inside the marked region; "
+    "outside the boxes keep the silhouette, the print, the fabric, the scene, the camera and the "
+    "lighting exactly as the unmarked copy shows. If a box sits on the neckline, cuffs, hem or sleeve "
+    "opening, reshape that construction so it matches the note. The unmarked copy stays the "
+    "authority for what the garment looks like everywhere else."
+)
+
+
+def annotation_clause(index: int = 2) -> str:
+    """标注图是第几张（1 基）时给的那段约束。"""
+    if not index:
+        return ANNOTATION_CLAUSE
+    return ANNOTATION_CLAUSE.replace("one of the attached images", f"IMAGE {index}")
+
+
 def original_upload_reference_clause(image_index: int = 3, subject: str = "") -> str:
     """Role for an actually attached original after a master/intermediate + optional effect."""
     person = (

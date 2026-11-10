@@ -312,6 +312,10 @@ class AgentContext:
     draft_id: str = ""
     job_id: str = ""
     task_ids: list[str] = field(default_factory=list)
+    #: 运营在基准图上画好的框选标注（相对任务目录的路径）；改图时会一起发给生图接口
+    annotation_id: str = ""
+    #: 框信息：[{n, x, y, w, h, note}]，坐标 0~1 相对值（前端画框时生成）
+    annotations: list[dict] = field(default_factory=list)
     # callables → 返回纯文本给模型看
     list_models: Callable[[], Awaitable[str]] | None = None
     inspect: Callable[[], Awaitable[str]] | None = None
@@ -624,6 +628,31 @@ def _intake_intro(ctx: AgentContext, user_message: str) -> str:
         "master": "基准图审核（先出基准，用户确认后才按基准改色）",
     }.get(ctx.mode, "开工前沟通")
     parts = [f"当前模式：{mode_label}"]
+    if ctx.annotations:
+        lines = []
+        for box in ctx.annotations[:8]:
+            note = " ".join(str(box.get("note") or "").split())
+            if not note:
+                continue
+            x, y = float(box.get("x") or 0), float(box.get("y") or 0)
+            w, h = float(box.get("w") or 0), float(box.get("h") or 0)
+            zone = []
+            if y + h / 2 < 0.34:
+                zone.append("上")
+            elif y + h / 2 > 0.66:
+                zone.append("下")
+            if x + w / 2 < 0.34:
+                zone.append("左")
+            elif x + w / 2 > 0.66:
+                zone.append("右")
+            where = "".join(zone) or "中间"
+            lines.append(f"框{box.get('n') or '?'}（{where}区域，约 {w*100:.0f}%×{h*100:.0f}%）：{note}")
+        if lines:
+            parts.append(
+                "用户已经在基准图上画框标注了要改的地方（标注图会随改图一起发给生图接口）："
+                + "；".join(lines)
+                + "。请把这些框的要求合成一条可执行的改图指令，别扩大到框外。"
+            )
     if ctx.mode == "master" and ctx.batch_context:
         memory = ctx.batch_context.get("style_memory") or {}
         if memory:

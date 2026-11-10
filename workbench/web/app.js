@@ -70,8 +70,13 @@
     harnessBusy: false,
     harnessOpening: false,
     harnessSubmittedJob: "",
+    // 9.6.6 改图任务只返一次图：同一个改图任务被重复上报时不再往对话里塞第二张卡片
+    reworkJobId: "",
+    harnessReworkSubmitted: false,
     // 9.6.2 对话优先：正在盯的基准图任务（空=没在盯）
     masterJobId: "",
+    annotationId: "",
+    annotationBoxes: [],
     masterShown: false,
     masterDoneShown: false,
     harnessStreamDone: false,
@@ -1201,7 +1206,11 @@
       note.textContent = "";
     }
     const box = $("reviewThumbs");
-    if (box) {
+    // 轮询每 1.2s 会走一遍 renderReview：卡片没变化就不重建 DOM，
+    // 否则用户正要点「框选改」时节点被换掉（点了没反应 / 框选对话被打断）。
+    const sig = masters.map((task) => `${task.id}:${task.approved ? 1 : 0}:${task.thumb_small || ""}`).join("|");
+    if (box && box.dataset.sig !== sig) {
+      box.dataset.sig = sig;
       box.innerHTML = masters.map((task) => `
         <figure class="review-card${task.approved ? " approved" : ""}">
           <img src="${esc(task.thumb_small)}" alt="${esc(styleLabel(task))} 基准图"
@@ -1212,17 +1221,22 @@
           </figcaption>
           ${task.approved ? "" : `<div class="review-card-acts">
             <button type="button" data-approve="${esc(task.id)}">这张可以</button>
-            <button type="button" data-rework="${esc(task.id)}">改这张</button>
+            <button type="button" data-annotate="${esc(task.id)}">框选改</button>
+            <button type="button" data-rework="${esc(task.id)}">直接说</button>
           </div>`}
         </figure>`).join("");
       box.querySelectorAll("img[data-preview]").forEach((img) => {
-        img.addEventListener("click", () => openLightbox?.(img.dataset.preview, img.dataset.task));
+        // 点图 = 打开框选（大图 + 画框 + 写要求）
+        img.addEventListener("click", () => openAnnotator(img.dataset.task));
       });
       box.querySelectorAll("[data-approve]").forEach((button) => {
         button.addEventListener("click", () => approveMaster(button, null, [button.dataset.approve]));
       });
       box.querySelectorAll("[data-rework]").forEach((button) => {
         button.addEventListener("click", () => talkMaster(button.dataset.rework));
+      });
+      box.querySelectorAll("[data-annotate]").forEach((button) => {
+        button.addEventListener("click", () => openAnnotator(button.dataset.annotate));
       });
     }
     const approve = $("approveMasterBtn");
@@ -1421,6 +1435,219 @@
       if (alive()) distillTimer = setTimeout(tick, 2500);
     };
     distillTimer = setTimeout(tick, 4000);
+  }
+
+  /* ------------------------------------------------ 9.6.6 框选标注（改图对齐） -- */
+  // 客户要求：点要改的基准图 → 大图 → 画框标出有歧义的部分、每个框写要改的效果/问题
+  // → 交给 harness 分析并改提示词（标注图也随改图发给生图接口，提高命中率）。
+  const anno = { taskId: "", jobId: "", url: "", boxes: [], image: null, dragging: null };
+  let annoReady = false;
+
+  function annoCount() { return anno.boxes.length; }
+
+  function renderAnnoLayer() {
+    const layer = $("annotateLayer");
+    if (!layer) return;
+    layer.innerHTML = anno.boxes.map((box) => {
+      const x = box.x * 100, y = box.y * 100, w = box.w * 100, h = box.h * 100;
+      const nx = Math.min(97, x + Math.max(2.4, Math.min(4, w / 4)));
+      const ny = Math.min(97, y + Math.max(2.4, Math.min(4, h / 4)));
+      return `<rect class="box" x="${x}" y="${y}" width="${w}" height="${h}" rx="0.6" />`
+        + `<text class="box-num" x="${nx}" y="${ny}">${box.n}</text>`;
+    }).join("");
+    const list = $("annotateList");
+    if (!list) return;
+    if (!anno.boxes.length) {
+      list.innerHTML = `<p class="tip">还没有框：在图上拖动画框，然后在下面写「这里要改成什么」。</p>`;
+      return;
+    }
+    list.innerHTML = anno.boxes.map((box, index) => `
+      <div class="row">
+        <span class="n">${box.n}</span>
+        <input type="text" data-note="${index}" value="${esc(box.note || "")}"
+               placeholder="框 ${box.n}：这里要改成什么 / 有什么问题" />
+        <button type="button" class="del" data-del="${index}" aria-label="删除框 ${box.n}">删除</button>
+      </div>`).join("");
+    list.querySelectorAll("[data-note]").forEach((input) => {
+      input.addEventListener("input", () => {
+        const box = anno.boxes[Number(input.dataset.note)];
+        if (box) box.note = input.value;
+      });
+    });
+    list.querySelectorAll("[data-del]").forEach((button) => {
+      button.addEventListener("click", () => {
+        anno.boxes.splice(Number(button.dataset.del), 1);
+        anno.boxes.forEach((box, i) => { box.n = i + 1; });
+        renderAnnoLayer();
+      });
+    });
+  }
+
+  function openAnnotator(taskId) {
+    const task = (state.job?.tasks || []).find((t) => t.id === taskId);
+    if (!task) { toast("bad", "找不到这张图"); return; }
+    anno.taskId = task.id;
+    anno.jobId = state.jobId;
+    anno.url = task.preview || task.thumb || task.thumb_small || "";
+    anno.boxes = [];
+    anno.image = null;
+    const label = $("annotateLabel");
+    if (label) {
+      label.textContent = `${task.garment_name || task.garment || "款式"} · `
+        + `${task.color_name || task.color || ""}　框外保持不动`;
+    }
+    const img = $("annotateImage");
+    if (img) {
+      img.onload = () => { anno.image = img; renderAnnoLayer(); };
+      img.src = anno.url;
+    }
+    renderAnnoLayer();
+    const dialog = $("annotateDialog");
+    if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+    else dialog?.setAttribute("open", "");
+  }
+
+  function closeAnnotator() {
+    const dialog = $("annotateDialog");
+    if (dialog && typeof dialog.close === "function") dialog.close();
+    else dialog?.removeAttribute("open");
+  }
+
+  function bindAnnotator() {
+    if (annoReady) return;
+    annoReady = true;
+    const stage = $("annotateStage");
+    if (!stage) return;
+    const point = (event) => {
+      const rect = stage.getBoundingClientRect();
+      const image = $("annotateImage");
+      const box = image ? image.getBoundingClientRect() : rect;
+      const x = (event.clientX - box.left) / Math.max(1, box.width);
+      const y = (event.clientY - box.top) / Math.max(1, box.height);
+      return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+    };
+    stage.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      stage.setPointerCapture?.(event.pointerId);
+      const start = point(event);
+      anno.dragging = { startX: start.x, startY: start.y, box: null };
+      stage.style.cursor = "crosshair";
+    });
+    stage.addEventListener("pointermove", (event) => {
+      if (!anno.dragging) return;
+      const now = point(event);
+      const { startX, startY } = anno.dragging;
+      const x = Math.min(startX, now.x), y = Math.min(startY, now.y);
+      const w = Math.abs(now.x - startX), h = Math.abs(now.y - startY);
+      anno.dragging.box = { x, y, w, h };
+      renderAnnoLayer();
+      const layer = $("annotateLayer");
+      if (layer && (w > 0.01 || h > 0.01)) {
+        layer.innerHTML += `<rect class="box" x="${x * 100}" y="${y * 100}" `
+          + `width="${w * 100}" height="${h * 100}" rx="0.6" />`;
+      }
+    });
+    stage.addEventListener("pointerup", (event) => {
+      if (!anno.dragging) return;
+      const dragging = anno.dragging;
+      anno.dragging = null;
+      const box = dragging.box;
+      if (!box || box.w < 0.02 || box.h < 0.02) { renderAnnoLayer(); return; }
+      anno.boxes.push({ n: anno.boxes.length + 1, x: box.x, y: box.y, w: box.w, h: box.h, note: "" });
+      renderAnnoLayer();
+      const inputs = $("annotateList")?.querySelectorAll("[data-note]");
+      inputs?.[inputs.length - 1]?.focus();
+    });
+    $("annotateUndo")?.addEventListener("click", () => {
+      anno.boxes.pop();
+      anno.boxes.forEach((box, i) => { box.n = i + 1; });
+      renderAnnoLayer();
+    });
+    $("annotateClear")?.addEventListener("click", () => { anno.boxes = []; renderAnnoLayer(); });
+    $("annotateClose")?.addEventListener("click", closeAnnotator);
+    $("annotateCancel")?.addEventListener("click", closeAnnotator);
+    $("annotateSubmit")?.addEventListener("click", (event) => submitAnnotation(event.currentTarget));
+  }
+
+  // 把框画进图里，得到一张「标注图」（给生图接口和小模型看的位置地图）
+  function composeAnnotatedImage() {
+    const image = anno.image;
+    if (!image) return Promise.resolve(null);
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0, width, height);
+    const line = Math.max(3, Math.round(Math.min(width, height) / 160));
+    ctx.lineWidth = line;
+    ctx.font = `bold ${Math.max(14, Math.round(line * 5))}px sans-serif`;
+    anno.boxes.forEach((box) => {
+      const x = box.x * width, y = box.y * height;
+      const w = box.w * width, h = box.h * height;
+      ctx.strokeStyle = "#ff3b3b";
+      ctx.fillStyle = "rgba(255,59,59,0.12)";
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+      const label = String(box.n);
+      const size = Math.max(18, Math.round(line * 6));
+      ctx.fillStyle = "#ff3b3b";
+      ctx.fillRect(x, Math.max(0, y - size), size + Math.round(size * 0.25), size);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(label, x + Math.round(size * 0.25), Math.max(size * 0.9, y - size * 0.25));
+    });
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/png"));
+  }
+
+  function annotationText() {
+    return anno.boxes.map((box) => {
+      const note = (box.note || "").trim();
+      return note ? `框${box.n}：${note}` : `框${box.n}：（还没写要求）`;
+    }).join("；");
+  }
+
+  async function submitAnnotation(button) {
+    if (!anno.boxes.length) { toast("bad", "先画一个框再提交"); return; }
+    const empty = anno.boxes.filter((box) => !(box.note || "").trim());
+    if (empty.length) {
+      toast("bad", `框${empty.map((b) => b.n).join("、")} 还没写要改什么`);
+      return;
+    }
+    await withLoading(button, async () => {
+      let annotationId = "";
+      try {
+        const blob = await composeAnnotatedImage();
+        if (blob) {
+          const form = new FormData();
+          form.append("task_id", anno.taskId);
+          form.append("boxes", JSON.stringify(anno.boxes));
+          form.append("file", blob, `annotation-${anno.taskId}.png`);
+          const res = await api(`/api/jobs/${anno.jobId}/annotations`, { method: "POST", body: form });
+          annotationId = res?.annotation?.id || "";
+        }
+      } catch (err) {
+        toast("bad", `标注图保存失败：${err.message}`);
+        return;
+      }
+      const task = (state.job?.tasks || []).find((t) => t.id === anno.taskId);
+      const which = task
+        ? `${task.garment_name || task.garment || "这个款式"} · ${task.color_name || task.color || ""}`
+        : "这张基准图";
+      const summary = annotationText();
+      const boxes = anno.boxes.map((box) => ({ ...box }));
+      closeAnnotator();
+      // 交给 harness：带上框信息与标注图，AI 据此改提示词再调改图
+      await openHarness("master", [anno.taskId], anno.jobId);
+      state.annotationId = annotationId;
+      state.annotationBoxes = boxes;
+      const input = $("harnessInput");
+      if (input) {
+        input.value = `按我框选的位置改「${which}」：${summary}。框外不要动，标注框线不要画进成品。`;
+        input.focus();
+      }
+      toast("ok", annotationId ? "标注已保存，发给 AI 说明要改什么吧" : "说明已填好，发给 AI 吧");
+    }, "保存标注中…");
   }
 
   function talkMaster(taskId) {
@@ -1992,7 +2219,7 @@
     panel.classList.remove("on");scrim.classList.remove("on");clearTimeout(panelCloseTimers.get(panelId));
     panelCloseTimers.set(panelId,setTimeout(()=>{if(panel.dataset.panelEpoch===epoch){panel.hidden=true;scrim.hidden=true;}},240));
   }
-  function closeHarness(){stopMasterWatch();stopReworkWatch();stopDistillWatch();closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
+  function closeHarness(){stopMasterWatch();stopReworkWatch();stopDistillWatch();state.annotationId="";state.annotationBoxes=[];closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
   function closePrompt() { closePanel("promptDrawer", "promptScrim"); }
 
   /* ----------------------------------------------------------- harness chat */
@@ -2314,14 +2541,20 @@
   }
 
   function acceptHarnessJob(jobId){
-    const id=String(jobId||"");if(!id||state.harnessSubmittedJob===id)return;
+    const id=String(jobId||"");
     if(state.harnessMode==="master"){
       // 基准图审核期：AI 建的是「改图任务」，出图后要返给用户看，不能算「已提交结束」
+      // 同一个改图任务可能被服务端上报两次（工具结果 + 运行事件），这里按 id 去重，
+      // 否则对话里会出现两张一模一样的「改后」卡片。
+      if(!id||state.reworkJobId===id)return;
       const review=reviewInfo(state.job)||{};
+      state.reworkJobId=id;state.harnessReworkSubmitted=true;
       startReworkWatch(id, review.master_ids||[]);
+      window.AIWorkflow?.phase('reworking');
       loadHistory();toast("ok","已按你说的开始改图，出图后我会返给你看");
       return;
     }
+    if(!id||state.harnessSubmittedJob===id)return;
     state.harnessSubmittedJob=id;window.AIWorkflow?.submitted(id);
     watchJob(id);loadHistory();loadGate();toast("ok","AI 已创建任务，可查看生成进度");
   }
@@ -2405,6 +2638,8 @@
     if (state.harnessMode === "master") {
       payload.job_id = state.reworkSourceJob || state.jobId;
       payload.task_ids = state.reworkTargets || [];
+      if (state.annotationId) payload.annotation_id = state.annotationId;
+      if (state.annotationBoxes?.length) payload.annotations = state.annotationBoxes;
       const params = state.job?.params || {};
       payload.provider = String(params.provider || "");
       payload.model = String(params.model || "");
@@ -2452,13 +2687,16 @@
     const text=($("harnessInput").value||"").trim();if(!text){toast("bad","请先补充或确认本轮要求");return;}
     chatBubble("user",text);state.harnessHistory.push({role:"user",content:text});state.assistantText="";$("harnessInput").value="";
     state.harnessBusy=true;state.harnessStreamDone=false;state.harnessHasResult=false;
+    state.harnessReworkSubmitted=false;
     state.composedPrompt="";state.requirements="";
     window.AIWorkflow?.phase('connecting');updateSummary();$("harnessSend").classList.add("loading");showTyping();
     try{
       await streamHarness(harnessPayload(text));
       if(!state.harnessSubmittedJob){
         const prepared=state.harnessHasResult&&!!(state.harnessMode==="rework"?state.composedPrompt:state.requirements);
-        window.AIWorkflow?.phase(prepared?'ready':'waiting');
+        // 基准审核期本轮已经按框选提交了改图任务：状态说「改图任务已提交」，
+        // 不能再用「本轮尚未提交生图」把人劝回去重发。
+        window.AIWorkflow?.phase(state.harnessReworkSubmitted?'reworking':(prepared?'ready':'waiting'));
       }
     }catch(err){
       flushType(true);
@@ -2810,6 +3048,7 @@
   ];
 
   function bindAurora() {
+    bindAnnotator();
     // 视图切换（顶栏 / 左侧图标栏 / 画布标签共用 data-view）
     document.querySelectorAll("[data-view]").forEach((btn) =>
       btn.addEventListener("click", () => switchView(btn.dataset.view))

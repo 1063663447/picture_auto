@@ -11,6 +11,7 @@
     optimizing:{index:1,label:'正在整理执行约束',detail:'保留已确认内容，提炼本轮需要改变的部分。'},
     ready:{index:2,label:'提示词已就绪',detail:'请核对对话结果，确认后才会调用生图接口。'},
     waiting:{index:2,label:'还有细节需要确认',detail:'在下方补充一句即可继续，本轮尚未提交生图。'},
+    reworking:{index:3,label:'改图任务已提交',detail:'已按框选位置提交改图；出图后会在对话里返给你看，满意再确认这张基准。'},
     submitting:{index:3,label:'正在提交生图任务',detail:'等待服务器确认任务 ID，请勿重复操作。'},
     submitted:{index:4,label:'任务已创建',detail:'生图已进入真实队列，可前往画廊查看进度。'},
     error:{index:-1,label:'本轮处理需要留意',detail:'已保留当前需求和对话，不会自动重发付费请求。'},
@@ -18,7 +19,7 @@
   };
   const toolLabels={inspect_images:'对照图片',list_image_models:'读取模型',estimate_cost:'核对费用',get_prompt:'检查提示词',set_requirements:'提炼约束',submit_generation:'提交生图',submit_rework:'提交返工',job_status:'读取进度'};
   let bridge,session=null,timer=0,renderTimer=0;
-  const terminal=()=>session&&['idle','ready','waiting','submitted','error','stale'].includes(session.phase);
+  const terminal=()=>session&&['idle','ready','waiting','reworking','submitted','error','stale'].includes(session.phase);
   function elapsed(){return session?Math.max(0,Math.floor(((session.endedAt||Date.now())-session.startedAt)/1000)):0;}
   function render(){
     clearTimeout(renderTimer);renderTimer=0;if(!session)return;
@@ -42,7 +43,7 @@
     $('aiReceiptId').textContent=session.jobId||'';
     const minimized=panel.hidden||!panel.classList.contains('on');
     const resume=$('aiResumeBtn');resume.hidden=!minimized||session.phase==='submitted';
-    $('aiResumeLabel').textContent=session.phase==='ready'?'AI 结果已就绪 · 查看':session.phase==='waiting'?'AI 等待补充 · 查看':session.phase==='error'?'AI 连接提示 · 查看':session.phase==='stale'?'AI 结果需更新 · 查看':'AI 整理中 · 查看';
+    $('aiResumeLabel').textContent=session.phase==='ready'?'AI 结果已就绪 · 查看':session.phase==='waiting'?'AI 等待补充 · 查看':session.phase==='reworking'?'改图已提交 · 查看':session.phase==='error'?'AI 连接提示 · 查看':session.phase==='stale'?'AI 结果需更新 · 查看':'AI 整理中 · 查看';
     resume.dataset.busy=String(!terminal());
   }
   function queue(){if(!renderTimer)renderTimer=setTimeout(render,90);}
@@ -55,7 +56,7 @@
     if(!session||!phases[key])return;
     if(session.phase==='submitted'&&key!=='submitted')return;
     session.phase=key;session.detail=detail;
-    session.endedAt=['idle','ready','waiting','submitted','error','stale'].includes(key)?Date.now():0;
+    session.endedAt=['idle','ready','waiting','reworking','submitted','error','stale'].includes(key)?Date.now():0;
     render();if(terminal())clearTimeout(timer);else tick();
   }
   function stream(value){

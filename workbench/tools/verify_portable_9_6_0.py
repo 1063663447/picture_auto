@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.5-win-x64-internal.zip"
-VERSION = "9.6.5"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.6-win-x64-internal.zip"
+VERSION = "9.6.6"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -49,11 +49,15 @@ REQUIRED = [
     "workbench/library/effects/manifest.json",
     "workbench/CHANGELOG_MASTER_GATE_9.6.0.md",
     "workbench/CHANGELOG_STYLES_9.5.0.md",
+    "workbench/CHANGELOG_WHITE_MASTER_9.6.5.md",
+    "workbench/CHANGELOG_ANNOTATE_9.6.6.md",
     "workbench/HANDOVER.md",
     "workbench/web/index.html",
     "workbench/web/app.js",
     "workbench/web/style.css",
     "workbench/web/review-cards.css",
+    "workbench/web/annotate.css",
+    "workbench/web/ai-workflow.js",
     "apparel-style-recolor/SKILL.md",
 ]
 
@@ -113,8 +117,13 @@ def main() -> int:
     app = z.read(TOP + "workbench/web/app.js").decode("utf-8")
     check("renderReview" in app and "approveMaster" in app, "前端有基准图审核条与确认动作")
     check("QUICK_MASTER" in app, "前端有审核期话术")
+    # 9.6.6 框选改图：点基准图 → 画框 + 写要求 → 标注图随改图发出
+    check("openAnnotator" in app and "composeAnnotatedImage" in app,
+          "前端有框选标注（大图 + 画框 + 合成标注图）")
+    check("annotation_id" in app, "标注 id 随对话发给 harness")
     index = z.read(TOP + "workbench/web/index.html").decode("utf-8")
     check('id="reviewBar"' in index, "index.html 有审核条容器")
+    check('id="annotateDialog"' in index, "index.html 有框选弹窗容器")
     check("?v=9.6" in index, "前端资源版本 9.6.x")
 
     readme = z.read(TOP + "使用说明.txt").decode("utf-8-sig")
@@ -144,6 +153,7 @@ def main() -> int:
         "style_prompt_files": len(prompt_files),
         "master_gate": True,
         "style_memory": True,
+        "annotation": True,
         "assistant_tools": 5,
         "application_files": info.get("application_files"),
     }
@@ -158,7 +168,7 @@ def main() -> int:
         for item in FAILURES:
             print("  -", item)
         return 1
-    print("全部通过：基准图闸门 + 款式记忆 + 对话工具都在包里，25 款 / 115 色齐全")
+    print("全部通过：基准图闸门 + 款式记忆 + 对话工具 + 框选改图都在包里，25 款 / 115 色齐全")
     return 0
 
 

@@ -1336,8 +1336,13 @@ class Workbench:
         account: str = "",
         pattern_mode: str = "",
         subject: str = "",
+        annotation_path: str = "",
     ) -> Job:
-        """以选中的成品为参考图返工（改图）。"""
+        """以选中的成品为参考图返工（改图）。
+
+        ``annotation_path``：框选标注图的绝对路径；会复制进新任务目录并记到参数里，
+        由 runner 作为「改动区域的地图」随请求发出。
+        """
         source_job = self.get_job(source_job_id)
         instruction = " ".join((instruction or "").split())
         if not instruction:
@@ -1510,6 +1515,21 @@ class Workbench:
             "subject": tasks[0].subject if len({t.subject for t in tasks}) == 1 else "auto",
             "subjects": {kind: sum(t.subject == kind for t in tasks) for kind in subject_module.KINDS},
         }
+        # 框选标注：复制进新任务目录，runner 会把它当「改动区域的地图」一起发
+        if annotation_path:
+            source_file = Path(annotation_path)
+            if source_file.is_file():
+                target_folder = root / "work"
+                target_folder.mkdir(parents=True, exist_ok=True)
+                suffix = source_file.suffix.lower() or ".png"
+                target_file = target_folder / f"annotation{suffix}"
+                shutil.copyfile(source_file, target_file)
+                params["annotation_path"] = target_file.relative_to(root).as_posix()
+                params["annotation_source"] = str(annotation_path)
+            else:
+                tasks.clear()
+                shutil.rmtree(root, ignore_errors=True)
+                raise WorkbenchError("框选标注图不存在，无法作为改动地图")
 
         params["estimate"] = self.pricer.estimate(
             chosen_model, len(tasks), str(params.get("size") or "auto"), provider_obj.name
@@ -1843,6 +1863,85 @@ class Workbench:
         if self._tasks.get(job_id) is task:
             self._tasks.pop(job_id, None)
 
+    # ----------------------------------------------- 框选标注（改动区域地图） --
+    def _annotation_dir(self, job: Job) -> Path:
+        root = job.root or self.job_dir(job.id)
+        target = root / "work" / "annotations"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def _annotation_path(self, job: Job, annotation_id: str) -> Path | None:
+        """标注 id（相对任务目录的路径）→ 绝对路径；越界/不存在返回 None。"""
+        text = str(annotation_id or "").strip().replace("\\", "/")
+        if not text or ".." in text.split("/") or text.startswith("/") or ":" in text:
+            return None
+        root = job.root or self.job_dir(job.id)
+        path = (root / text).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError:
+            return None
+        return path if path.is_file() else None
+
+    def save_annotation(
+        self,
+        job_id: str,
+        task_id: str,
+        data: bytes,
+        boxes: list[dict] | None = None,
+    ) -> dict:
+        """保存运营画好框的基准图（PNG/JPG 字节）+ 框信息，返回 {id, path, boxes}。"""
+        job = self.get_job(job_id)
+        task = next((t for t in job.tasks if t.id == task_id), None)
+        if task is None:
+            raise WorkbenchError(f"没有这个任务：{task_id}")
+        if not data:
+            raise WorkbenchError("标注图是空的")
+        suffix = ".png"
+        head = data[:8]
+        if head[:3] == b"\xff\xd8\xff":
+            suffix = ".jpg"
+        elif head[:4] == b"RIFF":
+            suffix = ".webp"
+        stamp = time.strftime("%Y%m%d%H%M%S")
+        folder = self._annotation_dir(job)
+        target = folder / f"{SAFE_NAME.sub('-', task_id)[:60]}-{stamp}{suffix}"
+        target.write_bytes(data)
+        rel = target.relative_to(job.root or self.job_dir(job.id)).as_posix()
+        clean: list[dict] = []
+        for index, box in enumerate(boxes or [], start=1):
+            if not isinstance(box, dict):
+                continue
+            try:
+                clean.append(
+                    {
+                        "n": int(box.get("n") or index),
+                        "x": round(float(box.get("x") or 0), 4),
+                        "y": round(float(box.get("y") or 0), 4),
+                        "w": round(float(box.get("w") or 0), 4),
+                        "h": round(float(box.get("h") or 0), 4),
+                        "note": " ".join(str(box.get("note") or "").split())[:200],
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        job.params.setdefault("annotations", {})[task_id] = {
+            "id": rel,
+            "boxes": clean,
+            "created_at": time.time(),
+        }
+        job.add_log(
+            f"已保存框选标注：{task_id}，{len(clean)} 个框"
+            + ("（" + "；".join(f"框{b['n']}：{b['note']}" for b in clean if b["note"]) + "）"
+               if any(b["note"] for b in clean) else "")
+        )
+        job.save()
+        return {"id": rel, "path": str(target), "boxes": clean}
+
+    def annotations_for(self, job_id: str) -> dict:
+        job = self.get_job(job_id)
+        return dict((job.params or {}).get("annotations") or {})
+
     # ------------------------------------------------- 基准图审核（先出基准） --
     def review_payload(self, job: Job) -> dict:
         """基准图审核状态：哪些基准待确认、哪些已确认、能不能继续改色。"""
@@ -1992,9 +2091,12 @@ class Workbench:
         provider: str | None = None,
         model: str | None = None,
         account: str = "",
+        annotation_id: str = "",
     ) -> Job:
         """基准图不满意 → 以它为准做一次改图（改完可以再采纳回来确认）。
 
+        ``annotation_id``：框选标注图的相对路径（见 save_annotation），
+        会作为「改动区域的地图」随改图一起发给生图接口。
         不改变原任务状态：原任务继续停在「基准待确认」，等运营把改好的图采纳进来。
         """
         job = self.get_job(job_id)
@@ -2004,6 +2106,12 @@ class Workbench:
         text = " ".join((instruction or "").split())
         if not text:
             raise WorkbenchError("请说清楚基准图哪里要改")
+        annotation_path = ""
+        if annotation_id:
+            annotated = self._annotation_path(job, annotation_id)
+            if annotated is None:
+                raise WorkbenchError("标注图找不到或路径不安全")
+            annotation_path = str(annotated)
         rework = await self.create_rework_job(
             job_id,
             [t.id for t in targets],
@@ -2011,6 +2119,7 @@ class Workbench:
             provider=provider or str(job.params.get("provider") or ""),
             model=model or str(job.params.get("model") or ""),
             account=account,
+            annotation_path=annotation_path,
         )
         # 返工轮次统计（用来看「基准图返工率」有没有降下来）
         for task in targets:
@@ -2033,7 +2142,11 @@ class Workbench:
             }
         )
         job.stage = "基准图修改中：改好后在对话框里确认，就会按新图改色"
-        job.add_log(f"基准图打回修改：{text}（返工任务 {rework.id}）")
+        job.add_log(
+            f"基准图打回修改：{text}（返工任务 {rework.id}"
+            + ("，已附框选标注图" if annotation_path else "")
+            + "）"
+        )
         job.save()
         self.start(rework.id)
         return rework

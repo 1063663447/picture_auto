@@ -1,21 +1,22 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" data-tone="obsidian" data-finish="graphite">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=9.6.11" />
-<link rel="stylesheet" href="/aurora.css?v=9.6.11" />
-<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.11" />
-<link rel="stylesheet" href="/blackglass/type.css?v=9.6.11" />
-<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.11" />
-<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.11" />
-<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.11" />
-<link rel="stylesheet" href="/blackglass.css?v=9.6.11" />
-<link rel="stylesheet" href="/graphite.css?v=9.6.11" />
-<link rel="stylesheet" href="/ai-workflow.css?v=9.6.11" />
-<link rel="stylesheet" href="/review-cards.css?v=9.6.11" />
+<link rel="stylesheet" href="/style.css?v=9.6.14" />
+<link rel="stylesheet" href="/aurora.css?v=9.6.14" />
+<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.14" />
+<link rel="stylesheet" href="/blackglass/type.css?v=9.6.14" />
+<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.14" />
+<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.14" />
+<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.14" />
+<link rel="stylesheet" href="/blackglass.css?v=9.6.14" />
+<link rel="stylesheet" href="/graphite.css?v=9.6.14" />
+<link rel="stylesheet" href="/ai-workflow.css?v=9.6.14" />
+<link rel="stylesheet" href="/review-cards.css?v=9.6.14" />
+<link rel="stylesheet" href="/annotate.css?v=9.6.14" />
 </head>
 <body class="flow-shell booting">
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -296,6 +297,33 @@
   </div>
 </dialog>
 
+        <!-- ------------------------------------------------- 框选要改的地方 -->
+        <dialog class="annotate" id="annotateDialog" aria-labelledby="annotateTitle">
+          <div class="annotate-head">
+            <span class="avatar"><svg><use href="#i-expand"/></svg></span>
+            <div class="who">
+              <b id="annotateTitle">框选要改的地方</b>
+              <span id="annotateLabel">在图上拖动画框，框外保持不动</span>
+            </div>
+            <button class="btn btn-quiet btn-icon" type="button" id="annotateClose" aria-label="关闭框选">
+              <svg><use href="#i-x"/></svg>
+            </button>
+          </div>
+          <div class="annotate-stage" id="annotateStage">
+            <img id="annotateImage" alt="待改的基准图" />
+            <svg id="annotateLayer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="annotate-hint" id="annotateHint">按住鼠标在图上拖，框出要改的地方（可画多个）</div>
+          </div>
+          <div class="annotate-list" id="annotateList"></div>
+          <div class="annotate-foot">
+            <button class="btn btn-ghost btn-sm" type="button" id="annotateUndo">撤销上一个</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="annotateClear">清空</button>
+            <span class="grow"></span>
+            <button class="btn btn-ghost" type="button" id="annotateCancel">取消</button>
+            <button class="btn btn-primary" type="button" id="annotateSubmit">交给 AI 改</button>
+          </div>
+        </dialog>
+
 <!-- --------------------------------------------------------- 提示词预览 -->
 <div class="scrim" id="promptScrim" hidden></div>
 <section class="drawer drawer-wide" id="promptDrawer" hidden aria-modal="true" role="dialog" aria-label="提示词预览">
@@ -404,11 +432,11 @@
 <div class="scrim" id="usageScrim" hidden></div><aside class="drawer" id="usageDrawer" hidden aria-modal="true" role="dialog" aria-label="我的用量"><div class="drawer-head"><span class="avatar"><svg><use href="#i-coins"/></svg></span><div class="who"><b>我的用量与花费</b><span>按工作台用量记录计价</span></div><button class="btn btn-quiet btn-icon" id="usageClose" type="button" aria-label="关闭用量"><svg><use href="#i-x"/></svg></button></div><div class="chat" id="usageBody"></div><div class="drawer-foot"><button class="btn btn-ghost" id="usageReload" type="button">刷新用量</button></div></aside>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.11"></script>
-<script src="/blackglass/atmosphere.js?v=9.6.11"></script>
-<script src="/blackglass/effects.js?v=9.6.11"></script>
-<script src="/blackglass-ui.js?v=9.6.11"></script>
-<script src="/ai-workflow.js?v=9.6.11"></script>
-<script src="/app.js?v=9.6.11"></script>
+<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.14"></script>
+<script src="/blackglass/atmosphere.js?v=9.6.14"></script>
+<script src="/blackglass/effects.js?v=9.6.14"></script>
+<script src="/blackglass-ui.js?v=9.6.14"></script>
+<script src="/ai-workflow.js?v=9.6.14"></script>
+<script src="/app.js?v=9.6.14"></script>
 </body>
 </html>

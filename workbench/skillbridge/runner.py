@@ -689,6 +689,25 @@ class JobRunner:
         originals = self._rework_originals(task, source)
         capacity = max(1, int(getattr(self.provider, "max_images", 1) or 1))
         images = [source, *originals[:capacity - 1]]
+        # 框选标注：把「画了框的基准图」当作改动区域的地图一起发（紧跟当前成品）
+        annotated = None
+        rel_annotation = str((self.job.params or {}).get("annotation_path") or "").strip()
+        if rel_annotation:
+            candidate = self._job_image_path(rel_annotation)
+            if candidate is None:
+                self.job.add_log(f"{task.id} 标注图缺失或路径不安全，已忽略", level="warn")
+            elif capacity < 2:
+                self.job.add_log(
+                    f"{task.id} 接口只支持 1 张输入，标注图未附加；改动只靠文字描述",
+                    level="warn",
+                )
+            else:
+                annotated = candidate
+                images = [source, annotated, *originals[: capacity - 2]]
+                task.prompt = f"{task.prompt} {prompts.annotation_clause(2)}"
+                self.job.add_log(
+                    f"{task.id} 已附上框选标注图（改动区域地图），提示词加了「只在框内改」约束"
+                )
         if capacity == 1:
             self.job.add_log(
                 f"{task.id} 接口仅支持 1 张输入，原始上传未附加；仅编辑当前成品，不增加生成调用",

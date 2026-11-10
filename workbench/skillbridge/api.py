@@ -880,6 +880,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
         created = {"job_id": "", "requirements": ""}
 
+        annotation_id = str(body.get("annotation_id") or "")
+
         async def agent_frames(config: dict):
             ctx = agent.AgentContext(
                 mode=mode,
@@ -897,6 +899,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 pattern_mode=pattern_mode,
                 pattern_modes=list(prompts.PATTERN_MODES),
                 subject=subject_kind or subject_choice,
+                annotation_id=annotation_id,
+                annotations=[
+                    item for item in (body.get("annotations") or [])
+                    if isinstance(item, dict)
+                ],
             )
 
             async def tool_list_models() -> str:
@@ -1051,7 +1058,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
             async def tool_reject(instruction: str) -> str:
                 if master_job is None:
                     return "失败：当前不是基准图审核阶段"
-                rework = await bench.reject_master(master_job.id, instruction)
+                rework = await bench.reject_master(
+                    master_job.id,
+                    instruction,
+                    ctx.task_ids or None,
+                    annotation_id=str(getattr(ctx, "annotation_id", "") or ""),
+                )
                 created["job_id"] = rework.id
                 return (
                     f"成功：修改任务 {rework.id} 已提交（基于这张基准图重画），"
@@ -1398,10 +1410,50 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 provider=str(body.get("provider") or "") or None,
                 model=str(body.get("model") or "") or None,
                 account=current_account(request),
+                annotation_id=str(body.get("annotation_id") or ""),
             )
         except (KeyError, ValueError, WorkbenchError) as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         return {"ok": True, "job": job.as_dict(with_tasks=True, with_log=True), "source_job": job_id}
+
+    # --------------------------------------------------------- 框选标注 --
+    @app.post("/api/jobs/{job_id}/annotations")
+    async def upload_annotation(
+        request: Request,
+        job_id: str,
+        task_id: str = Form(""),
+        boxes: str = Form("[]"),
+        file: UploadFile = File(...),
+    ):
+        """运营在基准图上画好框（前端合成 PNG）→ 存盘 + 记框信息，返回标注 id。
+
+        `boxes` 是 JSON 数组：[{n, x, y, w, h, note}]，坐标是 0~1 的相对值。
+        """
+        bench = wb(request)
+        if not task_id:
+            return JSONResponse({"ok": False, "error": "缺少 task_id"}, status_code=400)
+        try:
+            parsed = json.loads(boxes or "[]")
+        except json.JSONDecodeError:
+            return JSONResponse({"ok": False, "error": "boxes 不是合法 JSON"}, status_code=400)
+        if not isinstance(parsed, list):
+            return JSONResponse({"ok": False, "error": "boxes 必须是数组"}, status_code=400)
+        data = await file.read()
+        try:
+            saved = await asyncio.to_thread(
+                bench.save_annotation, job_id, task_id, data, parsed
+            )
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        return {"ok": True, "annotation": saved}
+
+    @app.get("/api/jobs/{job_id}/annotations")
+    async def list_annotations(request: Request, job_id: str):
+        bench = wb(request)
+        try:
+            return {"ok": True, "annotations": bench.annotations_for(job_id)}
+        except (KeyError, ValueError):
+            return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
 
     # ------------------------------------------------------- 款式记忆 lessons --
     @app.get("/api/styles/{slug}/lessons")
