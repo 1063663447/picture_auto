@@ -667,7 +667,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 # 以前这里会把所有已出的基准图一起塞给 AI，于是「只改这张的领口」
                 # 会连累另外两个款色一起返工——多款同批时是硬伤。
                 wanted = {str(item) for item in task_ids}
-                targets = [t for t in (ready or masters) if not wanted or t.id in wanted]
+                # 第 N 轮再改：本轮的主角是「上一轮那张图」，可能在别的任务里
+                source_task_id = str(body.get("source_task_id") or "")
+                source_job_id = str(body.get("source_job_id") or "")
+                revise_job = master_job
+                if source_task_id and source_job_id and source_job_id != master_job.id:
+                    revise_job = bench.get_job(source_job_id)
+                    targets = [t for t in revise_job.tasks
+                               if t.id == source_task_id and t.out]
+                    if not targets:
+                        raise ValueError("要接着改的那张图不存在")
+                else:
+                    targets = [t for t in (ready or masters) if not wanted or t.id in wanted]
                 if not targets:
                     raise ValueError("指定的那张基准图还没出图，或不属于这条任务")
                 task_ids = [t.id for t in targets]
@@ -677,7 +688,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 rows = []
                 for task in targets:
                     picked = bench.skill.type_by_alias(task.garment or inherited.get("garment_type"))
-                    ref = picked.color(str(task.color))
+                    color_label = str(task.color)
+                    while color_label.endswith(tuple(f"-v{n}" for n in range(2, 10))):
+                        color_label = color_label.rsplit("-v", 1)[0]
+                    ref = picked.color(color_label)
                     code = ref.file_code if ref else ""
                     task_context.append({"task_id": task.id, "garment_type": picked.slug,
                                          "garment_name": task.garment_name or picked.display_name,
@@ -696,7 +710,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 image_assets = []
                 image_notes = []
                 for task in targets:
-                    path = job_image_path(master_job, task.out)
+                    path = job_image_path(revise_job, task.out)
                     if path is not None:
                         image_assets.append(
                             HarnessImage(path, "master",
@@ -1070,6 +1084,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     instruction,
                     ctx.task_ids or None,
                     annotation_id=str(getattr(ctx, "annotation_id", "") or ""),
+                    source_job_id=str(getattr(ctx, "source_job_id", "") or ""),
+                    source_task_ids=list(getattr(ctx, "source_task_ids", []) or []),
                 )
                 created["job_id"] = rework.id
                 return (
@@ -1148,6 +1164,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             ctx.submit_rework = tool_rework
             ctx.job_status = tool_status
             if master_job is not None:
+                if revise_job is not None and revise_job.id != master_job.id:
+                    ctx.source_job_id = revise_job.id
+                    ctx.source_task_ids = [t.id for t in targets]
                 ctx.master_status = tool_master_status
                 ctx.approve_master = tool_approve
                 ctx.reject_master = tool_reject

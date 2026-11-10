@@ -216,8 +216,13 @@ async def scenario(show: bool) -> int:
               "改图进度按 jobId 分开盯（可多张并发）", show)
         check("if (st.working)" in app and 'data-state="${kind}"' in app,
               "卡片有「改图中」状态和转圈占位", show)
-        check("adoptRound(" in app and "::${rw.shots[0].id}" in app,
-              "第 2 轮可以直接采纳当基准", show)
+        check("adoptRound(" in app and "const shot = rw.shots[0];" in app
+              and "::${shot.id}" in app,
+              "最新一轮可以直接采纳当基准", show)
+        # 9.6.9 接着上一轮继续改（第 3、4…轮），不用先采纳
+        check("data-annotate-round" in app and "source_task_id" in app,
+              "第 N 轮的手上那张图还能继续框选（带 source_task_id）", show)
+        check("round: prevRound + 1" in app, "出图后轮次自动 +1", show)
         check("wanted = {str(item) for item in task_ids}" in api,
               "接口只处理点名的那一张基准图（不连累其它款色）", show)
 

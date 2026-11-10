@@ -142,6 +142,14 @@ workbench/
   改图时 `runner._execute_rework_task` 把标注图当 **IMAGE 2**，提示词追加 `prompts.annotation_clause(2)`（框线是地图不是设计）；
   harness 上下文带 `annotations`（每框编号/位置/要求）。回归：`tools/check_annotation.py`。
   注意：`#annotateImage` 是 `pointer-events:none`，拖拽事件落在 `#annotateStage`。
+- **接着上一轮继续改（9.6.9）**：改图轮次可以链式往前推，不用先采纳。
+  前端卡片在 `ready` 状态给「接着改（第 N+1 轮）」（`data-annotate-round` + `data-round-job/task/url/no`），
+  `openAnnotator()` 支持传 `{jobId,taskId,url,round,masterTaskId}`——第 2 轮之后的图在**上一轮的改图任务**里。
+  请求带 `source_job_id` + `source_task_id`；`api.py` master 分支据此把本轮主角解析成那张图，
+  `ctx.source_job_id/source_task_ids` → `reject_master(..., source_job_id=, source_task_ids=)`
+  → `create_rework_job` 从那张图重画，`rework_round` 进版本号（`-v2` → `-v3` → `-v4`），
+  并记 `revises_job` / `revises_tasks`；标注图按**被框那张图所在任务**解析。
+  回归：`tools/check_concurrent_rework.py` 第 ⑤ 段（含「第 3 轮参考图 == 第 2 轮输出」的字节比对）。
 - **框选直接发送 + 多张并发改图（9.6.7）**：
   - 点「交给 AI 改」= 存标注图 + `streamQuiet()` **直接发** `/api/harness/stream`（不开对话框），
     回来就在审核条上：这张卡进 `state.reworks[taskId] = {stage:'thinking'|'running'|'ready'|'failed'}`，

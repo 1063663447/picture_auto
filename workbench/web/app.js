@@ -1180,21 +1180,45 @@
     //（以前那一版的按钮在「重建瞬间」点下去是没反应的）
     $("reviewThumbs")?.addEventListener("click", (event) => {
       const hit = event.target.closest(
-        "[data-approve],[data-adopt],[data-annotate],[data-rework],img[data-preview]"
+        "[data-approve],[data-adopt],[data-annotate],[data-annotate-round],[data-rework],img[data-preview]"
       );
       if (!hit) return;
       const approve = hit.closest("[data-approve]");
       if (approve) { approveMaster(approve, null, [approve.dataset.approve]); return; }
       const adopt = hit.closest("[data-adopt]");
       if (adopt) { adoptRound(adopt); return; }
+      const annotateRound = hit.closest("[data-annotate-round]");
+      if (annotateRound) {
+        const button = annotateRound;
+        openAnnotator({
+          jobId: button.dataset.roundJob || state.jobId,
+          taskId: button.dataset.roundTask || button.dataset.annotateRound,
+          url: button.dataset.roundUrl || "",
+          masterTaskId: button.dataset.annotateRound,
+          round: Number(button.dataset.roundNo) || 1,
+          label: button.dataset.roundLabel || "",
+        });
+        return;
+      }
       const annotate = hit.closest("[data-annotate]");
       if (annotate) { openAnnotator(annotate.dataset.annotate); return; }
       const rework = hit.closest("[data-rework]");
       if (rework) { talkMaster(rework.dataset.rework); return; }
       const img = hit.closest("img[data-preview]");
       if (img) {
-        const state0 = img.closest(".review-card")?.dataset.state || "";
+        const card = img.closest(".review-card");
+        const state0 = card?.dataset.state || "";
         if (state0 === "working") { toast("ok", "这张正在按框改图，等新图出来再动手"); return; }
+        const taskId = card?.dataset.task || img.dataset.task;
+        const shot = (reworkOf(taskId)?.shots || [])[0];
+        if (state0 === "revised" && shot) {
+          openAnnotator({
+            jobId: shot.jobId || reworkOf(taskId)?.jobId || state.jobId,
+            taskId: shot.id, url: shot.preview || shot.thumb || shot.thumb_small || "",
+            masterTaskId: taskId, round: Number(reworkOf(taskId)?.round) || 2,
+          });
+          return;
+        }
         openAnnotator(img.dataset.task);
       }
     });
@@ -1240,20 +1264,23 @@
 
   function reviewCardHtml(task) {
     const st = reviewCardState(task);
-    const shot = st.ready ? st.rw.shots[0] : null;
+    const shot = (st.rw?.shots || [])[0] || null;
+    const round = Number(st.rw?.round) || 1;
+    const shownRound = round;
+    const nextRound = round + 1;
     const thumb = shot ? (shot.thumb_small || shot.preview || "") : (task.thumb_small || "");
     const full = shot ? (shot.preview || shot.thumb || "") : (task.preview || task.thumb || "");
     const kind = st.approved ? "approved" : st.working ? "working" : st.ready ? "revised"
       : st.failed ? "failed" : "pending";
     const badge = st.approved
-      ? (task.adopted_from ? "已确认 · 用第 2 轮" : "已确认")
-      : st.working ? "改图中"
-        : st.ready ? "第 2 轮 · 待确认"
-          : st.failed ? "改图失败" : "第 1 轮 · 待确认";
+      ? (task.adopted_from ? `已确认 · 第 ${shownRound} 轮` : "已确认")
+      : st.working ? `第 ${nextRound} 轮改图中`
+        : st.ready ? `第 ${shownRound} 轮 · 待确认`
+          : st.failed ? "改图失败" : `第 ${shownRound} 轮 · 待确认`;
     const tone = st.approved ? "ok" : (st.working || st.failed || st.ready) ? "warn" : "";
     const veil = st.working
       ? `<div class="working-veil"><span class="spin"></span>
-           <b>${st.stage === "thinking" ? "AI 正在读框选…" : "第 2 轮基准图生成中…"}</b>
+           <b>${st.stage === "thinking" ? "AI 正在读框选…" : `第 ${nextRound} 轮基准图生成中…`}</b>
            <small>${esc(st.rw.progress || "按框位改完就返图给你，框外不动")}</small>
          </div>`
       : "";
@@ -1263,14 +1290,23 @@
     } else if (st.working) {
       acts = `<div class="review-card-acts"><span class="acts-note">改图任务已提交 · 可以先去框选别的</span></div>`;
     } else if (st.ready) {
+      // 直接在被改出来的这张图上接着框 → 第 3 轮、第 4 轮…（不用先采纳入库）
+      const roundRef = `data-round-job="${esc(shot?.jobId || "")}" data-round-task="${esc(shot?.id || "")}" `
+        + `data-round-url="${esc(shot?.preview || shot?.thumb || shot?.thumb_small || "")}" `
+        + `data-round-no="${esc(String(shownRound))}"`;
       acts = `<div class="review-card-acts">
         <button type="button" data-adopt="${esc(task.id)}">这张可以</button>
-        <button type="button" data-annotate="${esc(task.id)}">还要改</button>
+        <button type="button" data-annotate-round="${esc(task.id)}" ${roundRef}>接着改（第 ${nextRound} 轮）</button>
         <button type="button" data-rework="${esc(task.id)}">直接说</button>
       </div>`;
     } else if (st.failed) {
+      const backRef = st.rw?.shots?.[0]?.jobId
+        ? `data-round-job="${esc(st.rw.shots[0].jobId)}" data-round-task="${esc(st.rw.shots[0].id)}" `
+          + `data-round-url="${esc(st.rw.shots[0].preview || st.rw.shots[0].thumb || "")}" `
+          + `data-round-no="${esc(String(round))}"`
+        : "";
       acts = `<div class="review-card-acts">
-        <button type="button" data-annotate="${esc(task.id)}">再框一次</button>
+        <button type="button" data-annotate-round="${esc(task.id)}" ${backRef}>再框一次</button>
         <button type="button" data-rework="${esc(task.id)}">直接说</button>
       </div>`;
     } else {
@@ -1302,8 +1338,9 @@
   async function adoptRound(button) {
     const taskId = button.dataset.adopt;
     const rw = reworkOf(taskId);
-    if (!rw || !rw.jobId || !rw.shots?.length) { toast("bad", "还没拿到第 2 轮的图"); return; }
-    const adopt = { [taskId]: `${rw.jobId}::${rw.shots[0].id}` };
+    if (!rw || !rw.jobId || !rw.shots?.length) { toast("bad", "还没拿到改好的图"); return; }
+    const shot = rw.shots[0];
+    const adopt = { [taskId]: `${shot.jobId || rw.jobId}::${shot.id}` };
     await approveMaster(button, adopt, [taskId]);
     setRework(taskId, { stage: "adopted" });
   }
@@ -1456,9 +1493,13 @@
         const shots = (job.tasks || []).filter((t) => t.out && (t.thumb_small || t.preview));
         if (shots.length) {
           ids.forEach((taskId, index) => {
+            const shot = shots[Math.min(index, shots.length - 1)];
+            const prevRound = Number(reworkOf(taskId)?.round) || 1;
             setRework(taskId, {
               stage: "ready", jobId, progress: "",
-              shots: [shots[Math.min(index, shots.length - 1)]],
+              // 这一轮出的图 = 第 prevRound+1 轮；再框就基于它继续改
+              round: prevRound + 1,
+              shots: [{ ...shot, jobId }],
             });
           });
           if ($("harnessDrawer") && !$("harnessDrawer").hidden) chatReworkCard(shots, jobId, ids);
@@ -1619,18 +1660,37 @@
     });
   }
 
-  function openAnnotator(taskId) {
-    const task = (state.job?.tasks || []).find((t) => t.id === taskId);
-    if (!task) { toast("bad", "找不到这张图"); return; }
-    anno.taskId = task.id;
-    anno.jobId = state.jobId;
-    anno.url = task.preview || task.thumb || task.thumb_small || "";
+  // ref 可以是主任务的 taskId（第 1 轮），也可以是 {jobId, taskId, url, label, round, masterTaskId}
+  // —— 第 2 轮之后被框的那张图在「上一轮的改图任务」里，不在主任务里。
+  function openAnnotator(ref) {
+    let task = null, jobId = state.jobId, url = "", labelText = "";
+    let round = 1, masterTaskId = "";
+    if (ref && typeof ref === "object") {
+      jobId = ref.jobId || state.jobId;
+      task = ref.task || { id: ref.taskId, garment_name: ref.garmentName, color_name: ref.colorName };
+      url = ref.url || "";
+      labelText = ref.label || "";
+      round = Number(ref.round) || 1;
+      masterTaskId = ref.masterTaskId || "";
+    } else {
+      task = (state.job?.tasks || []).find((t) => t.id === ref);
+      if (!task) { toast("bad", "找不到这张图"); return; }
+      url = task.preview || task.thumb || task.thumb_small || "";
+      masterTaskId = task.id;
+    }
+    if (!url) { toast("bad", "这张图还没有可框选的大图"); return; }
+    anno.taskId = task?.id || "";
+    anno.jobId = jobId;
+    anno.masterTaskId = masterTaskId || anno.taskId;
+    anno.round = round;
+    anno.url = url;
     anno.boxes = [];
     anno.image = null;
     const label = $("annotateLabel");
     if (label) {
-      label.textContent = `${task.garment_name || task.garment || "款式"} · `
-        + `${task.color_name || task.color || ""}　框外保持不动`;
+      const which = labelText
+        || `${task?.garment_name || task?.garment || "款式"} · ${task?.color_name || task?.color || ""}`;
+      label.textContent = `${which}${round > 1 ? `（第 ${round} 轮）` : ""}　框外保持不动`;
     }
     const img = $("annotateImage");
     if (img) {
@@ -1762,6 +1822,8 @@
       return;
     }
     const taskId = anno.taskId, jobId = anno.jobId;
+    const masterTaskId = anno.masterTaskId || taskId;
+    const round = Number(anno.round) || 1;
     await withLoading(button, async () => {
       let annotationId = "";
       try {
@@ -1778,18 +1840,25 @@
         toast("bad", `标注图保存失败：${err.message}`);
         return;
       }
-      const task = (state.job?.tasks || []).find((t) => t.id === taskId);
+      const task = (state.job?.tasks || []).find((t) => t.id === masterTaskId)
+        || { id: taskId, garment_name: $("annotateLabel")?.textContent || "" };
       const summary = annotationText();
       const boxes = anno.boxes.map((box) => ({ ...box }));
       closeAnnotator();
-      // 立刻回到审核条，并把这张标成「AI 正在读框选…」
-      setRework(taskId, {
-        stage: "thinking", jobId: "", shots: [], error: "", progress: "",
-        note: "", instruction: annotationInstruction(task, summary),
+      // 立刻回到审核条，并把这张标成「AI 正在读框选…」（保留当前显示的是第几轮）
+      setRework(masterTaskId, {
+        stage: "thinking", jobId: "", error: "", progress: "",
+        note: "", round,
+        // 保留正在被改的那张图（第 N 轮），圈要盖在它上面
+        shots: reworkOf(masterTaskId)?.shots || [],
+        instruction: annotationInstruction(task, summary),
       });
       $("reviewBar")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      toast("ok", "已交给 AI：正在按框改这张，你可以先去框选别的基准图");
-      runAnnotationRound({ taskId, jobId, annotationId, boxes, summary, task });
+      toast("ok", `已交给 AI：正在按框改这张（第 ${round + 1} 轮），你可以先去框选别的基准图`);
+      runAnnotationRound({
+        taskId, jobId, annotationId, boxes, summary, task,
+        masterTaskId, round, sourceJobId: jobId,
+      });
     }, "提交中…");
   }
 
@@ -1842,13 +1911,17 @@
     return { reply: reply.trim(), jobId };
   }
 
-  async function runAnnotationRound(round) {
-    const taskId = round.taskId;
+  async function runAnnotationRound(roundInfo) {
+    const taskId = roundInfo.taskId;
+    const masterTaskId = roundInfo.masterTaskId || taskId;
     const payload = {
       mode: "master",
-      instruction: round.instruction || annotationInstruction(round.task, round.summary),
-      job_id: round.jobId,
-      task_ids: [taskId],
+      instruction: roundInfo.instruction || annotationInstruction(roundInfo.task, roundInfo.summary),
+      // job_id 是「主任务」（审核/采纳的落点）；要改的那张图可能是上一轮的改图任务
+      job_id: state.jobId,
+      task_ids: [masterTaskId],
+      source_job_id: roundInfo.sourceJobId || roundInfo.jobId,
+      source_task_id: taskId,
       subject: $("subject")?.value || "auto",
       size: currentSize(),
       quality: $("quality")?.value || "",
@@ -1858,25 +1931,25 @@
       pattern_mode: currentPatternMode(),
       history: [],
     };
-    if (round.annotationId) payload.annotation_id = round.annotationId;
-    if (round.boxes?.length) payload.annotations = round.boxes;
+    if (roundInfo.annotationId) payload.annotation_id = roundInfo.annotationId;
+    if (roundInfo.boxes?.length) payload.annotations = roundInfo.boxes;
     try {
       const { reply, jobId } = await streamQuiet(payload, (event, body) => {
         if (event === "tool" || event === "result") {
           const label = String(body.name || "");
           if (/reject_master|submit_rework|submit_generation/.test(label)) {
-            setRework(taskId, { progress: "正在提交改图任务…" }, { quiet: true });
+            setRework(masterTaskId, { progress: "正在提交改图任务…" }, { quiet: true });
           }
         }
       });
       const note = (reply || "").replace(/\s+/g, " ").slice(0, 220);
       if (!jobId) {
-        setRework(taskId, { stage: "failed", error: note || "AI 没有建改图任务" });
+        setRework(masterTaskId, { stage: "failed", error: note || "AI 没有建改图任务" });
         toast("bad", "AI 没有提交改图任务，可以再框一次或直接说");
         return;
       }
-      setRework(taskId, { stage: "running", jobId, note, progress: "生成中" });
-      watchReworkFor(jobId, [taskId]);
+      setRework(masterTaskId, { stage: "running", jobId, note, progress: "生成中" });
+      watchReworkFor(jobId, [masterTaskId]);
       state.reworkJobId = jobId;
       if (note) {
         // 记进对话历史：之后在对话框里接着说，AI 知道上一轮改了哪儿
@@ -1885,7 +1958,7 @@
         state.harnessHistory = state.harnessHistory.slice(-12);
       }
     } catch (err) {
-      setRework(taskId, { stage: "failed", error: err.message });
+      setRework(masterTaskId, { stage: "failed", error: err.message });
       toast("bad", `框选改图没成功：${err.message}`);
     }
   }
@@ -1902,6 +1975,9 @@
       ? (state.job.tasks || []).find((t) => t.id === taskId)
       : pending[0];
     if (!target) { toast("bad", "没有可改的基准图"); return; }
+    // 这张已经出过第 N 轮 → 对话继续改的就是那一轮的新图（不用先采纳）
+    const shot = (reworkOf(target.id)?.shots || [])[0];
+    state.annotationSource = shot && shot.jobId ? { jobId: shot.jobId, taskId: shot.id } : null;
     openHarness("master", [target.id], state.job.id);
   }
 
@@ -2634,7 +2710,9 @@
       if(!target||!state.job||state.job.id!==target){toast("bad","请先选中这条任务");return false;}
       const info=reviewInfo(state.job);
       if(!info){toast("bad","这条任务没有基准图审核");return false;}
-      state.harnessMode="master";state.reworkTargets=taskIds||info.master_ids||[];state.reworkSourceJob=target;
+      state.harnessMode="master";state.reworkTargets=taskIds||info.master_ids||[];
+      state.reworkSourceJob=target;
+      if(!state.reworkTargets||!state.reworkTargets.length)state.annotationSource=null;
       const params=state.job?.params||{};
       state.reworkMeta={provider:String(params.provider||""),model:String(params.model||""),size:String(params.size||"auto")};
       resetChat();state.masterDoneShown=false;state.harnessContextKey=harnessContextKey();
@@ -2885,6 +2963,10 @@
       payload.task_ids = state.reworkTargets || [];
       if (state.annotationId) payload.annotation_id = state.annotationId;
       if (state.annotationBoxes?.length) payload.annotations = state.annotationBoxes;
+      if (state.annotationSource?.jobId && state.annotationSource?.taskId) {
+        payload.source_job_id = state.annotationSource.jobId;
+        payload.source_task_id = state.annotationSource.taskId;
+      }
       const params = state.job?.params || {};
       payload.provider = String(params.provider || "");
       payload.model = String(params.model || "");

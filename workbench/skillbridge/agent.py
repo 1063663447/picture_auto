@@ -312,6 +312,9 @@ class AgentContext:
     draft_id: str = ""
     job_id: str = ""
     task_ids: list[str] = field(default_factory=list)
+    #: 本轮要改的那张图在哪个任务里（第 2 轮之后是上一轮的改图任务；空=就用主任务的基准图）
+    source_job_id: str = ""
+    source_task_ids: list[str] = field(default_factory=list)
     #: 运营在基准图上画好的框选标注（相对任务目录的路径）；改图时会一起发给生图接口
     annotation_id: str = ""
     #: 框信息：[{n, x, y, w, h, note}]，坐标 0~1 相对值（前端画框时生成）

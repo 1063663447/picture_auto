@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.7-win-x64-internal.zip"
-VERSION = "9.6.7"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.9-win-x64-internal.zip"
+VERSION = "9.6.9"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -52,6 +52,7 @@ REQUIRED = [
     "workbench/CHANGELOG_WHITE_MASTER_9.6.5.md",
     "workbench/CHANGELOG_ANNOTATE_9.6.6.md",
     "workbench/CHANGELOG_REVIEW_965_9.6.7.md",
+    "workbench/CHANGELOG_CHAIN_9.6.9.md",
     "workbench/HANDOVER.md",
     "workbench/web/index.html",
     "workbench/web/app.js",

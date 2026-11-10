@@ -1384,6 +1384,13 @@ class Workbench:
         source_task_map: dict[str, str] = {}
         copied_originals: dict[Path, str] = {}
         missing_originals: list[str] = []
+        # 上一轮已经是改图任务 → 本轮是它的下一轮（轮次用于 id/颜色的版本号）
+        try:
+            prev_round = int(source_job.params.get("rework_round") or 0)
+        except (TypeError, ValueError):
+            prev_round = 0
+        is_rework_source = str(source_job.params.get("kind") or "") == "rework"
+        round_no = (prev_round + 1) if is_rework_source else 1
         for index, task in enumerate(selected, start=1):
             original = job_image_path(source_job, task.out)
             if original is None:
@@ -1394,7 +1401,11 @@ class Workbench:
             stem = f"{index:03d}-{SAFE_NAME.sub('_', original.stem)}"
             target = target_dir / f"{stem}{original.suffix or '.png'}"
             target.write_bytes(original.read_bytes())
-            task_id = f"{task.id}-v2"
+            # 版本号按轮次走：第一轮 -v2，接着改就是 -v3、-v4…（第 N 轮 = 第 N+1 版）
+            base_id = re.sub(r"-v\d+$", "", str(task.id))
+            base_color = re.sub(r"-v\d+$", "", str(task.color))
+            base_name = str(task.color_name or "").replace("·改图", "")
+            task_id = f"{base_id}-v{round_no + 1}"
             origin_refs = []
             for upload in original_uploads(source_job, task, self.get_job):
                 copied = copied_originals.get(upload.path)
@@ -1441,9 +1452,9 @@ class Workbench:
                 id=task_id,
                 item=folder,
                 view=task.view,
-                color=f"{task.color}-v2",
+                color=f"{base_color}-v{round_no + 1}",
                 color_hex=task.color_hex,
-                color_name=f"{task.color_name}·改图",
+                color_name=f"{base_name}·改图",
                 source=str(target.relative_to(root)).replace("\\", "/"),
                 prompt=prompt,
                 subject=task_subject,
@@ -1531,6 +1542,9 @@ class Workbench:
                 shutil.rmtree(root, ignore_errors=True)
                 raise WorkbenchError("框选标注图不存在，无法作为改动地图")
 
+        params["rework_round"] = round_no
+        params["revises_job"] = source_job_id
+        params["revises_tasks"] = list(source_task_map.values())
         params["estimate"] = self.pricer.estimate(
             chosen_model, len(tasks), str(params.get("size") or "auto"), provider_obj.name
         )
@@ -2092,15 +2106,27 @@ class Workbench:
         model: str | None = None,
         account: str = "",
         annotation_id: str = "",
+        source_job_id: str = "",
+        source_task_ids: list[str] | None = None,
     ) -> Job:
         """基准图不满意 → 以它为准做一次改图（改完可以再采纳回来确认）。
 
         ``annotation_id``：框选标注图的相对路径（见 save_annotation），
         会作为「改动区域的地图」随改图一起发给生图接口。
+        ``source_job_id`` / ``source_task_ids``：**从哪张图重画**。默认是这条任务的基准图；
+        第 2 轮还想改时，前端把上一轮的改图任务传进来，于是基于上一轮的结果继续改（第 3 轮…）。
         不改变原任务状态：原任务继续停在「基准待确认」，等运营把改好的图采纳进来。
         """
         job = self.get_job(job_id)
-        targets = self._master_targets(job, task_ids)
+        if source_job_id and source_task_ids:
+            src_job = self.get_job(source_job_id)
+            wanted = {str(t) for t in source_task_ids}
+            targets = [t for t in src_job.tasks if t.id in wanted and t.out]
+            if not targets:
+                raise WorkbenchError("要接着改的那张图不存在或已经不在任务里")
+        else:
+            src_job = job
+            targets = self._master_targets(job, task_ids)
         if not targets:
             raise WorkbenchError("没有可修改的基准图")
         text = " ".join((instruction or "").split())
@@ -2108,12 +2134,13 @@ class Workbench:
             raise WorkbenchError("请说清楚基准图哪里要改")
         annotation_path = ""
         if annotation_id:
-            annotated = self._annotation_path(job, annotation_id)
+            # 标注图存在「被框的那张图」所在的任务里（第 N 轮可能是改图任务）
+            annotated = self._annotation_path(src_job, annotation_id)
             if annotated is None:
                 raise WorkbenchError("标注图找不到或路径不安全")
             annotation_path = str(annotated)
         rework = await self.create_rework_job(
-            job_id,
+            src_job.id,
             [t.id for t in targets],
             text,
             provider=provider or str(job.params.get("provider") or ""),
@@ -2139,9 +2166,16 @@ class Workbench:
                 "instruction": text,
                 "rework_job": rework.id,
                 "master_ids": [t.id for t in targets],
+                "from_job": src_job.id,
+                "from_tasks": [t.id for t in targets],
+                "round": int(rework.params.get("rework_round") or 1),
             }
         )
-        job.stage = "基准图修改中：改好后在对话框里确认，就会按新图改色"
+        round_no = int(rework.params.get("rework_round") or 1)
+        job.stage = (
+            f"基准图第 {round_no} 轮修改中：改好后采纳，就会按新图改色"
+            if round_no > 1 else "基准图修改中：改好后在对话框里确认，就会按新图改色"
+        )
         job.add_log(
             f"基准图打回修改：{text}（返工任务 {rework.id}"
             + ("，已附框选标注图" if annotation_path else "")

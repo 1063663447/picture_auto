@@ -230,6 +230,90 @@ async def main() -> int:
                 adopted.append(task.get("master_task") or task.get("adopted_from") or task.get("source"))
             check(all(adopted), f"每张都有来源（{adopted}）")
             check(len(set(map(str, adopted))) == 2, f"来源不同，没串任务（{adopted}）")
+            print("⑤ 不采纳，直接以第 2 轮那张图继续改（第 3 轮）")
+            chain_source_job = ok_rounds[0]["job_ids"][-1]
+            chain_job = (await client.get(f"/api/jobs/{chain_source_job}")).json()["job"]
+            chain_task = (chain_job.get("tasks") or [{}])[0]
+            chain_task_id = str(chain_task.get("id") or "")
+            check(chain_task_id.endswith("-v2"), f"第 2 轮的图（{chain_task_id}）")
+            check(int((chain_job.get("params") or {}).get("rework_round") or 0) == 1,
+                  "第 2 轮的 rework_round = 1")
+
+            png2 = annotation_png(ROOT / "scratch" / "concurrency-anno-chain.png", (0.1, 0.45, 0.3, 0.2))
+            with png2.open("rb") as fh:
+                res = await client.post(
+                    f"/api/jobs/{chain_source_job}/annotations",
+                    data={
+                        "task_id": chain_task_id,
+                        "boxes": json.dumps([{"n": 1, "x": 0.1, "y": 0.45, "w": 0.3,
+                                              "h": 0.2, "note": "第 3 轮：这条走线再平一点"}]),
+                    },
+                    files={"file": ("annotation.png", fh, "image/png")},
+                )
+            check(res.status_code == 200, f"在第 2 轮的图上框选（{res.status_code}）")
+            chain_anno = res.json()["annotation"]["id"]
+
+            chain_payload = dict(base_payload)
+            chain_payload.update({
+                "task_ids": [picked[0]["id"]],
+                "source_job_id": chain_source_job,
+                "source_task_id": chain_task_id,
+                "annotation_id": chain_anno,
+                "annotations": [{"n": 1, "x": 0.1, "y": 0.45, "w": 0.3, "h": 0.2,
+                                 "note": "第 3 轮：这条走线再平一点"}],
+                "instruction": "按我框选的位置改这张（第 3 轮）：框1 的走线再平一点，框外不要动。",
+            })
+            chain_job_ids: list[str] = []
+            async with client.stream("POST", "/api/harness/stream", json=chain_payload) as res:
+                buffer = ""
+                async for chunk in res.aiter_text():
+                    buffer += chunk
+                    while "\n\n" in buffer:
+                        frame, buffer = buffer.split("\n\n", 1)
+                        event = "message"
+                        data = ""
+                        for line in frame.split("\n"):
+                            if line.startswith("event:"):
+                                event = line[6:].strip()
+                            elif line.startswith("data:"):
+                                data += line[5:].strip()
+                        if event in {"job", "prompt"} and data:
+                            try:
+                                body = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
+                            if body.get("job_id"):
+                                chain_job_ids.append(str(body["job_id"]))
+            check(bool(chain_job_ids), f"第 3 轮拿到任务 {chain_job_ids}")
+            if chain_job_ids:
+                third_id = chain_job_ids[-1]
+                third_job = (await client.get(f"/api/jobs/{third_id}")).json()["job"]
+                third_params = third_job.get("params") or {}
+                third_task = (third_job.get("tasks") or [{}])[0]
+                third_task_id = str(third_task.get("id") or "")
+                check(third_task_id.endswith("-v3"), f"版本号接着涨（{third_task_id}）")
+                check(int(third_params.get("rework_round") or 0) == 2,
+                      f"第 3 轮 rework_round = 2（实际 {third_params.get('rework_round')}）")
+                check(third_params.get("revises_job") == chain_source_job,
+                      f"记录它改的是上一轮任务（{third_params.get('revises_job')}）")
+                check(third_params.get("revises_tasks") == [chain_task_id],
+                      f"记录它改的是上一轮那张图（{third_params.get('revises_tasks')}）")
+                # 参考图必须是第 2 轮那张（链式来源），不能回到第 1 轮
+                first_out = FIXTURE / "data" / "jobs" / chain_source_job / str(chain_task.get("out") or "")
+                third_src = FIXTURE / "data" / "jobs" / third_id / str(third_task.get("source") or "")
+                check(first_out.is_file() and third_src.is_file() and
+                      first_out.read_bytes() == third_src.read_bytes(),
+                      "第 3 轮的参考图就是第 2 轮那张")
+                disk3 = FIXTURE / "data" / "jobs" / third_id / "job.json"
+                raw3 = json.loads(disk3.read_text(encoding="utf-8"))
+                prompt3 = ((raw3.get("tasks") or [{}])[0].get("prompt") or "")
+                check("OPERATOR ANNOTATION MAP" in prompt3, "第 3 轮的提示词也带标注约束")
+                # 主任务仍停在待确认：不需要先采纳就能继续改
+                main_job = (await client.get(f"/api/jobs/{job_id}")).json()["job"]
+                check(main_job.get("status") == "review", "主任务还在 review（没被强制采纳）")
+                check(not any(t.get("approved") for t in main_job.get("tasks") or [] if t.get("master")),
+                      "基准图仍未确认（可以不采纳就继续改）")
+
     finally:
         server.terminate()
         try:
@@ -242,7 +326,7 @@ async def main() -> int:
         for item in FAILURES:
             print("  -", item)
         return 1
-    print("\n全部通过：两轮框选改图并发跑通，各自只管自己那一张，标注图和约束都带上了")
+    print("\n全部通过：两轮框选改图并发跑通，各自只管自己那一张；第 3 轮能接着第 2 轮改（不用先采纳）")
     return 0
 
 
