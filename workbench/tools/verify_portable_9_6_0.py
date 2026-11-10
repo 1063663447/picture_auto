@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.3-win-x64-internal.zip"
-VERSION = "9.6.3"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.4-win-x64-internal.zip"
+VERSION = "9.6.4"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [

@@ -1327,43 +1327,68 @@
     const alive = () => state.masterJobId === jobId
       && drawer && !drawer.hidden && state.harnessMode === "master";
     if (!alive()) { stopMasterWatch(); return; }
-    let delay = 2500;
+    let delay = state.masterShown ? 3000 : 2000;      // 还没出基准时勤一点
     try {
       const data = await api(`/api/jobs/${jobId}`, { cache: "no-store" });
       const job = data.job || {};
       if (!alive()) return;
       const review = job.review || {};
       const tasks = (job.tasks || []);
-      const masters = tasks.filter((t) => t.master && (t.thumb_small || t.thumb));
+      const masters = tasks.filter((t) => t.master);
+      const masterShots = masters.filter((t) => t.thumb_small || t.thumb);
+      const masterDone = masterShots.length;
+      const masterTotal = masters.length;
       const derivedTotal = review.derived_total || tasks.filter((t) => t.master_task).length;
       const derivedDone = tasks.filter((t) => t.master_task && t.out).length;
+      // 「已确认」只认这两种信号：阶段切到 derived，或基准任务被标记 approved
+      const approved = review.phase === "derived" || (review.approved_ids || []).length > 0;
+      const awaitingReview = review.awaiting || job.status === "review";
 
-      if (review.awaiting) {
-        if (masters.length && !state.masterShown) {
-          state.masterShown = true;
-          masterStatusDone();
-          chatMasterCard(masters,
-            `基准图出来了（${masters.length} 张）。满意就点「就按这张改色」，我再给其余 `
-            + `${derivedTotal} 个颜色改色；要改就直接说改哪里，我改完再返图给你看。`);
-        } else if (!masters.length) {
-          masterStatusLine(`基准图生成中…（共 ${job.stats?.total || 0} 张，先出基准）`);
-        }
-      } else if (derivedTotal) {
-        if (derivedDone < derivedTotal) {
+      if (approved) {
+        // 确认之后：只有这时才说「正在按基准改色」
+        if (derivedTotal && derivedDone < derivedTotal) {
           masterStatusLine(`基准已确认，正在按它给其余颜色改色：${derivedDone}/${derivedTotal}`);
         } else {
           masterStatusDone();
           if (!state.masterDoneShown) {
             state.masterDoneShown = true;
             chatBubble("assistant",
-              `全部改色完成：${derivedDone} 张新颜色 + 1 张基准。右侧画廊可以直接下载或继续改图。`);
+              `全部改色完成：${derivedDone} 张新颜色 + ${masterDone} 张基准。`
+              + "右侧画廊可以直接下载，或者继续改图。");
           }
           return;
         }
-      } else if (TERMINAL.includes(job.status)) {
+      } else if (awaitingReview && masterDone) {
+        // 基准图出来了，停下来等确认：返图 + 给按钮（一张只发一次）
         masterStatusDone();
-        return;
-      } else {
+        if (!state.masterShown) {
+          state.masterShown = true;
+          chatMasterCard(masterShots,
+            `基准图出来了（${masterDone} 张）。满意就点「就按这张改色」，我再给其余 `
+            + `${derivedTotal} 个颜色改色；要改就直接说改哪里，我改完再返图给你看。`);
+        }
+      } else if (masterTotal && masterDone < masterTotal) {
+        // 还在出基准：只说进度，不提确认、不发图
+        const running = masters.filter((t) => t.status === "running").length;
+        const failed = masters.filter((t) => t.status === "failed").length;
+        const tail = running ? `（生成中 ${running}）` : failed ? `（失败 ${failed}）` : "";
+        masterStatusLine(
+          `基准图生成中 ${masterDone}/${masterTotal}…${tail}` +
+          (failed && !running ? "　可以重试或换模型" : "")
+        );
+        state.masterShown = false;
+      } else if (TERMINAL.includes(job.status) || job.status === "partial") {
+        // 基准没出全就结束了（失败/取消）：说清楚，别假装在改色
+        masterStatusDone();
+        if (masterShots.length && !state.masterShown) {
+          state.masterShown = true;
+          chatMasterCard(masterShots, "基准图只出来部分，先看这几张；要我按它改色就说可以。");
+        } else if (!masterShots.length) {
+          masterStatusLine(
+            `基准图没出来（${job.error || job.stage || "任务已结束"}）。可以点重试，或者换个模型再来一次。`
+          );
+        }
+      } else if (masterTotal === 0) {
         masterStatusLine(job.stage || "生成中…");
       }
     } catch (err) {
@@ -2234,7 +2259,12 @@
       $("harnessDefault").textContent="返回画廊";
       $("reworkModel").hidden=true;
       renderQuick(QUICK_MASTER);openDrawer("harness");updateSummary();
-      chatBubble("assistant",`这是这批的基准图。满意就说「可以」或点「确定」，我再按它给其它 ${info.derived_total||0} 个颜色改色；不满意就直接说哪里要改，比如「领口再小一点」。`);
+      const hasShot = (state.job?.tasks || []).some((t) => t.master && (t.thumb_small || t.thumb));
+      if (hasShot) {
+        chatBubble("assistant",`这是这批的基准图。满意就说「可以」或点「确定」，我再按它给其它 ${info.derived_total||0} 个颜色改色；不满意就直接说哪里要改，比如「领口再小一点」。`);
+      } else {
+        chatBubble("assistant",`基准图正在生成（先只出一张，其它 ${info.derived_total||0} 个颜色还没开始）。出图我马上发给你看，你满意再确认改色。`);
+      }
       window.AIWorkflow?.start("master");window.AIWorkflow?.phase('idle','对着基准图说明要改的地方，或直接确认。');
       return true;
     }
