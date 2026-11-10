@@ -1,22 +1,34 @@
-# 产品展示图（9.4.9 附）· 5 张
+# 产品展示图（9.4.9 附）· 6 张
 
 ## 一句话
 素材全部取自工作台真机界面和 `data/jobs` 里已经跑出来的真实成品，走 **65535 网关的
-`gpt-image-2.6-sunburst`** 直出 5 张产品展示图，不需要跑款式库、不改任何业务数据。
+`gpt-image-2.6-sunburst`** 直出，不需要跑款式库、不改任何业务数据。
+**6 张（1 张总览 + 5 张分图）全部由生图接口生成，没有脚本拼图。**
 
 ## 产物（`workbench/showcase/`，已 gitignore）
 
 | 文件 | 尺寸 | 展示什么 | 单张耗时 |
 |---|---|---|---|
+| `00-overview.png` | 1536×1024 | 总览主视觉：主界面 + 配色成品卡，纯黑舞台、青绿光带 | 84.6s |
 | `01-hero.png` | 1536×1024 | 整体界面：创作空间、10 款 / 49 色、批量队列 | 93.2s |
 | `02-styles.png` | 1536×1024 | 款式面板 + 12 张真实批量成品（同一原图 × 多款式） | 95.5s |
 | `03-prompt.png` | 1024×1536 | 款式专属提示词正文特写（实际发给模型的全文） | 120.0s |
 | `04-batch.png` | 1536×1024 | 批量成品网格 + 历史任务批次对账 | 121.4s |
 | `05-recolor.png` | 1536×1024 | 原图 → 4 个颜色成品（同一人物 / 版型 / 印花） | 95.1s |
-| `00-总览.png` | 1890×2148 | 六格总览，带中文说明条和成本/规模块 | 拼图 |
 | `showcase-manifest.json` | — | 每张的接口、模型、尺寸、耗时、体积 | — |
 
-成本：5 张 × $0.038 = **$0.19**（报价口径，见 `config.json` → `terra.model_prices`）。
+成本：6 张 × $0.038 = **$0.228**（报价口径，见 `config.json` → `terra.model_prices`）。
+
+## 总览怎么出的
+总览不做拼图，也不追求把每张分图都摆上去——那样会变成说明书。
+只喂两张**已经出好的分图**（`01-hero` + `05-recolor`）当参考图，让模型压成一个主视觉：
+
+- 主界面当主角，略偏左、转 10°，后缘退远；
+- 配色成品卡缩小放在右下，反向旋转，上缘轻压主角面板、明确在后；
+- 一条青绿光带从两块面板背后斜穿，剩下全黑 + 地面反光；
+- 50 mm f/4 全清晰，无眩光压字。
+
+两块面板的内容仍然是 1:1 保真，画面里没有任何模型自己写的字。
 
 ## 关键做法：先把版面做死，再让模型去打光
 
@@ -45,12 +57,14 @@ python tools/make_showcase_materials.py
 # 3) 调接口出图（先 --dry-run 看参考图和字数，再 --only 挑着跑）
 python tools/make_showcase.py --spec E:\picture_auto\scratch\showcase\spec.json --dry-run
 python tools/make_showcase.py --spec E:\picture_auto\scratch\showcase\spec.json --only "01,03"
-# 4) 拼总览（中文用系统雅黑渲染，不经过模型）
-python tools/make_showcase_sheet.py
+# 4) 总览要等 01 / 05 出好后再跑（它拿这两张当参考图）
+python tools/make_showcase.py --spec E:\picture_auto\scratch\showcase\spec.json --only 00
 ```
 
-提示词全文在 `scratch/showcase/spec.json`，5 段都可单独改；`--only` 支持按 id 前缀挑张数，
+提示词全文在 `scratch/showcase/spec.json`，6 段都可单独改；`--only` 支持按 id 前缀挑张数，
 manifest 按 id 合并，分批跑不会冲掉上一批记录。
+`tools/make_showcase_sheet.py`（拼图版总览）保留备用：需要带中文说明条的对照单页时再用，
+正式交付的总览是 `00-overview.png`。
 
 ## 注意事项
 
