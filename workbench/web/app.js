@@ -498,12 +498,13 @@
   // 袖口工艺标：平口 = T 恤折边，螺纹 = 卫衣罗纹（画错是硬伤，所以摆在款式标题上）
   function cuffTag(type) {
     if (!type) return "";
-    // 背心没有袖子、短裤没有袖口：这两类标「无袖 / 下装」，别再用平口/罗纹那套上衣说法
-    if (type.kind === "vest" || type.sleeve === "none") {
-      return ` <span class="cuff-tag plain" title="无袖款：袖笼是包边，没有任何袖子">无袖</span>`;
-    }
+    // 背心没有袖子、短裤没有袖口：这两类标「无袖 / 下装」，别再用平口/罗纹那套上衣说法。
+    // 注意顺序：短裤的 sleeve 也是 none，必须先判「下装」，否则会被标成「无袖」。
     if (type.kind === "bottom") {
       return ` <span class="cuff-tag plain" title="下装款：松紧腰 + 两条裤腿">下装</span>`;
+    }
+    if (type.kind === "vest" || type.sleeve === "none") {
+      return ` <span class="cuff-tag plain" title="无袖款：袖笼是包边，没有任何袖子">无袖</span>`;
     }
     if (!type.cuff_zh) return "";
     const plain = type.cuff === "plain";
