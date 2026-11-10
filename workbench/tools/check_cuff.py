@@ -53,6 +53,25 @@ PLAIN_NEG = "Do not add ribbed cuffs"
 RIBBED_MARK = "rib-knit (1x1 rib)"
 RIBBED_NEG = "Do not replace the ribbed cuffs"
 
+#: 2026-11-10：卫衣 promo 图改成长袖童装时，袖口还是罗纹 —— 现在提示词第一段是「款式转换」，
+#: 平口款必须写明去掉罗纹收口，罗纹款反过来要求补上。
+CONVERT_MARK = "CONVERT THE GARMENT TYPE"
+
+
+def check_convert(garment, prompt: str, style_only: str, show: bool) -> None:
+    check(prompt.find(CONVERT_MARK) >= 0,
+          f"{garment.slug}：提示词含款式转换段", show)
+    check(style_only.find(CONVERT_MARK) >= 0,
+          f"{garment.slug}：两段式第一阶段也有转换段", show)
+    low = prompt.lower()
+    if garment.cuff == CUFF_RIBBED:
+        check("rib-knit cuffs" in low and "remove all of that" not in low,
+              f"{garment.slug}：罗纹款要求补罗纹带", show)
+    else:
+        check("remove all of that" in low, f"{garment.slug}：平口款要求去掉罗纹收口", show)
+        check("plain self-fabric folded hems" in low, f"{garment.slug}：写明改成平折边", show)
+
+
 FAILURES: list[str] = []
 
 
@@ -75,6 +94,9 @@ def main() -> int:
     for slug, garment in sorted(types.items()):
         cuff = garment.cuff
         check(cuff in CUFF_VALUES, f"{slug}：cuff 取值合法（{cuff}）", show)
+        prompt_single = prompts.build_single_pass(skill, garment, garment.colors[0], subject="person")
+        style_only = prompts.build_style_only(garment, subject="person", effect=True)
+        check_convert(garment, prompt_single, style_only, show)
         if slug in EXPECTED_RIBBED:
             check(cuff == CUFF_RIBBED, f"{slug}：卫衣系按螺纹处理", show)
         if slug in EXPECTED_PLAIN:

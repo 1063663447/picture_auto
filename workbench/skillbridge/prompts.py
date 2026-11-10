@@ -307,8 +307,11 @@ CUFF_PLAIN_CLAUSE_REF = (
     "under, and a straight flat hem line on the body. There is NO rib-knit band, NO elastic band, "
     "NO gathered or shirred cuff, NO elasticated waistband and NO contrast trim on the sleeve or "
     "hem. The sleeve keeps whatever width the reference photo shows (it may taper on a fitted "
-    "style); the only ribbed part is the neckband. Keep the cuffs and hem plain even where the hip "
-    "or sleeve edge is in shadow or partly covered."
+    "style); the only ribbed part is the neckband. If the source photo shows a sweatshirt-style "
+    "rib-knit cuff or ribbed hem, STRIP that ribbing: rebuild the sleeve end and the hem as plain "
+    "self-fabric turned-and-stitched hems, with no ribs, no gathering and no elastic, and let the "
+    "sleeve run straight to that hem instead of cinching in. Keep the cuffs and hem plain even "
+    "where the hip or sleeve edge is in shadow or partly covered."
 )
 
 CUFF_PLAIN_CLAUSE = (
@@ -318,7 +321,10 @@ CUFF_PLAIN_CLAUSE = (
     "body ends in a straight flat hem line. There is NO rib-knit band, NO elastic band, NO gathered "
     "or shirred cuff, NO elasticated waistband, NO contrast trim on the sleeve or hem, and NO "
     "sweatshirt-style ribbing anywhere on this garment — the only ribbed part is the neckband. "
-    "Keep the cuffs and hem plain even where the wrist or hip is in shadow or partly covered."
+    "If the source photo shows a sweatshirt-style rib-knit cuff or ribbed hem, STRIP that ribbing: "
+    "the new sleeve runs straight down to a plain folded hem and the body ends in a plain straight "
+    "hem, with no ribs, no gathering and no elastic. Keep the cuffs and hem plain even where the "
+    "wrist or hip is in shadow or partly covered."
 )
 
 CUFF_RIBBED_CLAUSE = (
@@ -641,12 +647,19 @@ INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("color", ("颜色", "配色", "换色", "色调", "colour", "color")),
     ("text", ("文字", "文案", "字样", "字体", "改成「", "改字", "text", "wording")),
     ("resolution", ("高清", "清晰", "分辨率", "锐化", "upscale", "sharper")),
+    # 改款意图：命中就撤掉「保持原服装类型/剪裁/袖口」的锁，按目标款式重建
+    # 只放「款式/工艺」词：像「换成」这种太泛的词会把「把背景换成白色」也误判成改款
+    ("garment_change", ("长袖", "短袖", "卫衣", "连帽", "帽衫", "圆领", "改款", "换款", "换款式",
+                        "款式改", "罗纹", "螺纹", "平口", "袖口", "hoodie", "sweatshirt",
+                        "long sleeve", "short sleeve", "long-sleeve", "short-sleeve",
+                        "ribbed", "cuff", "crewneck")),
 )
 
 #: 用户提到这些类别时，对应的"不许变"约束要撤掉，否则自己打自己
 INTENT_UNLOCKS: dict[str, tuple[str, ...]] = {
     "pattern_variant": ("artwork",),
     "pattern_replace": ("artwork",),
+    "garment_change": ("garment",),
     "background": ("background",),
     "light": ("lighting",),
     "color": ("colour",),
@@ -1072,6 +1085,7 @@ def keep_clause(
     pattern_mode: str = "preserve",
     subject: str = "",
     effect: bool = False,
+    garment_change: bool = False,
 ) -> str:
     """把"必须保持不变"的部分列成一句；用户要改的项自动从清单里去掉。
 
@@ -1085,7 +1099,9 @@ def keep_clause(
         unlocked.add("artwork")
     if "pattern_replace" in intents or "pattern_variant" in intents:
         unlocked.add("artwork")
-    if effect:
+    if effect or garment_change:
+        # effect：版型以效果图为准 → 不再锁原图的剪裁
+        # garment_change：运营明确要换款式 → 同理，否则「保持罗纹袖口」会和需求对打
         unlocked.add("garment")
     garment_output = str(subject or "").strip().lower() == "garment"
     if garment_output:
@@ -1165,6 +1181,7 @@ def build_single_pass(
 
     want_effect = has_effect(color) if effect is None else bool(effect)
     parts = [
+        convert_clause(garment),
         prompt,
         garment_lock(garment),
         sleeve_clause(garment),
@@ -1208,7 +1225,9 @@ def build_single_pass(
 def build_style_only(garment: GarmentType, *, subject: str = "", effect: bool = False) -> str:
     base = STYLE_ONLY_TEMPLATE.replace(PRESERVE_CLAUSE, preserve_clause(subject))
     return enforce_composition_rule(enforce_subject_rule(tidy_articles(
-        base.format(phrase=garment.phrase)
+        convert_clause(garment)
+        + " "
+        + base.format(phrase=garment.phrase)
         + " " + sleeve_clause(garment)
         + " " + cuff_clause(garment, reference=effect)
         + (" " + EFFECT_CLAUSE if effect else "")
@@ -1302,6 +1321,81 @@ def garment_lock(garment: GarmentType | None) -> str:
         return ""
     phrase = " ".join(str(getattr(garment, "phrase", "") or "").split()) or garment.slug
     return GARMENT_LOCK_TEMPLATE.format(phrase=phrase, forbidden=garment_forbidden(garment))
+
+
+#: **款式转换段**（放在提示词最前面）。
+#: 起因（2026-11-10）：客户原图是「圣诞卫衣 promo 图」，要求改成 25 长袖童装，
+#: 结果只换了颜色、袖口还是卫衣的罗纹收口。实测：只写「保持别动 + 目标款式」时模型会照搬源图结构；
+#: 把「源图那件衣服要按规则**拆掉特征**」写成第一段，长袖/平口才真的出现。
+CONVERT_TEMPLATE = (
+    "CONVERT THE GARMENT TYPE (highest priority) — whatever garment the wearer has on in the source, "
+    "the result must be exactly this garment: {phrase}. Rebuild it inside the scene instead of "
+    "recolouring what is there: {strip}. The garment's fabric must {fabric_link} rather than the "
+    "source, and it must not gain {forbidden}. Only the printed artwork, the wearer, the scene and "
+    "any text overlays are preserved."
+)
+
+
+CONVERT_MARK = "CONVERT THE GARMENT TYPE"
+CONVERT_END = "any text overlays are preserved."
+
+
+def promote_convert_clause(prompt: str) -> str:
+    """把「款式转换段」提回提示词最前面。
+
+    请求边界会再 prepend 一遍主体/构图规则（那是最高优先级的另外两块），
+    会把转换段顶到几千字符之后 —— 实测这样模型就不听了，所以这里再抢一次位置。
+    """
+    text = prompt or ""
+    index = text.find(CONVERT_MARK)
+    if index <= 0:
+        return text
+    end = text.find(CONVERT_END, index)
+    if end == -1:
+        return text
+    end += len(CONVERT_END)
+    block = text[index:end]
+    rest = (text[:index] + " " + text[end:]).strip()
+    # 纯衣服批次的「禁人物」规则要保住第一位（那是这类的最高优先级），转换段紧随其后
+    if rest.startswith(NO_PERSON_CLAUSE):
+        tail = rest[len(NO_PERSON_CLAUSE):].strip()
+        return (NO_PERSON_CLAUSE + " " + block + " " + tail).strip()
+    return (block + " " + rest).strip()
+
+
+def convert_clause(garment: GarmentType | None, *, reference_image: bool = True) -> str:
+    """把「源图这件衣服该怎么拆、该怎么建」写成第一段（按目标款式的袖口工艺给不同规则）。
+
+    ``reference_image=False``：改图只有一张参考图时不要提「IMAGE 2」，改成直接描述面料。
+    """
+    if garment is None:
+        return ""
+    phrase = " ".join(str(getattr(garment, "phrase", "") or "").split()) or garment.slug
+    cuff = str(getattr(garment, "cuff", "") or "").strip().lower()
+    if cuff == "ribbed":
+        strip = (
+            "if the source shows a plain folded cuff or a straight plain hem, replace them with real "
+            "1x1 rib-knit cuffs and a rib-knit hem band, slightly narrower than the sleeve and body"
+        )
+        fabric = "mid-weight brushed fleece with rib-knit trims"
+    else:
+        strip = (
+            "if the source shows a rib-knit cuff, a gathered or elastic cuff, a band that cinches the "
+            "wrist or a ribbed waistband, remove all of that and finish the sleeves and the bottom hem "
+            "as plain self-fabric folded hems of the sleeve's own width; the sleeve must run straight "
+            "to that hem"
+        )
+        fabric = "thin cotton jersey with plain folded hems and a ribbed neckband only"
+    fabric_link = f"match IMAGE 2 ({fabric})" if reference_image else f"be {fabric}"
+    text = CONVERT_TEMPLATE.format(
+        phrase=phrase, strip=strip, fabric_link=fabric_link, forbidden=garment_forbidden(garment)
+    )
+    sleeve = str(getattr(garment, "sleeve", "") or "").strip().lower()
+    if sleeve == "long":
+        text += " The sleeves must be full length, reaching the wrist."
+    elif sleeve == "short":
+        text += " The sleeves must be genuine short sleeves ending above the elbow."
+    return text
 
 
 def garment_negative(garment: GarmentType | None) -> str:

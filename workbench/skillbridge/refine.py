@@ -89,16 +89,49 @@ def _intent_sentences(intents: list[str], pattern_mode: str) -> list[str]:
     return lines
 
 
+def _sanitize_brief(text: str) -> str:
+    """把「原始生产提示词」里的图片角色描述清掉。
+
+    改图只附 1 张参考图，如果照抄上一轮的「CONVERT / REFERENCE ROLES — IMAGE 2 是官方效果图…」，
+    模型会以为还挂着第二张图，反而更乱。这里：
+    1. 去掉款式转换段（从标记到句末）；
+    2. 把 IMAGE 1/2 的说法改成「源图/参考图」。
+    """
+    out = " ".join(str(text or "").split())
+    marker = "CONVERT THE GARMENT TYPE"
+    end_marker = "any text overlays are preserved."
+    while marker in out:
+        start = out.find(marker)
+        end = out.find(end_marker, start)
+        if end == -1:
+            out = out[:start].strip()
+            break
+        out = (out[:start] + " " + out[end + len(end_marker):]).strip()
+    out = out.replace("IMAGE 2", "the reference photo").replace("IMAGE 1", "the source photo")
+    # 上一轮如果是「只有衣服」批次，brief 里会带着「把人物整个去掉」的段落 ——
+    # 抄进真人改图里就自相矛盾（"保留同一个人" vs "REMOVE the original wearer"），必须删掉
+    for clause in (prompts.NO_PERSON_CLAUSE, prompts._LEGACY_NO_PERSON_CLAUSE):
+        if clause and clause in out:
+            out = (out.replace(clause, " ")).strip()
+    out = out.replace(
+        "If the source or approved master has a wearer, extract the garment and REMOVE the original "
+        "wearer completely; do not preserve that person or mannequin.",
+        " ",
+    )
+    return " ".join(out.split())
+
+
 def compose_template(
     instruction: str,
     original_prompt: str,
     *,
     pattern_mode: str = "",
     subject: str = "",
+    garment=None,
 ) -> str:
     """把一条改图需求合并成结构化提示词（不再"原话贴尾"）。"""
     instruction = " ".join((instruction or "").split())
-    original_prompt = " ".join((original_prompt or "").split())
+    original_prompt = _sanitize_brief(original_prompt)
     intents = prompts.classify_requirement(instruction)
     mode = (pattern_mode or "").strip().lower()
     if mode not in prompts.PATTERN_MODES:
@@ -113,18 +146,36 @@ def compose_template(
             "The default 'artwork must stay pixel-identical' rule is LIFTED for this pass: "
             + prompts.pattern_clause(mode, brief=instruction)
         )
-    keep = prompts.keep_clause(intents, pattern_mode=mode, subject=subject)
+    # 运营在「改图」里要求换款式（例：把卫衣改成蓝色长袖童装）时：
+    # 必须把「保持原服装类型/剪裁/罗纹袖口」这条撤掉，并显式给出目标款式的构造约束，
+    # 否则改图提示词会亲手把卫衣的罗纹收口保留下来（2026-11-09 童装长袖实测）。
+    garment_change = "garment_change" in intents and garment is not None
+    keep = prompts.keep_clause(
+        intents, pattern_mode=mode, subject=subject, garment_change=garment_change
+    )
     if not keep:
         keep = (
             "KEEP UNCHANGED — everything the request does not mention stays identical."
         )
-    garment = str(subject or "").strip().lower() == "garment"
+    # 注意：参数 garment 是款式对象，这里另起名字，别把它覆盖掉
+    garment_subject = str(subject or "").strip().lower() == "garment"
     prompt = REWORK_TEMPLATE.format(
         change=" ".join(change),
         keep=keep,
-        subject_keep=SUBJECT_KEEP_GARMENT if garment else SUBJECT_KEEP_NEUTRAL,
+        subject_keep=SUBJECT_KEEP_GARMENT if garment_subject else SUBJECT_KEEP_NEUTRAL,
         original_prompt=original_prompt or "(none)",
     )
+    if garment_change:
+        # 目标款式的构造约束（长袖/短袖、平口/罗纹、不许帽兜）放在最前面，优先于「别动」类条款
+        prompt = (
+            prompts.convert_clause(garment, reference_image=False)
+            + " "
+            + prompts.sleeve_clause(garment)
+            + " "
+            + prompts.cuff_clause(garment)
+            + " "
+            + prompt
+        )
     # Attachment roles are rebound by service/runner once the available originals are known.
     return prompts.build_rework_reference_prompt(prompt, subject, original_count=0)
 
@@ -226,6 +277,7 @@ async def compose(
     env: dict | None = None,
     pattern_mode: str = "",
     subject: str = "",
+    garment=None,
 ) -> tuple[str, str]:
     """Return (prompt, refiner_used)."""
     refiner = (refiner or "template").strip().lower()
@@ -245,14 +297,17 @@ async def compose(
                 return prompts.build_rework_reference_prompt(prompt, subject, original_count=0), "llm"
             except Exception:  # noqa: BLE001 - fall back, never block a rework
                 return compose_template(
-                    instruction, original_prompt, pattern_mode=pattern_mode, subject=subject
+                    instruction, original_prompt, pattern_mode=pattern_mode,
+                    subject=subject, garment=garment
                 ), "template(降级)"
         return compose_template(
-            instruction, original_prompt, pattern_mode=pattern_mode, subject=subject
+            instruction, original_prompt, pattern_mode=pattern_mode,
+            subject=subject, garment=garment
         ), "template(未配置 LLM)"
     return (
         compose_template(
-            instruction, original_prompt, pattern_mode=pattern_mode, subject=subject
+            instruction, original_prompt, pattern_mode=pattern_mode,
+            subject=subject, garment=garment
         ),
         "template",
     )

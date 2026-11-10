@@ -1407,6 +1407,7 @@ class Workbench:
                     env=self.env,
                     pattern_mode=rework_mode,
                     subject=task_subject,
+                    garment=garment,
                 )
             refiners.add(used)
             if model_switched:

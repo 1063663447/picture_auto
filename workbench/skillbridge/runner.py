@@ -990,6 +990,12 @@ class JobRunner:
         )
         prompt, negative = prompts.apply_output_policy(request.prompt, request.negative or "", subject, self.output_requirement)
         prompt, negative = prompts.enforce_artwork_topology(prompt, negative, self.pattern_mode)
+        # 接口不支持 negative 字段时（65535 网关 / a6api / fal 等），skill 要求把负面约束
+        # **合并到主提示词末尾**，否则那 3~4KB 否定词（"不要罗纹袖口""不要帽兜"…）根本没发给模型 ——
+        # 这正是「提示词写了很多规则、模型照样画错」的主要原因之一。
+        if negative and not getattr(self.provider, "supports_negative", False):
+            prompt = prompts.with_negative(prompt, negative, supported=False)
+            negative = ""
         request = replace(request, prompt=prompt, negative=negative)
         await self.limiter.acquire()
         lease = None

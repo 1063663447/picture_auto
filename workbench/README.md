@@ -959,6 +959,16 @@ python tools/feishu_gate_status.py      # 或在命令行看当前占位： pyth
   判定规则见 `skillbridge/subject.py`：皮肤像素占比≈0 才断言「纯衣服」（缺席才可靠，有皮肤一律按真人/中性处理，绝不把模特擦掉）。
   界面上「生成设定 → 画面主体」可选 `自动 / 只有衣服 / 真人上身`，也可以给 `/api/jobs` 传 `subject=garment` 强制。
   回归脚本：`python tools/check_no_person.py`（加 `--live --source=…` 会真跑一张验证成品干净）。
+- **款式转换段 + 负面约束真正生效（9.4.5）**：2026-11-10 运营反馈「圣诞卫衣 promo 图改成 25 长袖童装，
+  出图还是卫衣、袖口还是罗纹」。查出两个真问题：
+  1. **negative 从来没发出去**：65535/a6api/fal 这类接口没有 negative_prompt 字段，
+     adapter 里 `supports_negative=False` 就把那 3~4KB 否定词整段丢掉了（skill 原文要求合并到主提示词末尾）。
+     现在请求边界（`runner._guarded_call`）会判断接口能力，不支持就用 `prompts.with_negative()` 合并进提示词。
+  2. **「换款式」没说清**：新增 `CONVERT THE GARMENT TYPE` 转换段（`prompts.convert_clause()`）写在提示词靠前：
+     平口款 → "源图若有罗纹袖口/松紧收口/罗纹下摆全部去掉，改成同布平折边"；罗纹款 → 反过来要求补罗纹带；
+     并列出该款式不许出现的部件。一次到位、两段式第一阶段、改图都注入。
+     改图里还新增 `garment_change` 意图：命中就把「保持原服装类型/剪裁/罗纹袖口」从 KEEP 列表撤掉。
+  真机对照见 `data/test/kid-cuff/compare-3.png`；回归 `tools/check_request_boundary.py` + `tools/check_cuff.py`。
 - **款式锁 `GARMENT TYPE LOCK`（9.4.3）**：飞书改款记录 1382~1390 出现「基准色对、派生色变成卫衣」。
   根因是**派生色**（跟随基准只改颜色）的提示词里既没有版型描述、也没有 no hood —— 模型只被要求
   「别动形状、改颜色」，一部分颜色就自己发挥成帽兜卫衣。现在基准/派生/只换色/两阶段/返工统一注入
@@ -1110,7 +1120,8 @@ python tools/check_thumb_package.py       # 端到端：临时端口 mock 跑一
 python tools/repair_job.py --dry-run      # 列出需要修复的历史任务（打包失败/缓存目录错位）
 python tools/repair_job.py --all          # 搬回缓存目录 + 重新打包，能救回没 ZIP 的旧任务
 python tools/check_price_table.py    # 打印飞书定价表现状（三位小数 / 分档）
-python tools/check_cuff.py           # 袖口工艺回归：T 恤平口 / 卫衣螺纹（离线）
+python tools/check_cuff.py           # 袖口工艺 + 款式转换段回归（离线）
+python tools/check_request_boundary.py  # 请求边界：不支持 negative 的接口要把否定词并进提示词（离线）
 python tools/check_no_person.py      # 主体约束回归：平铺图禁止补模特 / 真人图保留同一个人（离线）
 python tools/check_no_person.py --live --source=library/refs/23-sorona-tee/white.jpg  # 真跑一张（≈¥0.006）看成品有没有人
 python tools/import_style_catalog.py  # 从《墨西哥-服装款式代号表》导入每色效果图（library/effects）

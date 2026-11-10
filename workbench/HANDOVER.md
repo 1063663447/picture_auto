@@ -151,6 +151,16 @@ workbench/
   3. 平口袖口原句 "sleeve stays at full width" 与紧身款冲突 → 带效果图时用 `CUFF_PLAIN_CLAUSE_REF`
 - 接口只支持单图（`max_images<2`）或缺效果图 → 自动退回「原图 + 颜色参考图」
 
+### 4.3.6 款式转换段 + 负面约束合并（9.4.5，别再删）
+- **negative 必须真的发出去**：65535/a6api/fal 没有 negative_prompt 字段，`runner._guarded_call`
+  会把 negative 用 `prompts.with_negative()` 合并进提示词（skill 原文就这么要求）。
+  改这里之前注意：这是"提示词写了一堆规则、模型照样画错"的根因之一。
+- **换款式要显式拆特征**：`prompts.convert_clause()` 写明「源图若有罗纹袖口/罗纹下摆/帽兜就拆掉，
+  改成目标款式的构造」，并按袖口工艺分平口/罗纹两套说法。一次到位、两段式第一阶段、改图都注入。
+- 改图里的改款意图（长袖/短袖/卫衣/罗纹/平口/袖口…）会撤掉「保持原服装类型」这条锁；
+  同时 `refine._sanitize_brief` 会清掉旧 brief 里的图片角色段落与"去掉人物"段落。
+- 回归：`tools/check_cuff.py`、`tools/check_request_boundary.py`。
+
 ### 4.3.5 款式锁（9.4.3，别再删）
 派生色（跟随基准只改颜色）的提示词必须同时说清楚「这是什么款、不许出现哪些部件」，
 否则模型会把长袖 T 恤/索拉娜短袖画成帽兜卫衣（2026-11-09 飞书 1382~1390 实测 9 张错 4 张）。
