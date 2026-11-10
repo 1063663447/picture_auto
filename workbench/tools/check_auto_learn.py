@@ -105,6 +105,8 @@ def build_bench(tmp: Path) -> tuple[Workbench, Recorder]:
     recorder = Recorder()
     bench.get_provider = lambda name=None: recorder       # type: ignore[assignment]
     bench.gate_for = lambda provider=None: None           # type: ignore[assignment]
+    bench.defaults()["auto_learn"] = True
+    bench.defaults()["auto_learn_online"] = False   # 离线判定，结果可复现
     bench.reload_skill()
     return bench, recorder
 
@@ -152,9 +154,11 @@ async def scenario(show: bool) -> int:
             slug: len(style_memory.load_lessons(bench.library_dir, slug)) for slug, _ in STYLES
         }
         payload = await bench.approve_master(job.id, note="")
-        learned = payload.get("learned") or []
         await wait_job(bench, job.id)
-        check(len(learned) >= 2, f"确认后自动沉淀 {len(learned)} 条（没让用户说记住）", show)
+        summary = await bench.await_distill(job.id)      # 后台静默评估
+        learned_total = int(summary.get("remembered") or 0)
+        check(learned_total >= 2,
+              f"确认后后台自动评估沉淀 {learned_total} 条（没让用户说记住）", show)
         for slug, _colors in STYLES:
             lessons = style_memory.load_lessons(bench.library_dir, slug)
             grew = len(lessons) - before[slug]
@@ -172,7 +176,8 @@ async def scenario(show: bool) -> int:
         bench.reload_skill()
         garment = bench.skill.type_by_alias(STYLES[0][0])
         built = prompts.build_single_pass(bench.skill, garment, garment.colors[0], subject="garment")
-        check("STYLE RULES LEARNED" in built, "提示词里出现「学到的规则」段", show)
+        block = "SKILL-LEVEL RULES" if "SKILL-LEVEL RULES" in built else "STYLE RULES LEARNED"
+        check(block in built, f"提示词里出现规则段（{block}）", show)
         check("领口再小一点" in built or "collar" in built.lower(),
               "规则内容真的进了提示词", show)
 
@@ -193,6 +198,7 @@ async def scenario(show: bool) -> int:
         count_before = len(style_memory.load_lessons(bench.library_dir, STYLES[0][0]))
         await bench.approve_master(job2.id, note="")
         await wait_job(bench, job2.id)
+        await bench.await_distill(job2.id)
         count_after = len(style_memory.load_lessons(bench.library_dir, STYLES[0][0]))
         check(count_after == count_before,
               f"重复的对齐要求只累加命中次数，不新增（{count_before} → {count_after}）", show)
@@ -216,7 +222,7 @@ async def scenario(show: bool) -> int:
         if bench is not None:
             for task in list(bench._tasks.values()):
                 task.cancel()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.8)
         shutil.rmtree(tmp, ignore_errors=True)
 
 

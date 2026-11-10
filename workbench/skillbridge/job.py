@@ -331,6 +331,8 @@ class Job:
         payload["zip_rel"] = self.zip_rel
         payload["dir_rel"] = self.dir_rel
         target = self.path()
+        if not target.parent.is_dir():
+            target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_suffix(".json.tmp")
         tmp.write_text(
             json.dumps(payload, ensure_ascii=False, indent=1, default=str), encoding="utf-8"

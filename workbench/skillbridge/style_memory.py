@@ -1,52 +1,36 @@
-"""款式记忆：把「审核/对齐时确认过的要求」沉淀成该款式的 lessons，下次直接带上。
+# -*- coding: utf-8 -*-
+"""款式记忆升级：区分「款式级硬规则（promote）」与「一次性微调（不注入）」。
 
-为什么要这个（2026-11-11 客户需求）：
-生图流程改成「先出基准图 → 运营在对话框里确认或修改 → 按基准图改色」。
-每次确认/修改其实都在告诉系统「这个款式到底要什么样」。这些结论如果只留在那一次任务里，
-下次同款还要重新说一遍；沉淀到款式级之后，同一句话只说一次。
+字段（每条 lesson）：
+    id / clause / zh / source / created_at / hits
+    scope      style | one_off      —— 是不是这个款式的通病
+    kind       garment | artwork | colour | material | scene | other
+    importance 0~1                  —— 由 align_judge 评判
+    promote    bool                 —— true = 升级成款式级硬规则（写进 skill 段）
+    judge      str                  —— 判定来源 local | llm
+    reason     str                  —— 人看的一句话依据
 
-存储：就放在款式专属提示词文件里（`library/prompts/<slug>.json` 的 `lessons` 数组），
-一个款式一份文件，运营打开就能看到它「记住了什么」。
-
-每条 lesson：
-    {
-      "id": "20261111-a1b2c3",          # 稳定 id，删除/去重用
-      "clause": "…English one-liner…",   # 直接注入提示词的那句
-      "zh": "领口再小一点",               # 运营原话（人能对上）
-      "source": {"job_id": "...", "task_id": "..."},
-      "created_at": 1762...,
-      "hits": 1                          # 被确认过几次（重复出现就累加，不重复注入）
-    }
+另外每个款式维护 `stats`：{batches, approves, review_rounds, promoted, learned}
+用来观察「基准图返工率」有没有往下走。
 """
-
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import time
 from pathlib import Path
 
-import httpx
-
 from .style_prompts import StylePrompt, load_style_prompt, prompt_path
 
 MAX_LESSONS = 12
-#: 一次注入提示词最多带几条（越新越靠前，太多会稀释重点）
+#: 注入提示词的条数上限（promote 的硬规则单独算一组）
 INJECT_LIMIT = 6
+PROMOTE_LIMIT = 4
 MIN_CHARS = 3
 MAX_CLAUSE_CHARS = 260
 
-_DISTILL_SYSTEM = (
-    "你在为服装电商生图工作台维护「款式级长期规则」。用户会给你一句运营在这次改图里"
-    "确认过的要求（中文）。请把它变成一条可以直接写进英文生图提示词的约束句："
-    "英文、祈使句、写清「这条款式以后都要这样」、不要提具体颜色/批次/图片编号。"
-    "只输出这一句英文，不要解释，不要引号，不超过 40 个单词。"
-)
-
 
 def _root(library_or_skill) -> Path:
-    """接受 Skill / Workbench.library_dir / Path，统一拿到 library 目录。"""
     for attr in ("library_dir", "root"):
         value = getattr(library_or_skill, attr, None)
         if isinstance(value, (str, Path)):
@@ -67,34 +51,53 @@ def _lesson_id(clause: str, zh: str) -> str:
     return f"{time.strftime('%Y%m%d')}-{digest[:8]}"
 
 
+def load_style(library_or_skill, slug: str) -> dict:
+    """读一个款式的记忆文件（含 lessons 与 stats）。"""
+    root = _root(library_or_skill)
+    prompt = load_style_prompt(root, slug)
+    if prompt is None:
+        return {"lessons": [], "stats": {}}
+    return {"lessons": list(prompt.lessons), "stats": dict(getattr(prompt, "stats", {}) or {})}
+
+
 def load_lessons(library_or_skill, slug: str) -> list[dict]:
-    """读一个款式记住的规则（按时间从新到旧）。"""
-    prompt = load_style_prompt(_root(library_or_skill), slug)
-    return list(prompt.lessons) if prompt is not None else []
+    return load_style(library_or_skill, slug)["lessons"]
 
 
-def clauses(library_or_skill, slug: str, limit: int = INJECT_LIMIT) -> list[str]:
-    """要注入提示词的英文约束句（新的在前，去重）。"""
+def load_stats(library_or_skill, slug: str) -> dict:
+    return load_style(library_or_skill, slug)["stats"]
+
+
+def clauses(library_or_skill, slug: str, *, promoted: bool = False, limit: int = 0) -> list[str]:
+    """要注入提示词的英文约束句。
+
+    ``promoted=True`` 只取升级成款式级硬规则的那些（写在提示词前面），
+    ``promoted=False`` 取普通的「学到的规则」（写在后面）。
+    """
     out: list[str] = []
+    cap = limit or (PROMOTE_LIMIT if promoted else INJECT_LIMIT)
     for item in load_lessons(library_or_skill, slug):
+        if bool(item.get("promote")) is not bool(promoted):
+            continue
+        if str(item.get("scope") or "style") == "one_off":
+            continue
         clause = " ".join(str(item.get("clause") or "").split())
         if not clause or clause in out:
             continue
         out.append(clause)
-        if len(out) >= max(1, limit):
+        if len(out) >= max(1, cap):
             break
     return out
 
 
-def _save_lessons(library_or_skill, slug: str, lessons: list[dict]) -> Path:
+def _save(library_or_skill, slug: str, lessons: list[dict], stats: dict) -> Path:
     root = _root(library_or_skill)
-    prompt = load_style_prompt(root, slug)
-    if prompt is None:
-        prompt = StylePrompt(slug=slug)
+    prompt = load_style_prompt(root, slug) or StylePrompt(slug=slug)
     prompt.lessons = lessons[:MAX_LESSONS]
+    prompt.stats = dict(stats or {})
     path = prompt_path(root, slug)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload: dict = {
+    payload = {
         "slug": prompt.slug,
         "notes": prompt.notes,
         "positive": prompt.positive,
@@ -102,44 +105,28 @@ def _save_lessons(library_or_skill, slug: str, lessons: list[dict]) -> Path:
     }
     if prompt.lessons:
         payload["lessons"] = prompt.lessons
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if prompt.stats:
+        payload["stats"] = prompt.stats
+    path.write_text(
+        __import__("json").dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     return path
 
 
-def distill_online(text: str, cfg: dict | None = None, timeout: float = 25.0) -> str:
-    """用对话模型把中文要求翻成一句英文约束；失败返回空串（调用方回落）。"""
-    cfg = cfg or {}
-    base_url = str(cfg.get("base_url") or "").strip()
-    model = str(cfg.get("model") or "").strip()
-    key = str(cfg.get("api_key") or "").strip()
-    if not (base_url and model and key):
-        return ""
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(
-                f"{base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {key}"},
-                json={
-                    "model": model,
-                    "temperature": 0.2,
-                    "messages": [
-                        {"role": "system", "content": _DISTILL_SYSTEM},
-                        {"role": "user", "content": text.strip()},
-                    ],
-                },
-            )
-            if resp.status_code >= 400:
-                return ""
-            data = resp.json()
-        content = str(
-            ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-        ).strip()
-    except Exception:  # noqa: BLE001 - 沉淀是加分项，绝不阻塞审核
-        return ""
-    content = " ".join(content.strip().strip('"“”').split())
-    if not content or len(content) > MAX_CLAUSE_CHARS:
-        return ""
-    return content
+def bump_stats(library_or_skill, slug: str, **fields) -> dict:
+    """累加款式统计（批次 / 确认次数 / 返工轮次 / 沉淀条数）。"""
+    data = load_style(library_or_skill, slug)
+    stats = dict(data["stats"] or {})
+    for key in ("batches", "approves", "review_rounds", "promoted", "learned"):
+        stats.setdefault(key, 0)
+    for key, value in fields.items():
+        try:
+            stats[key] = int(stats.get(key) or 0) + int(value)
+        except (TypeError, ValueError):
+            stats[key] = value
+    stats["updated_at"] = time.strftime("%Y-%m-%d %H:%M")
+    _save(library_or_skill, slug, data["lessons"], stats)
+    return stats
 
 
 def remember(
@@ -147,16 +134,24 @@ def remember(
     slug: str,
     text: str,
     *,
+    verdict=None,
     source: dict | None = None,
     llm_cfg: dict | None = None,
     online: bool | None = None,
 ) -> dict | None:
-    """记一条款式规则：重复的只累加 hits，不重复注入。"""
+    """记一条款式规则。
+
+    ``verdict``（align_judge.Verdict）给了就以它为准：
+      * scope=one_off → 仍然写盘（留档），但 `promote=False / scope=one_off`，不注入提示词；
+      * scope=style  → 注入；`promote=True` 的再升级成款式级硬规则。
+    没给 verdict 的老调用方式保持不变（按款式级、不升级处理）。
+    """
     slug = str(slug or "").strip()
     zh = " ".join(str(text or "").split())
     if not slug or len(_normalise(zh)) < MIN_CHARS:
         return None
-    lessons = load_lessons(library_or_skill, slug)
+    data = load_style(library_or_skill, slug)
+    lessons = list(data["lessons"])
     key = _normalise(zh)
     for item in lessons:
         if _normalise(str(item.get("zh") or "")) == key or _normalise(
@@ -164,36 +159,67 @@ def remember(
         ) == key:
             item["hits"] = int(item.get("hits") or 1) + 1
             item["last_confirmed_at"] = time.time()
-            _save_lessons(library_or_skill, slug, lessons)
+            if verdict is not None and verdict.promote:
+                item["promote"] = True
+                if str(verdict.clause or "").strip():
+                    item["clause"] = str(verdict.clause)[:MAX_CLAUSE_CHARS]
+            _save(library_or_skill, slug, lessons, data["stats"])
             return {**item, "slug": slug, "duplicate": True}
-    use_online = True if online is None else bool(online)
-    clause = distill_online(zh, llm_cfg) if use_online else ""
+
+    clause = ""
+    negative = ""
+    scope = "style"
+    kind = "other"
+    importance = 0.6
+    promote = False
+    judge = "manual"
+    reason = ""
+    if verdict is not None:
+        clause = " ".join(str(verdict.clause or "").split())
+        negative = " ".join(str(verdict.negative or "").split())
+        scope = verdict.scope
+        kind = verdict.kind
+        importance = float(verdict.importance or 0)
+        promote = bool(verdict.promote)
+        judge = verdict.refiner
+        reason = verdict.reason
     if not clause:
         clause = f"Operator-confirmed rule for this style (apply it by default): {zh}"
     entry = {
         "id": _lesson_id(clause, zh),
         "clause": clause[:MAX_CLAUSE_CHARS],
+        "negative": negative[:200],
         "zh": zh[:200],
+        "scope": scope,
+        "kind": kind,
+        "importance": round(importance, 2),
+        "promote": promote,
+        "judge": judge,
+        "reason": reason,
         "source": dict(source or {}),
         "created_at": time.time(),
         "hits": 1,
     }
+    # 升级成硬规则的排前面，其余按时间倒序
     lessons.insert(0, entry)
-    _save_lessons(library_or_skill, slug, lessons)
+    if promote:
+        lessons.sort(key=lambda item: (0 if item.get("promote") else 1, -float(item.get("created_at") or 0)))
+    _save(library_or_skill, slug, lessons, data["stats"])
     return {**entry, "slug": slug, "duplicate": False}
 
 
 def forget(library_or_skill, slug: str, lesson_id: str) -> bool:
-    lessons = load_lessons(library_or_skill, slug)
+    data = load_style(library_or_skill, slug)
+    lessons = data["lessons"]
     kept = [item for item in lessons if str(item.get("id")) != str(lesson_id)]
     if len(kept) == len(lessons):
         return False
-    _save_lessons(library_or_skill, slug, kept)
+    _save(library_or_skill, slug, kept, data["stats"])
     return True
 
 
 def rewrite_lessons(library_or_skill, slug: str, lessons: list[dict]) -> list[dict]:
-    """整体替换（前端编辑/批量清理用）。"""
+    data = load_style(library_or_skill, slug)
     clean: list[dict] = []
     for item in lessons or []:
         if not isinstance(item, dict):
@@ -206,11 +232,26 @@ def rewrite_lessons(library_or_skill, slug: str, lessons: list[dict]) -> list[di
             {
                 "id": str(item.get("id") or _lesson_id(clause, zh)),
                 "clause": (clause or f"Operator-confirmed rule: {zh}")[:MAX_CLAUSE_CHARS],
+                "negative": str(item.get("negative") or "")[:200],
                 "zh": zh[:200],
+                "scope": str(item.get("scope") or "style"),
+                "kind": str(item.get("kind") or "other"),
+                "importance": float(item.get("importance") or 0.6),
+                "promote": bool(item.get("promote")),
+                "judge": str(item.get("judge") or "manual"),
+                "reason": str(item.get("reason") or "")[:80],
                 "source": item.get("source") if isinstance(item.get("source"), dict) else {},
                 "created_at": float(item.get("created_at") or time.time()),
                 "hits": max(1, int(item.get("hits") or 1)),
             }
         )
-    _save_lessons(library_or_skill, slug, clean)
+    _save(library_or_skill, slug, clean, data["stats"])
     return clean
+
+
+def distill_online(text: str, cfg: dict | None = None, timeout: float = 25.0) -> str:
+    """兼容老接口：把中文要求翻成一句英文约束（不做重要性判断）。"""
+    from .align_judge import judge_online
+
+    verdict = judge_online(text, cfg=cfg, timeout=timeout)
+    return verdict.clause if verdict is not None else ""

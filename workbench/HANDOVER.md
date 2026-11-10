@@ -136,6 +136,7 @@ workbench/
   `library.load_library()` 合并进 `skill.types`（同 slug 以 skill 为准）
 - 本工作台实际用的是「款式库」那 25 个款式；skill 自带的 3 个通用款（短袖/圆领卫衣/连帽卫衣）仍可用
 - 每个款式都有 `kind` 品类（`top` 上衣 / `vest` 背心 / `bottom` 下装）
+- **沉淀分层（9.6.3）**：`skillbridge/align_judge.py` 判 `scope/kind/importance/promote`；`service.distill_review` 在拍板后**后台**跑（`GET /api/jobs/{id}/distill` 看结果）；promote 的规则进 `prompts.promoted_clause()`（`SKILL-LEVEL RULES`），其余进 `lessons_clause()`，`one_off` 只留档。款式 `stats` 记批次/确认/返工轮次/沉淀条数。回归：`tools/check_silent_distill.py`。
 - **对话优先 + 主动沉淀（9.6.2）**：点生成后自动打开对话框（`startMasterChat` → `masterWatch`），基准图与改图结果都以图片卡片返到对话里（`chatMasterCard` / `chatReworkCard`），「采纳当基准」走 `POST /api/jobs/{id}/approve` 的 `adopt`；确认时 `service.approve_master` 自动调 `learn_from_review` 把对齐要求写进 `lessons`（`defaults.auto_learn`，默认开）。回归：`tools/check_auto_learn.py`。
 - **30 扎染T**：无 sheet 的款式走 `import_ph_catalog.MANUAL_STYLES` + `tools/add_style_30_tiedye.py` 裁图建档（图来自客户款式图，不是表格）。
 - **生成是两段式（9.6.0）**：多色批次先只出「基准图」，任务停在 `review`，运营在界面/对话框里确认后才按这张基准图给其余颜色改色；不满意就对话提修改，改完「采纳」成新基准。

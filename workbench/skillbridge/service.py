@@ -81,6 +81,7 @@ class Workbench:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.jobs: dict[str, Job] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        self._distill: dict[str, asyncio.Task] = {}
         self._provider_sems: dict[str, asyncio.Semaphore] = {}
         self._model_cache: dict[str, tuple[float, dict]] = {}
         pricing_path = Path(str(self.config.get("pricing_file") or "pricing.json"))
@@ -1931,26 +1932,6 @@ class Workbench:
         job.params["master_approved"] = True
         job.params["awaiting_review"] = False
         job.params["approved_at"] = time.time()
-        # 主动沉淀：确认这一刻就把「这次对齐过的要求」记进款式规则（不用用户说「记住」）
-        learned: list[dict] = []
-        if self.defaults().get("auto_learn", True):
-            signals = bool(note) or bool(job.params.get("master_reviews"))
-            if signals:
-                try:
-                    learned = self.learn_from_review(job_id, [t.id for t in targets])
-                except Exception as exc:  # noqa: BLE001 - 沉淀失败不影响出图
-                    job.add_log(f"自动沉淀款式规则失败：{exc}", level="warn")
-                if learned:
-                    job.params["learned_lessons"] = [
-                        {"slug": item.get("slug"), "clause": item.get("clause")}
-                        for item in learned
-                    ]
-                    job.add_log(
-                        "已自动记进款式规则 "
-                        f"{len(learned)} 条：" + "；".join(
-                            f"{item.get('slug')} ← {item.get('zh')}" for item in learned
-                        )
-                    )
         job.status = "running"
         job.stage = "基准已确认，按基准图改色"
         job.add_log(
@@ -1974,8 +1955,26 @@ class Workbench:
             job.add_log(f"改色启动失败：{exc}", level="error")
             job.save()
             raise WorkbenchError(f"改色启动失败：{exc}") from exc
+        # 静默沉淀：不等它、不弹窗。改色已经在跑，评估完写进款式规则与统计
+        learned: list[dict] = []
+        if self.defaults().get("auto_learn", True):
+            signals = bool(note) or bool(job.params.get("master_reviews"))
+            if signals:
+                task = asyncio.create_task(
+                    self.distill_review(job_id, [t.id for t in targets], note=note),
+                    name=f"distill-{job_id}",
+                )
+                self._distill[job_id] = task
+                task.add_done_callback(lambda _t, jid=job_id: self._distill.pop(jid, None))
+                job.params["distill"] = {"state": "running", "note": note}
+                payload_extra = {"state": "running"}
+            else:
+                payload_extra = {"state": "skipped", "reason": "这次没有对齐要求"}
+        else:
+            payload_extra = {"state": "off", "reason": "defaults.auto_learn=false"}
         payload = job.as_dict(with_tasks=True, with_log=True, with_prompts=False)
         payload["learned"] = learned
+        payload["distill"] = payload_extra
         return payload
 
     async def reject_master(
@@ -2007,6 +2006,18 @@ class Workbench:
             model=model or str(job.params.get("model") or ""),
             account=account,
         )
+        # 返工轮次统计（用来看「基准图返工率」有没有降下来）
+        for task in targets:
+            try:
+                garment = self.skill.type_by_alias(
+                    task.garment or str(job.params.get("garment_type") or "")
+                )
+            except KeyError:
+                continue
+            try:
+                style_memory.bump_stats(self.library_dir, garment.slug, review_rounds=1)
+            except Exception:  # noqa: BLE001
+                pass
         job.params.setdefault("master_reviews", []).append(
             {
                 "at": time.time(),
@@ -2020,6 +2031,121 @@ class Workbench:
         job.save()
         self.start(rework.id)
         return rework
+
+    async def distill_review(
+        self,
+        job_id: str,
+        task_ids: list[str] | None = None,
+        *,
+        note: str = "",
+        online: bool | None = None,
+    ) -> dict:
+        """拍板后的**静默评估 + 沉淀**：判一条要求是「这个款式的通病」还是「这一张的微调」。
+
+        结果写进 job.params["distill"]，并在任务日志里留一行；失败只记警告，绝不影响出图。
+        """
+        from . import align_judge
+
+        job = self.get_job(job_id)
+        targets = self._master_targets(job, task_ids)
+        signals: list[tuple[str, str]] = []       # (款式 slug, 要求原文)
+        review_rounds = 0
+        for task in targets:
+            slug = task.garment or str(job.params.get("garment_type") or "")
+            if task.review_note:
+                signals.append((slug, task.review_note))
+            for review in (job.params.get("master_reviews") or []):
+                if isinstance(review, dict) and task.id in (review.get("master_ids") or []):
+                    text = str(review.get("instruction") or "").strip()
+                    if text:
+                        signals.append((slug, text))
+                        review_rounds += 1
+        if note:
+            for task in targets:
+                signals.append((task.garment or str(job.params.get("garment_type") or ""), note))
+        # 去重（同一款式同一句只说一次）
+        seen: set[tuple[str, str]] = set()
+        unique = [item for item in signals if item[1] and not (item in seen or seen.add(item))]
+        result = align_judge.DistillResult()
+        if not unique:
+            job.params["distill"] = {"state": "done", "total": 0, "reason": "没有可评估的要求"}
+            job.save()
+            return job.params["distill"]
+        cfg = self.distill_cfg()
+        if online is None:
+            online = bool(self.defaults().get("auto_learn_online", True))
+        for slug, text in unique:
+            try:
+                garment = self.skill.type_by_alias(slug) if slug else None
+            except KeyError:
+                garment = None
+            phrase = (garment.phrase if garment is not None else "")
+            verdict = await asyncio.to_thread(
+                align_judge.judge, text, cfg=cfg, garment_phrase=phrase, online=online
+            )
+            result.verdicts.append(verdict)
+            if garment is None:
+                continue
+            item = await asyncio.to_thread(
+                style_memory.remember,
+                self.library_dir,
+                garment.slug,
+                text,
+                verdict=verdict,
+                source={"job_id": job_id, "origin": "distill"},
+            )
+            if item and not item.get("duplicate"):
+                style_memory.bump_stats(
+                    self.library_dir,
+                    garment.slug,
+                    learned=1,
+                    **({"promoted": 1} if verdict.promote else {}),
+                )
+        if review_rounds:
+            for task in targets:
+                slug = task.garment or str(job.params.get("garment_type") or "")
+                try:
+                    garment = self.skill.type_by_alias(slug) if slug else None
+                except KeyError:
+                    garment = None
+                if garment is not None:
+                    style_memory.bump_stats(
+                        self.library_dir, garment.slug, review_rounds=review_rounds
+                    )
+        summary = result.as_dict()
+        summary["state"] = "done"
+        job.params["distill"] = summary
+        job.params["distill_at"] = time.time()
+        promoted = [v for v in result.verdicts if v.promote]
+        dropped = [v for v in result.verdicts if v.scope != "style"]
+        job.add_log(
+            f"静默评估 {len(result.verdicts)} 条对齐要求："
+            f"{len(result.remembered)} 条记进款式规则（其中 {len(promoted)} 条升级为款式级硬规则），"
+            f"{len(dropped)} 条判为一次性微调（不注入提示词）"
+        )
+        for verdict in result.verdicts:
+            job.add_log(
+                f"  · [{verdict.scope}/{verdict.kind} {verdict.importance:.2f}] "
+                f"{verdict.text[:40]} → {verdict.reason or verdict.clause[:40]}"
+            )
+        # 让改动立刻对下一条提示词生效
+        try:
+            self.reload_skill()
+        except Exception:  # noqa: BLE001
+            pass
+        job.save()
+        return summary
+
+    async def await_distill(self, job_id: str, timeout: float = 90.0) -> dict:
+        """等这条任务的静默评估结束（测试/收尾用；界面上不需要等）。"""
+        task = self._distill.get(job_id)
+        if task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                pass
+        job = self.get_job(job_id)
+        return dict((job.params or {}).get("distill") or {})
 
     def learn_from_review(self, job_id: str, task_ids: list[str] | None = None) -> list[dict]:
         """把本次确认的备注/审核记录沉淀进该款式的 lessons（供下次生成直接用）。"""

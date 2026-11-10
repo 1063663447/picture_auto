@@ -1462,13 +1462,18 @@ LESSONS_TEMPLATE = (
     "still hold now unless the operator overrides them today): {items}"
 )
 
+#: **款式级硬规则**：审核拍板后被判定为「这个款式的通病」（款式跑偏的真正原因），
+#: 位置放在款式核心后面（靠前，模型更守），措辞比普通规则更硬。
+PROMOTED_RULES_TEMPLATE = (
+    " SKILL-LEVEL RULES FOR THIS STYLE (locked in after operator review of earlier batches; they "
+    "are the reason those batches drifted, so treat them as part of the style's own construction "
+    "and never trade them away for a nicer-looking result): {items}"
+)
 
-def lessons_clause(garment: GarmentType | None, limit: int = 6) -> str:
-    """把该款式记住的规则拼成一段（没有就返回空串）。"""
-    if garment is None:
-        return ""
+
+def _rule_block(clauses: list, template: str, limit: int) -> str:
     items: list[str] = []
-    for raw in list(getattr(garment, "style_lessons", []) or []):
+    for raw in clauses or []:
         clause = " ".join(str(raw or "").split())
         if clause and clause not in items:
             items.append(clause)
@@ -1477,7 +1482,21 @@ def lessons_clause(garment: GarmentType | None, limit: int = 6) -> str:
     if not items:
         return ""
     joined = "; ".join(f"{index}) {text.rstrip('.')}" for index, text in enumerate(items, start=1))
-    return LESSONS_TEMPLATE.format(items=joined + ".")
+    return template.format(items=joined + ".")
+
+
+def promoted_clause(garment: GarmentType | None, limit: int = 4) -> str:
+    """款式级硬规则（审核拍板后升级的，位置靠前）。"""
+    if garment is None:
+        return ""
+    return _rule_block(list(getattr(garment, "style_promoted", []) or []), PROMOTED_RULES_TEMPLATE, limit)
+
+
+def lessons_clause(garment: GarmentType | None, limit: int = 6) -> str:
+    """其余款式级规则（学到的经验，放在硬规则后面）。"""
+    if garment is None:
+        return ""
+    return _rule_block(list(getattr(garment, "style_lessons", []) or []), LESSONS_TEMPLATE, limit)
 
 
 def style_positive(garment: GarmentType | None, *, reference: bool = True) -> str:
@@ -1495,7 +1514,7 @@ def style_positive(garment: GarmentType | None, *, reference: bool = True) -> st
                 drawstring_clause(garment),
             ) if part
         )
-    return (core + " " + lessons_clause(garment)).strip()
+    return (core + " " + promoted_clause(garment) + " " + lessons_clause(garment)).strip()
 
 
 def style_negative(garment: GarmentType | None) -> str:

@@ -88,11 +88,13 @@ SYSTEM_PROMPT = """你是服装电商改图工作台的 AI 助手，直接和运
   不要用 submit_generation 重开一批。
 - 用户是新手：他讲到什么程度就做到什么程度，专业名词先解释半句再用；
   拿不准的地方给一个推荐选项（「我建议先这样，行不行？」），别一次问三四个问题。
-- **沉淀规则是默认行为，不需要用户开口**：用户确认基准图时，系统会自动把这次对齐过的要求
-  （他说过的修改、确认时顺带的需求）记进该款式的长期规则，你不用问「要不要记住」，
-  也不要让用户重复说一遍。只有用户明确说「这次别记」才提醒他规则已按默认记录、可手动删。
+- **沉淀规则是默认行为，不需要用户开口**：用户确认基准图后，后台会**静默评估**这次对齐的
+  重要性——判成「这个款式的通病」的会写进款式规则（其中一部分直接升级成款式级硬规则），
+  只针对这一张的微调则只留档、不注入提示词。你不用问「要不要记住」，也不要让用户重复说一遍。
   save_style_rule 只在两种情况下主动调用：① 用户这次没走确认流程（比如只是聊天）但明确要求记住；
   ② 你想把一条跨批次都成立的规则写得更清楚。一次性要求（这一张的临时调整）不要记。
+- **别和已经沉淀的规则打架**：上下文里给了这个款式已生效的规则时，按它来；
+  用户这次说的和旧规则冲突时，以这次为准，并提醒他这条会覆盖旧规则。
 - 报价前先 master_status 看还剩几张要出，别把整批价格说成单张。
 
 风格：中文、口语、短句；不要 markdown 标题，不要复述整段提示词；
@@ -623,6 +625,17 @@ def _intake_intro(ctx: AgentContext, user_message: str) -> str:
     }.get(ctx.mode, "开工前沟通")
     parts = [f"当前模式：{mode_label}"]
     if ctx.mode == "master" and ctx.batch_context:
+        memory = ctx.batch_context.get("style_memory") or {}
+        if memory:
+            promoted = list(memory.get("promoted") or [])
+            learned = list(memory.get("learned") or [])
+            stats = memory.get("stats") or {}
+            note = (
+                f"这个款式已沉淀规则：硬规则 {len(promoted)} 条、学到的经验 {len(learned)} 条"
+                + (f"；历史基准返工 {stats.get('review_rounds')} 轮" if stats.get("review_rounds") else "")
+                + "。这些默认已生效，别再问用户「要不要记住」，也别重复记同一句。"
+            )
+            parts.append(note)
         review = ctx.batch_context.get("review") or {}
         if review:
             parts.append(

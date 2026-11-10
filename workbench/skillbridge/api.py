@@ -827,6 +827,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 with_tasks=False, with_log=False
             ).get("review") or {}
             context["master_gate"] = True
+            # 款式规则也进上下文：助手知道「这个款以前确认过什么」，不会重复问/重复记
+            if parsed_selections:
+                slug = parsed_selections[0]["garment_type"]
+                garment_row = bench.skill.type_by_alias(slug)
+                context["style_memory"] = {
+                    "slug": garment_row.slug,
+                    "display_name": garment_row.display_name,
+                    "promoted": list(garment_row.style_promoted),
+                    "learned": list(garment_row.style_lessons),
+                    "stats": style_memory.load_stats(bench.library_dir, garment_row.slug),
+                }
         if not job_id:
             for selected in parsed_selections:
                 picked = bench.skill.type_by_alias(selected["garment_type"])
@@ -1053,19 +1064,42 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     return "当前没有选定款式"
                 picked = bench.skill.type_by_alias(slug)
                 lessons = style_memory.load_lessons(bench.library_dir, picked.slug)
+                stats = style_memory.load_stats(bench.library_dir, picked.slug)
+                hard = [item for item in lessons if item.get("promote")]
+                soft = [
+                    item for item in lessons
+                    if not item.get("promote") and str(item.get("scope") or "style") != "one_off"
+                ]
                 lines = [
                     f"款式：{picked.display_name}（{picked.slug}）"
                     f" {picked.sleeve_zh}/{picked.cuff_zh}/{picked.kind_zh}",
                     f"提示词核心 {len(picked.style_positive)} 字，否定词 {len(picked.style_negative)} 字",
                 ]
-                if lessons:
-                    lines.append(f"已记住的规则 {len(lessons)} 条：")
+                if hard:
+                    lines.append(f"款式级硬规则 {len(hard)} 条（已写进生图提示词，必须守）：")
                     lines.extend(
                         f"  {index}) {item.get('zh') or item.get('clause')}"
-                        for index, item in enumerate(lessons[:6], start=1)
+                        for index, item in enumerate(hard[:5], start=1)
                     )
-                else:
+                if soft:
+                    lines.append(f"款式经验 {len(soft)} 条：")
+                    lines.extend(
+                        f"  {index}) {item.get('zh') or item.get('clause')}"
+                        for index, item in enumerate(soft[:5], start=1)
+                    )
+                if not hard and not soft:
                     lines.append("这个款式还没有记住任何规则。")
+                if stats:
+                    lines.append(
+                        "历史：批次 {batches} · 确认 {approves} · 基准返工 {review_rounds} 轮"
+                        " · 沉淀 {learned} 条（硬规则 {promoted}）".format(
+                            batches=stats.get("batches", 0),
+                            approves=stats.get("approves", 0),
+                            review_rounds=stats.get("review_rounds", 0),
+                            learned=stats.get("learned", 0),
+                            promoted=stats.get("promoted", 0),
+                        )
+                    )
                 return "\n".join(lines)
 
             async def tool_save_rule(text: str) -> str:
@@ -1336,12 +1370,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
             payload = await bench.approve_master(job_id, task_ids, adopt=adopt, note=note)
         except (KeyError, ValueError, WorkbenchError) as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-        # 沉淀在 approve_master 里就做了（主动学习）；这里只把结果转给前端
+        # 沉淀是 approve_master 启动的后台静默评估；这里把状态转给前端（learned 兼容老前端）
         learned = payload.pop("learned", []) if isinstance(payload, dict) else []
-        if not learn and learned:
-            # 运营明确说这次不要记：把刚写进去的撤销太危险，这里只提示已记录
-            payload["learn_note"] = "本轮已按默认自动记录款式规则（如需删除请在款式规则里手动删）"
-        return {"ok": True, "job": payload, "learned": learned}
+        distill = payload.get("distill") if isinstance(payload, dict) else None
+        if not learn:
+            payload["learn_note"] = "本轮仍会按默认做静默评估（可在款式规则里手动删）"
+        return {"ok": True, "job": payload, "learned": learned, "distill": distill or {}}
 
     @app.post("/api/jobs/{job_id}/reject")
     async def reject_master(request: Request, job_id: str):
@@ -1378,11 +1412,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
             garment = bench.skill.type_by_alias(slug)
         except KeyError:
             return JSONResponse({"ok": False, "error": f"款式不存在：{slug}"}, status_code=404)
+        lessons = style_memory.load_lessons(bench.library_dir, garment.slug)
         return {
             "ok": True,
             "slug": garment.slug,
             "display_name": garment.display_name,
-            "lessons": style_memory.load_lessons(bench.library_dir, garment.slug),
+            "lessons": lessons,
+            "promoted": [item for item in lessons if item.get("promote")],
+            "stats": style_memory.load_stats(bench.library_dir, garment.slug),
+            "promoted_clauses": style_memory.clauses(
+                bench.library_dir, garment.slug, promoted=True
+            ),
+            "learned_clauses": style_memory.clauses(bench.library_dir, garment.slug),
         }
 
     @app.post("/api/styles/{slug}/lessons")
@@ -1414,6 +1455,16 @@ def create_app(config_path: str | None = None) -> FastAPI:
             "lesson": item,
             "lessons": style_memory.load_lessons(bench.library_dir, garment.slug),
         }
+
+    @app.get("/api/jobs/{job_id}/distill")
+    async def job_distill(request: Request, job_id: str):
+        """看这条任务的静默评估结果（拍板后自动跑，界面上不需要等）。"""
+        bench = wb(request)
+        try:
+            job = bench.get_job(job_id)
+        except (KeyError, ValueError):
+            return JSONResponse({"ok": False, "error": "任务不存在"}, status_code=404)
+        return {"ok": True, "distill": (job.params or {}).get("distill") or {}}
 
     @app.delete("/api/styles/{slug}/lessons/{lesson_id}")
     async def drop_style_lesson(request: Request, slug: str, lesson_id: str):

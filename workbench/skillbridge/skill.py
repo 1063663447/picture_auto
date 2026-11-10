@@ -227,6 +227,8 @@ class GarmentType:
     style_negative: str = ""
     #: 该款式「记住的规则」（审核/对齐确认过的要求，见 style_memory）：生成时追加进提示词
     style_lessons: list[str] = field(default_factory=list)
+    #: 其中被判成「这个款式通病」的硬规则（promote）：放在提示词更靠前的位置
+    style_promoted: list[str] = field(default_factory=list)
 
     @property
     def sleeve_zh(self) -> str:
@@ -306,6 +308,7 @@ class GarmentType:
             "kind": self.kind,
             "kind_zh": self.kind_zh,
             "lessons": list(self.style_lessons),
+            "promoted_rules": list(self.style_promoted),
             "batch_name": self.batch_name,
             "colors": [c.as_dict() for c in self.colors],
         }

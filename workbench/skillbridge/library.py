@@ -165,11 +165,23 @@ def load_library(
             name_en = style_key_from(str(item.get("style_code") or ""), aliases)
         # 每个款式一套专属默认提示词（没有文件就回落到按属性拼装）
         style_prompt = load_style_prompt(root, slug)
-        lessons = [
-            " ".join(str(item.get("clause") or "").split())
-            for item in (style_prompt.lessons if style_prompt else [])
-            if isinstance(item, dict) and str(item.get("clause") or "").strip()
-        ]
+        # 款式记忆分两层：promote 的（款式通病，位置靠前）和普通学到的规则
+        def _clauses(promoted: bool) -> list[str]:
+            out: list[str] = []
+            for item in (style_prompt.lessons if style_prompt else []):
+                if not isinstance(item, dict):
+                    continue
+                if bool(item.get("promote")) is not promoted:
+                    continue
+                if str(item.get("scope") or "style") == "one_off":
+                    continue
+                clause = " ".join(str(item.get("clause") or "").split())
+                if clause and clause not in out:
+                    out.append(clause)
+            return out
+
+        promoted = _clauses(True)
+        lessons = _clauses(False)
         types.append(
             GarmentType(
                 slug=slug,
@@ -185,6 +197,7 @@ def load_library(
                 style_positive=(style_prompt.positive if style_prompt else ""),
                 style_negative=(style_prompt.negative if style_prompt else ""),
                 style_lessons=lessons,
+                style_promoted=promoted,
             )
         )
     types.sort(key=lambda g: g.slug)

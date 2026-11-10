@@ -19,7 +19,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 WB = ROOT / 'workbench'
-VERSION = '9.6.2'
+VERSION = '9.6.3'
 
 
 def sha(path: Path) -> str:
@@ -110,7 +110,7 @@ def main() -> int:
     add_tree(ROOT / 'apparel-style-recolor', stage / 'apparel-style-recolor')
     for name in ['serve.py', 'cli.py', 'requirements.txt', 'pricing.json',
                  'CHANGELOG_PORTABLE_9.3.0.md', 'CHANGELOG_WORKFLOW_9.4.0.md', 'CHANGELOG_ARTWORK_9.4.1.md',
-                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md', 'CHANGELOG_MASTER_GATE_9.6.0.md', 'CHANGELOG_STYLES_24_9.6.1.md', 'CHANGELOG_CHAT_FIRST_9.6.2.md',
+                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md', 'CHANGELOG_MASTER_GATE_9.6.0.md', 'CHANGELOG_STYLES_24_9.6.1.md', 'CHANGELOG_CHAT_FIRST_9.6.2.md', 'CHANGELOG_DISTILL_9.6.3.md',
                  'HANDOVER.md', 'REVIEW_9.4.1.md']:
         copy_file(WB / name, stage / 'workbench' / name)
     machine_keys={'WORKBENCH_DATA_DIR','WORKBENCH_HOST','WORKBENCH_PORT','WORKBENCH_SESSION_SECRET','WORKBENCH_AUTH_TOKEN','PORT'}
@@ -129,7 +129,7 @@ def main() -> int:
     copy_file(WB / 'portable/start.bat', stage / '一键启动.bat')
     repair_bat = (WB / 'portable/start.bat').read_text(encoding='ascii').replace('bootstrap.ps1\" %*', 'bootstrap.ps1\" -Repair -CheckOnly %*')
     (stage / '一键检查修复.bat').write_bytes(repair_bat.replace('\r\n', '\n').replace('\n', '\r\n').encode('ascii'))
-    (stage / '使用说明.txt').write_text(f'生图工作台 {VERSION} · 内部便携版\n\n完整解压到可写目录，双击“一键启动.bat”。自动检查并启动、打开浏览器，无需安装Python、Node或Three.js，无需填写API。适用Windows 10/11 x64 Intel/AMD。\n保持运行窗口打开；关闭窗口停止服务。重复启动会打开已运行工作台。\n文件缺失先从包内offline-cache修复，缓存缺失才从华为云/阿里云国内HTTPS源下载，显示进度并校验SHA256。图片API和AI仍需网络。\n各电脑记录位于workbench/data，不带原电脑历史任务。升级前先停止旧程序、备份旧目录，完整解压新版后可将旧workbench/data复制到对应位置；不要覆盖正在运行的目录。\n9.6.2 本版要点：点「开始生成」后自动弹出对话框——先看到「基准图生成中」，基准图出来后 AI 会在对话里把图返给你：满意点「就按这张改色」，要改就直接说哪张改哪儿，改完再返图给你看，直到你确认才开始给其它颜色改色（确认前不花那笔钱）；你确认时系统会自动把这次对齐的要求记进这个款式的规则，下次同款直接带上，不用再交代一遍。对话框也瘦身了（头部只留「AI 助手」），聊天区更大。另补了 30 扎染T（白/藕粉/奶茶），款式库 25 款 / 115 色。详见 workbench 目录下的 CHANGELOG_CHAT_FIRST_9.6.2.md。\n包内已包含当前内部主备API、AI与飞书配置，仅供团队内部流转。日志在logs目录。\n', encoding='utf-8-sig')
+    (stage / '使用说明.txt').write_text(f'生图工作台 {VERSION} · 内部便携版\n\n完整解压到可写目录，双击“一键启动.bat”。自动检查并启动、打开浏览器，无需安装Python、Node或Three.js，无需填写API。适用Windows 10/11 x64 Intel/AMD。\n保持运行窗口打开；关闭窗口停止服务。重复启动会打开已运行工作台。\n文件缺失先从包内offline-cache修复，缓存缺失才从华为云/阿里云国内HTTPS源下载，显示进度并校验SHA256。图片API和AI仍需网络。\n各电脑记录位于workbench/data，不带原电脑历史任务。升级前先停止旧程序、备份旧目录，完整解压新版后可将旧workbench/data复制到对应位置；不要覆盖正在运行的目录。\n9.6.3 本版要点：你确认基准图后，系统会在后台逐条判断这次的要求——「这个款式本身该改」的会写进该款式规则（重要的直接变成款式级硬规则，下次同款生图自动带上），「只是这一张的微调」只留档、不影响以后。款式统计（做了几批、基准返工几轮、沉淀几条）也能看了。另外：点生成会自动弹出对话框，基准图在对话里返给你确认，改完再返图，直到你满意才开始改色；对话框已瘦身；补了 30 扎染T（白/藕粉/奶茶），款式库 25 款 / 115 色。详见 workbench 目录下的 CHANGELOG_DISTILL_9.6.3.md。\n包内已包含当前内部主备API、AI与飞书配置，仅供团队内部流转。日志在logs目录。\n', encoding='utf-8-sig')
     cache = stage / 'offline-cache';cache.mkdir(exist_ok=True)
     print('[2/6] Installing private embedded Python and bundled VC runtime DLLs', flush=True)
     runtime = stage / 'runtime';runtime.mkdir(exist_ok=True)

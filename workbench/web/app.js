@@ -1227,10 +1227,9 @@
             adopt: adopt || {},
           }),
         });
-        const learned = (res?.learned || []).length;
-        toast("ok", `基准图已确认，开始按它改色${learned ? `（已自动记下 ${learned} 条款式规则）` : ""}`);
-        chatBubble("assistant",
-          `收到，就按这张来。其余颜色开始改色${learned ? `；这次的 ${learned} 条要求我已记进这个款式的规则，下次同款直接用` : ""}。`);
+        toast("ok", "基准图已确认，开始按它改色（后台在评估这次的要求要不要沉淀）");
+        chatBubble("assistant", "收到，就按这张来。其余颜色开始改色，我在后台看一下这次的要求值不值得记进款式规则。");
+        watchDistill(jobId, res?.job?.id || jobId);
         if (res?.job) renderJob(res.job);
         watchJob(jobId);
         state.masterShown = true;
@@ -1452,6 +1451,43 @@
       input.setSelectionRange(input.value.length, input.value.length);
     });
     scrollChat();
+  }
+
+  /* --------------------------------------------- 9.6.3 静默评估结果回对话 --- */
+  // 拍板后 harness 在后台评判「这条要求是款式通病还是一次性微调」，
+  // 评完在对话里补一行说明（不追问、不打断），硬规则升级会单独说一句。
+  let distillTimer = 0;
+  function stopDistillWatch() {
+    if (distillTimer) { clearTimeout(distillTimer); distillTimer = 0; }
+  }
+  function watchDistill(jobId, targetJobId) {
+    stopDistillWatch();
+    const alive = () => state.masterJobId === targetJobId || state.job?.id === targetJobId;
+    let tries = 0;
+    const tick = async () => {
+      tries += 1;
+      if (!alive() || tries > 40) { stopDistillWatch(); return; }
+      try {
+        const data = await api(`/api/jobs/${targetJobId}/distill`, { cache: "no-store" });
+        const info = data.distill || {};
+        if (info.state === "done") {
+          stopDistillWatch();
+          const promoted = Number(info.promoted || 0);
+          const remembered = Number(info.remembered || 0);
+          const dropped = Number(info.dropped || 0);
+          if (!info.total) return;
+          const parts = [];
+          if (promoted) parts.push(`${promoted} 条升级成这个款式的硬规则（下次生图自动带上）`);
+          if (remembered - promoted > 0) parts.push(`${remembered - promoted} 条记进款式经验`);
+          if (dropped) parts.push(`${dropped} 条判为这一次的微调，没写进规则`);
+          chatBubble("assistant", `这次的要求我看过了：${parts.join("，")}。`);
+          return;
+        }
+        if (info.state === "off" || info.state === "skipped") { stopDistillWatch(); return; }
+      } catch (_) { /* 评估状态读不到就算了，别打扰用户 */ }
+      if (alive()) distillTimer = setTimeout(tick, 2500);
+    };
+    distillTimer = setTimeout(tick, 4000);
   }
 
   function talkMaster() {
@@ -2014,7 +2050,7 @@
     panel.classList.remove("on");scrim.classList.remove("on");clearTimeout(panelCloseTimers.get(panelId));
     panelCloseTimers.set(panelId,setTimeout(()=>{if(panel.dataset.panelEpoch===epoch){panel.hidden=true;scrim.hidden=true;}},240));
   }
-  function closeHarness(){stopMasterWatch();stopReworkWatch();closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
+  function closeHarness(){stopMasterWatch();stopReworkWatch();stopDistillWatch();closePanel("harnessDrawer","harnessScrim");window.AIWorkflow?.refresh();}
   function closePrompt() { closePanel("promptDrawer", "promptScrim"); }
 
   /* ----------------------------------------------------------- harness chat */

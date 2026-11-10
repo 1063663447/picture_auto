@@ -32,7 +32,10 @@ class StylePrompt:
     notes: str = ""
     source: str = ""
     #: 该款式「记住的规则」：审核/对齐时确认过的要求，生成时追加进提示词（见 style_memory）
+    #: 每条带 scope/style、promote（是否升级成款式级硬规则）、kind、importance（见 align_judge）
     lessons: list = field(default_factory=list)
+    #: 款式统计：批次 / 确认次数 / 基准图返工轮次 / 沉淀条数（用来看返工率）
+    stats: dict = field(default_factory=dict)
 
     @property
     def ready(self) -> bool:
@@ -46,6 +49,7 @@ class StylePrompt:
             "notes": self.notes,
             "source": self.source,
             "lessons": list(self.lessons),
+            "stats": dict(self.stats),
         }
 
 
@@ -71,6 +75,7 @@ def load_style_prompt(library_dir: Path | str, slug: str) -> StylePrompt | None:
         notes=str(payload.get("notes") or ""),
         source=str(path),
         lessons=[item for item in (payload.get("lessons") or []) if isinstance(item, dict)],
+        stats=dict(payload.get("stats") or {}) if isinstance(payload.get("stats"), dict) else {},
     )
     return prompt if prompt.ready else None
 
@@ -99,6 +104,8 @@ def save_style_prompt(library_dir: Path | str, prompt: StylePrompt) -> Path:
     }
     if prompt.lessons:
         payload["lessons"] = list(prompt.lessons)
+    if prompt.stats:
+        payload["stats"] = dict(prompt.stats)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
 

@@ -95,7 +95,8 @@
     "review_master": true,
     "review_master_note": "先出基准图 → 运营在对话框里确认/修改 → 再按基准图改其余颜色；单色批次没有派生色，自动关闭",
     "auto_learn": true,
-    "auto_learn_note": "确认基准图时自动把这次对齐的要求记进该款式的 lessons（主动沉淀，不用用户说“记住”）"
+    "auto_learn_note": "拍板（确认基准图）后 harness 后台静默评估每条对齐要求的重要性：判成「这个款式的通病」的写进款式规则（其中重要的升级为款式级硬规则，生图提示词自动带上），只针对这一张的微调只留档、不注入。auto_learn_online=true 时让对话模型复核，关掉就只用本地启发式。",
+    "auto_learn_online": true
   },
   "providers": {
     "terra": {

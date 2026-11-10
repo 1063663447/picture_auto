@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.2-win-x64-internal.zip"
-VERSION = "9.6.2"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.3-win-x64-internal.zip"
+VERSION = "9.6.3"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -43,6 +43,7 @@ REQUIRED = [
     "workbench/skillbridge/agent.py",
     # 9.6.0 新增/改动的关键文件
     "workbench/skillbridge/style_memory.py",
+    "workbench/skillbridge/align_judge.py",
     "workbench/library/prompts/30-tie-dye-tee.json",
     "workbench/library/styles.json",
     "workbench/library/effects/manifest.json",
