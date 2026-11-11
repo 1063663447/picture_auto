@@ -2021,6 +2021,8 @@
 
   function renderJob(job) {
     if(job.id!==state.jobId)return;
+    const kpiBox = document.querySelector('.kpis-top');
+    if (kpiBox) kpiBox.title = "总任务 / 已完成 / 失败 / 本次花费";
     state.job=job;
     renderReview(job);
     const phase=jobPhase(job);

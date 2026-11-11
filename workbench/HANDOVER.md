@@ -142,6 +142,9 @@ workbench/
   改图时 `runner._execute_rework_task` 把标注图当 **IMAGE 2**，提示词追加 `prompts.annotation_clause(2)`（框线是地图不是设计）；
   harness 上下文带 `annotations`（每框编号/位置/要求）。回归：`tools/check_annotation.py`。
   注意：`#annotateImage` 是 `pointer-events:none`，拖拽事件落在 `#annotateStage`。
+- **统计置顶（9.6.11）**：`.kpis` 从 `#galleryPane` 移到 `.flow-bar`（右侧，一行 `总任务/已完成/失败/花费`，
+  `.kpis-top`），成品区不再被 59px 的统计块占着；`animateNumber()` 走 rAF，隐藏标签页里会停在旧值（正常）。
+  CSS 需要压掉 graphite 给 `.kpis` 的卡片底（`review-cards.css` 里用 `:root[data-finish][data-tone]` 提权覆盖）。
 - **审核条瘦身 + 复原（9.6.10）**：`review-cards.css` 用「一行横排紧凑卡」（92px 方图在左，
   `flex-wrap:nowrap` + 横向滚动，`#reviewBar{max-height:min(34vh,260px)}`），成品区不再被顶没。
   卡片状态：`AI 分析中`(thinking) / `图片生成中`(running) / `第 N 轮·待确认`(ready) / `改图失败`。

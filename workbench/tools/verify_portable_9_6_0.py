@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.10-win-x64-internal.zip"
-VERSION = "9.6.10"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.11-win-x64-internal.zip"
+VERSION = "9.6.11"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -54,6 +54,7 @@ REQUIRED = [
     "workbench/CHANGELOG_REVIEW_965_9.6.7.md",
     "workbench/CHANGELOG_CHAIN_9.6.9.md",
     "workbench/CHANGELOG_REVIEW_TIGHT_9.6.10.md",
+    "workbench/CHANGELOG_KPI_TOP_9.6.11.md",
     "workbench/HANDOVER.md",
     "workbench/web/index.html",
     "workbench/web/app.js",
@@ -132,6 +133,8 @@ def main() -> int:
           "改图进度按 jobId 分开盯（多张可并发）")
     check("data-state=" in app and "working-veil" in app,
           "卡片有改图中/第 2 轮状态")
+    index_html = z.read(TOP + "workbench/web/index.html").decode("utf-8")
+    check("kpis-top" in index_html, "统计数字在顶栏（成品区腾出高度）")
     review_css = z.read(TOP + "workbench/web/review-cards.css").decode("utf-8")
     check("grid-template-columns:repeat(auto-fill" in review_css,
           "审核卡片自适应网格（不被挤压）")

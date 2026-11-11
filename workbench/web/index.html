@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=9.6.21" />
-<link rel="stylesheet" href="/aurora.css?v=9.6.21" />
-<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.21" />
-<link rel="stylesheet" href="/blackglass/type.css?v=9.6.21" />
-<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.21" />
-<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.21" />
-<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.21" />
-<link rel="stylesheet" href="/blackglass.css?v=9.6.21" />
-<link rel="stylesheet" href="/graphite.css?v=9.6.21" />
-<link rel="stylesheet" href="/ai-workflow.css?v=9.6.21" />
-<link rel="stylesheet" href="/review-cards.css?v=9.6.21" />
-<link rel="stylesheet" href="/annotate.css?v=9.6.21" />
+<link rel="stylesheet" href="/style.css?v=9.6.22" />
+<link rel="stylesheet" href="/aurora.css?v=9.6.22" />
+<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.22" />
+<link rel="stylesheet" href="/blackglass/type.css?v=9.6.22" />
+<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.22" />
+<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.22" />
+<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.22" />
+<link rel="stylesheet" href="/blackglass.css?v=9.6.22" />
+<link rel="stylesheet" href="/graphite.css?v=9.6.22" />
+<link rel="stylesheet" href="/ai-workflow.css?v=9.6.22" />
+<link rel="stylesheet" href="/review-cards.css?v=9.6.22" />
+<link rel="stylesheet" href="/annotate.css?v=9.6.22" />
 </head>
 <body class="flow-shell booting">
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -80,7 +80,15 @@
       </div>
     </header>
 
-    <div class="flow-bar"><div class="flow-context"><span class="session-pill"><i></i><span id="connectionLabel">正在连接服务</span></span><span class="flow-context-text" id="workspaceSummary">准备原图与款色，开始创作</span></div></div>
+    <div class="flow-bar">
+      <div class="flow-context"><span class="session-pill"><i></i><span id="connectionLabel">正在连接服务</span></span><span class="flow-context-text" id="workspaceSummary">准备原图与款色，开始创作</span></div>
+      <div class="kpis kpis-top" aria-label="本批统计">
+        <div class="kpi"><span class="k">总任务</span><span class="v" id="kpiTotal">0</span></div>
+        <div class="kpi ok"><span class="k">已完成</span><span class="v" id="kpiDone">0</span></div>
+        <div class="kpi bad"><span class="k">失败</span><span class="v" id="kpiFailed">0</span></div>
+        <div class="kpi"><span class="k">花费</span><span class="v" id="kpiCost">—</span></div>
+      </div>
+    </div>
     <div class="mobile-tabs" aria-label="工作区切换"><button type="button" data-mobile-pane="config" aria-pressed="true" class="active">配置 <span id="mobileStyleCount">— 款</span></button><button type="button" data-mobile-pane="results" aria-pressed="false">画布 <span id="mobileDoneCount">0 张</span></button><button type="button" class="mobile-profile profile-trigger" id="mobileProfile" aria-label="打开个人菜单" aria-controls="profileMenu" aria-expanded="false"><img src="/blackglass/avatar.svg" alt="个人头像" width="26" height="26" /></button></div>
     <div class="workspace">
       <!-- --------------------------------------------------------- 控制台 -->
@@ -211,13 +219,6 @@
         </div>
 
         <div id="galleryPane">
-          <div class="kpis">
-            <div class="kpi"><div class="k">总任务</div><div class="v" id="kpiTotal">0</div></div>
-            <div class="kpi ok"><div class="k">已完成</div><div class="v" id="kpiDone">0</div></div>
-            <div class="kpi bad"><div class="k">失败</div><div class="v" id="kpiFailed">0</div></div>
-            <div class="kpi"><div class="k">本次花费</div><div class="v" id="kpiCost">—</div></div>
-          </div>
-
           <div class="progress-wrap">
             <div class="progress" role="progressbar" aria-labelledby="progressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><i></i></div>
             <div class="progress-meta">
@@ -432,11 +433,11 @@
 <div class="scrim" id="usageScrim" hidden></div><aside class="drawer" id="usageDrawer" hidden aria-modal="true" role="dialog" aria-label="我的用量"><div class="drawer-head"><span class="avatar"><svg><use href="#i-coins"/></svg></span><div class="who"><b>我的用量与花费</b><span>按工作台用量记录计价</span></div><button class="btn btn-quiet btn-icon" id="usageClose" type="button" aria-label="关闭用量"><svg><use href="#i-x"/></svg></button></div><div class="chat" id="usageBody"></div><div class="drawer-foot"><button class="btn btn-ghost" id="usageReload" type="button">刷新用量</button></div></aside>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.21"></script>
-<script src="/blackglass/atmosphere.js?v=9.6.21"></script>
-<script src="/blackglass/effects.js?v=9.6.21"></script>
-<script src="/blackglass-ui.js?v=9.6.21"></script>
-<script src="/ai-workflow.js?v=9.6.21"></script>
-<script src="/app.js?v=9.6.21"></script>
+<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.22"></script>
+<script src="/blackglass/atmosphere.js?v=9.6.22"></script>
+<script src="/blackglass/effects.js?v=9.6.22"></script>
+<script src="/blackglass-ui.js?v=9.6.22"></script>
+<script src="/ai-workflow.js?v=9.6.22"></script>
+<script src="/app.js?v=9.6.22"></script>
 </body>
 </html>
