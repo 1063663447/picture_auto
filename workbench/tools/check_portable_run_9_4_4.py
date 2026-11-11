@@ -20,9 +20,15 @@ from pathlib import Path
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
-ZIP = ROOT / "releases" / "PictureWorkbench-9.4.4-win-x64-internal.zip"
+VERSION = "9.6.12"
+for _arg in sys.argv[1:]:
+    if _arg.startswith("--version="):
+        VERSION = _arg.split("=", 1)[1]
+ZIP = ROOT.parent / "dist" / f"PictureWorkbench-{VERSION}-win-x64-internal.zip"
+if not ZIP.is_file():
+    ZIP = ROOT / "releases" / f"PictureWorkbench-{VERSION}-win-x64-internal.zip"
 WORK = Path(r"E:\picture_auto\scratch\portable-test")
-TARGET = WORK / "PictureWorkbench-9.4.4"
+TARGET = WORK / f"PictureWorkbench-{VERSION}"
 
 
 def free_port() -> int:

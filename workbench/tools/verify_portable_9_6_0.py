@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.11-win-x64-internal.zip"
-VERSION = "9.6.11"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.12-win-x64-internal.zip"
+VERSION = "9.6.12"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -55,6 +55,7 @@ REQUIRED = [
     "workbench/CHANGELOG_CHAIN_9.6.9.md",
     "workbench/CHANGELOG_REVIEW_TIGHT_9.6.10.md",
     "workbench/CHANGELOG_KPI_TOP_9.6.11.md",
+    "workbench/CHANGELOG_FILTER_TOP_9.6.12.md",
     "workbench/HANDOVER.md",
     "workbench/web/index.html",
     "workbench/web/app.js",
@@ -134,10 +135,11 @@ def main() -> int:
     check("data-state=" in app and "working-veil" in app,
           "卡片有改图中/第 2 轮状态")
     index_html = z.read(TOP + "workbench/web/index.html").decode("utf-8")
-    check("kpis-top" in index_html, "统计数字在顶栏（成品区腾出高度）")
+    check("cost-chip" in index_html and "gallery-filters" in index_html,
+          "筛选与花费在顶栏（统计去重，成品区腾出高度）")
     review_css = z.read(TOP + "workbench/web/review-cards.css").decode("utf-8")
-    check("grid-template-columns:repeat(auto-fill" in review_css,
-          "审核卡片自适应网格（不被挤压）")
+    check("flex-wrap:nowrap" in review_css and "max-height:min(34vh,260px)" in review_css,
+          "审核条一行横排 + 高度上限（不挤成品区）")
     annotate_css = z.read(TOP + "workbench/web/annotate.css").decode("utf-8")
     check(".annotate-frame{position:relative" in annotate_css,
           "框层贴着图片（框跟手，不偏移）")

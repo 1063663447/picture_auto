@@ -353,6 +353,7 @@
   // 数字滚动（KPI 用；尊重 prefers-reduced-motion）
   function animateNumber(el, to, formatter) {
     if (!el) return;
+    if (!el) return;
     const target = Number(to) || 0;
     const from = Number(el.dataset.value || 0);
     if (from === target) {                      // 没变化就别抖，避免每次轮询都在闪
@@ -2045,9 +2046,8 @@
     duration.textContent=duration.hidden?"":` · 总耗时 ${formatJobDuration(seconds)}`;
 
     const stats = job.stats;
-    animateNumber($("kpiTotal"), stats.total);
-    animateNumber($("kpiDone"), stats.done + stats.skipped);
-    animateNumber($("kpiFailed"), stats.failed);
+    // 9.6.12 总任务 / 已完成 / 失败 由顶栏筛选行的「全部 / 已完成 / 异常」承担（去重），
+    // 这里只更新「花费」——不再重复渲染一套数字。
     const est = params.estimate || {};
     const done = stats.done + stats.skipped;
     if (est.priced) {
