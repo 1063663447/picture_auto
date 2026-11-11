@@ -2160,12 +2160,15 @@ class Workbench:
                 style_memory.bump_stats(self.library_dir, garment.slug, review_rounds=1)
             except Exception:  # noqa: BLE001
                 pass
+        # 审核记录永远挂在「主任务的那张基准图」上：链式改图时 targets 是上一轮的改图任务，
+        # 但采纳/统计/复原/沉淀都认主任务的那张，所以这里用调用方给的 task_ids。
+        review_ids = [str(t) for t in (task_ids or []) if t] or [t.id for t in targets]
         job.params.setdefault("master_reviews", []).append(
             {
                 "at": time.time(),
                 "instruction": text,
                 "rework_job": rework.id,
-                "master_ids": [t.id for t in targets],
+                "master_ids": review_ids,
                 "from_job": src_job.id,
                 "from_tasks": [t.id for t in targets],
                 "round": int(rework.params.get("rework_round") or 1),
@@ -2184,6 +2187,75 @@ class Workbench:
         job.save()
         self.start(rework.id)
         return rework
+
+    async def revert_rework(self, job_id: str, task_id: str) -> dict:
+        """把这张基准图「复原到第 1 轮」：丢掉它的所有改图轮次。
+
+        客户要求「防止越改越糟还回不去」，同时**不能把糟的那一轮记成好的经验**，所以这里
+        一起清掉：
+          * `params.master_reviews` 里属于这张的条目 —— 确认时 `learn_from_review` 和
+            `distill_review` 都是从它里面取「要求原文」去写款式记忆的，不删就会被沉淀；
+          * 款式统计里多记的 `review_rounds`（返工轮次）；
+          * 还在跑的改图任务尽量停掉（停不掉也不影响，结果没人引用）。
+        已确认/已采纳的基准图不允许复原：那时改图结果已经是正式基准了。
+        """
+        job = self.get_job(job_id)
+        task = next((t for t in job.tasks if t.id == task_id and t.master), None)
+        if task is None:
+            raise WorkbenchError("没有这张基准图")
+        if task.approved:
+            raise WorkbenchError("这张已经确认过了，不能复原；要重做请用它继续改图")
+        reviews = list((job.params or {}).get("master_reviews") or [])
+        keep: list[dict] = []
+        dropped: list[dict] = []
+        for item in reviews:
+            ids = list(item.get("master_ids") or []) if isinstance(item, dict) else []
+            from_tasks = list(item.get("from_tasks") or []) if isinstance(item, dict) else []
+            hit = task_id in ids or any(str(t).startswith(task_id) for t in from_tasks)
+            if isinstance(item, dict) and hit:
+                dropped.append(item)
+            else:
+                keep.append(item)
+        if not dropped:
+            raise WorkbenchError("这张基准图还没有改图轮次，不用复原")
+        job.params["master_reviews"] = keep
+
+        # 停在半路的改图任务：请求取消（失败也无所谓，结果不再被引用）
+        for item in dropped:
+            rework_id = str(item.get("rework_job") or "")
+            if not rework_id:
+                continue
+            running = self._tasks.get(rework_id)
+            if running is not None and not running.done():
+                try:
+                    running.cancel()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        # 返工轮次统计减回去（不能出现负数）
+        slug = task.garment or str(job.params.get("garment_type") or "")
+        try:
+            garment = self.skill.type_by_alias(slug)
+        except KeyError:
+            garment = None
+        if garment is not None:
+            try:
+                stats = style_memory.load_stats(self.library_dir, garment.slug) or {}
+                current = int(stats.get("review_rounds") or 0)
+                back = min(len(dropped), max(0, current))
+                if back:
+                    style_memory.bump_stats(self.library_dir, garment.slug, review_rounds=-back)
+            except Exception:  # noqa: BLE001 - 统计出错不影响复原
+                pass
+
+        task.review_note = ""
+        rounds = len(dropped)
+        job.add_log(
+            f"复原到第 1 轮：{task.color_name or task.color} 丢弃 {rounds} 轮改图记录，"
+            "这一轮的要求不会写进款式记忆"
+        )
+        job.save()
+        return {"dropped": rounds, "task_id": task_id, "job": job.as_dict()}
 
     async def distill_review(
         self,

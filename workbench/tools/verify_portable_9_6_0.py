@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.9-win-x64-internal.zip"
-VERSION = "9.6.9"
+DEFAULT_ZIP = ROOT / "releases" / "PictureWorkbench-9.6.10-win-x64-internal.zip"
+VERSION = "9.6.10"
 TOP = f"PictureWorkbench-{VERSION}/"
 
 REQUIRED = [
@@ -53,6 +53,7 @@ REQUIRED = [
     "workbench/CHANGELOG_ANNOTATE_9.6.6.md",
     "workbench/CHANGELOG_REVIEW_965_9.6.7.md",
     "workbench/CHANGELOG_CHAIN_9.6.9.md",
+    "workbench/CHANGELOG_REVIEW_TIGHT_9.6.10.md",
     "workbench/HANDOVER.md",
     "workbench/web/index.html",
     "workbench/web/app.js",
@@ -124,6 +125,7 @@ def main() -> int:
           "前端有框选标注（大图 + 画框 + 合成标注图）")
     check("annotation_id" in app, "标注 id 随对话发给 harness")
     # 9.6.7 框选直接发送 + 每张并发改图 + 卡片状态
+    check("data-revert" in app and "/revert" in app, "卡片有复原（回第 1 轮）")
     check("runAnnotationRound" in app and "streamQuiet" in app,
           "「交给 AI 改」直接发送（不等第二次点击）")
     check("watchReworkFor" in app and "reworkTimers" in app,

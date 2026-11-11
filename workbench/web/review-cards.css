@@ -1,75 +1,82 @@
-/* 9.6.7 基准图确认卡片：几张图并排时不再互相挤压
-   —— 网格自适应（宽了就多排，窄了自动换行），图片区固定 1:1，
-   所有卡片（待确认 / 改图中 / 已确认）一样高，按钮行不会把图挤没。 */
+/* 9.6.10 基准图审核条：横排紧凑卡（图在左、信息在右），不再占掉半屏把成品区挤没 */
+#reviewBar .review-bar,
+#reviewBar{padding:10px 12px;gap:8px}
+#reviewBar .review-head{gap:8px;min-height:0}
+#reviewBar .review-head #reviewHead{font-size:12px;color:#cfc8e6;font-weight:550}
+#reviewBar .review-head .grow{flex:1}
+
+/* 永远是**一行**：卡片多了横向滚动，不再换行把成品区顶下去（客户 9.6.10 反馈） */
+#reviewBar{max-height:min(34vh,260px);overflow:auto}
 #reviewBar .review-thumbs{
-  display:grid;gap:14px;align-items:start;
-  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
-  width:100%}
+  display:flex;flex-wrap:nowrap;gap:8px;align-items:stretch;width:100%;
+  overflow-x:auto;overflow-y:hidden;padding-bottom:2px;scrollbar-width:thin}
 #reviewBar .review-card{
-  display:flex;flex-direction:column;gap:8px;align-items:stretch;margin:0;
-  padding:10px;border-radius:14px;background:rgba(255,255,255,.04);
-  border:1px solid rgba(184,176,204,.18);min-width:0}
+  display:flex;flex-direction:row;gap:8px;align-items:center;margin:0;
+  flex:1 1 240px;max-width:360px;min-width:220px;
+  padding:7px;border-radius:12px;background:rgba(255,255,255,.04);
+  border:1px solid rgba(184,176,204,.18)}
 #reviewBar .review-card.approved{border-color:rgba(120,220,170,.42);background:rgba(70,200,150,.08)}
 #reviewBar .review-card.working{border-color:rgba(150,126,255,.5);background:rgba(122,92,255,.09)}
 #reviewBar .review-card.revised{border-color:rgba(255,196,92,.5);background:rgba(255,184,72,.07)}
 #reviewBar .review-card.failed{border-color:rgba(255,120,120,.45);background:rgba(255,90,90,.06)}
 
-/* 图片区：固定比例，四张卡并排也照样看得清 */
+/* 图：固定小方图，缩放不影响排版 */
 #reviewBar .thumb-wrap{
-  position:relative;border-radius:10px;overflow:hidden;background:#fff;
-  border:1px solid rgba(255,255,255,.14);
-  aspect-ratio:1/1;display:grid;place-items:center}
+  position:relative;flex:none;width:92px;height:92px;border-radius:9px;overflow:hidden;
+  background:#fff;border:1px solid rgba(255,255,255,.14);display:grid;place-items:center}
 #reviewBar .thumb-wrap img{
   width:100%;height:100%;object-fit:contain;display:block;cursor:crosshair;
   transition:opacity .18s ease,filter .18s ease}
 #reviewBar .review-card.approved .thumb-wrap img{cursor:zoom-in}
 #reviewBar .thumb-wrap .badge{
-  position:absolute;left:6px;top:6px;z-index:2;
-  font-size:10.5px;line-height:1.5;padding:1px 7px;border-radius:999px;
-  background:rgba(10,9,14,.74);border:1px solid rgba(255,255,255,.2);color:#efeaff;
-  backdrop-filter:blur(6px)}
+  position:absolute;left:4px;top:4px;z-index:2;
+  font-size:9.5px;line-height:1.45;padding:0 5px;border-radius:999px;
+  background:rgba(10,9,14,.76);border:1px solid rgba(255,255,255,.2);color:#efeaff;
+  max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #reviewBar .thumb-wrap .badge[data-tone="ok"]{border-color:rgba(120,220,170,.6);color:#d9ffe9}
 #reviewBar .thumb-wrap .badge[data-tone="warn"]{border-color:rgba(255,196,92,.6);color:#ffe9c2}
 
-/* 改图中：图上转圈，内容只留一句「等」 */
+/* 改图中：图上转圈 + 阶段（AI 分析中 / 图片生成中） */
 #reviewBar .thumb-wrap.is-working img{opacity:.3;filter:saturate(.55) blur(1px)}
 #reviewBar .working-veil{
   position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:7px;padding:10px;text-align:center;
-  background:linear-gradient(180deg,rgba(12,11,18,.32),rgba(12,11,18,.74));color:#efeaff}
-#reviewBar .working-veil b{font-size:11.5px;font-weight:600}
-#reviewBar .working-veil small{font-size:10.5px;line-height:1.35;color:#b7afd0}
+  align-items:center;justify-content:center;gap:4px;padding:4px;text-align:center;
+  background:linear-gradient(180deg,rgba(12,11,18,.3),rgba(12,11,18,.75));color:#efeaff}
+#reviewBar .working-veil b{font-size:10.5px;font-weight:600}
+#reviewBar .working-veil small{font-size:9.5px;line-height:1.3;color:#b7afd0}
 #reviewBar .spin{
-  width:26px;height:26px;border-radius:50%;
-  border:2.5px solid rgba(150,126,255,.26);border-top-color:#bba9ff;
+  width:20px;height:20px;border-radius:50%;
+  border:2px solid rgba(150,126,255,.26);border-top-color:#bba9ff;
   animation:rb-spin .9s linear infinite}
 @keyframes rb-spin{to{transform:rotate(360deg)}}
 
-#reviewBar .review-card figcaption{
-  display:flex;flex-direction:column;gap:2px;font-size:11.5px;line-height:1.35;
-  min-height:34px;min-width:0}
+/* 右侧信息区 */
+#reviewBar .card-body{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+#reviewBar .review-card figcaption{display:flex;flex-direction:column;gap:1px;font-size:11.5px;line-height:1.35;min-width:0}
 #reviewBar .review-card figcaption b{
   color:#efeaff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#reviewBar .review-card figcaption span{color:#a9a2c0}
 #reviewBar .review-card .rw-error{
   color:#ffb4a8;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* 按钮行：留最小高度，所以「没按钮的已确认卡」不会被压矮 */
-#reviewBar .review-card-acts{display:flex;flex-wrap:wrap;gap:6px;min-height:30px;align-items:center}
+#reviewBar .review-card-acts{display:flex;flex-wrap:wrap;gap:5px;min-height:0;align-items:center}
+#reviewBar .review-card-acts:empty{display:none}
 #reviewBar .review-card-acts button{
-  flex:1 1 0;min-width:0;font-size:11.5px;padding:5px 8px;border-radius:9px;cursor:pointer;
+  flex:1 1 auto;min-width:0;font-size:11px;padding:4px 8px;border-radius:8px;cursor:pointer;
   border:1px solid rgba(150,126,255,.42);background:rgba(122,92,255,.18);color:#e9e4ff;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #reviewBar .review-card-acts button[data-approve],
 #reviewBar .review-card-acts button[data-adopt]{
   border-color:rgba(120,220,170,.45);background:rgba(70,200,150,.18);color:#dcffe9}
+#reviewBar .review-card-acts button[data-revert]{
+  flex:0 0 auto;border-color:rgba(255,170,90,.4);background:rgba(255,150,60,.14);color:#ffe0bd}
 #reviewBar .review-card-acts button:hover{filter:brightness(1.15)}
 #reviewBar .review-card-acts button:disabled{opacity:.5;cursor:default}
 #reviewBar .review-card-acts .acts-note{
-  font-size:10.8px;line-height:1.4;color:#9c95b3;
+  font-size:10.5px;line-height:1.4;color:#9c95b3;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* 窄屏：卡片最多两列，图片不至于小到看不清 */
-@media (max-width:760px){
-  #reviewBar .review-thumbs{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+/* 窄屏：卡片整行铺满，图略小 */
+@media (max-width:860px){
+  #reviewBar .review-card{flex:1 1 230px;max-width:320px;min-width:210px}
+  #reviewBar .thumb-wrap{width:80px;height:80px}
 }

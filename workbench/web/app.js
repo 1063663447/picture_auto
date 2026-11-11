@@ -1175,14 +1175,15 @@
     if (reviewBound) return;
     reviewBound = true;
     $("approveMasterBtn")?.addEventListener("click", (event) => approveMaster(event.currentTarget));
-    $("talkMasterBtn")?.addEventListener("click", () => talkMaster());
     // 9.6.7 卡片用事件委托：轮询重建 DOM 时不会把点击监听一起丢掉
     //（以前那一版的按钮在「重建瞬间」点下去是没反应的）
     $("reviewThumbs")?.addEventListener("click", (event) => {
       const hit = event.target.closest(
-        "[data-approve],[data-adopt],[data-annotate],[data-annotate-round],[data-rework],img[data-preview]"
+        "[data-approve],[data-adopt],[data-revert],[data-annotate],[data-annotate-round],[data-rework],img[data-preview]"
       );
       if (!hit) return;
+      const revert = hit.closest("[data-revert]");
+      if (revert) { revertRound(revert); return; }
       const approve = hit.closest("[data-approve]");
       if (approve) { approveMaster(approve, null, [approve.dataset.approve]); return; }
       const adopt = hit.closest("[data-adopt]");
@@ -1272,32 +1273,39 @@
     const full = shot ? (shot.preview || shot.thumb || "") : (task.preview || task.thumb || "");
     const kind = st.approved ? "approved" : st.working ? "working" : st.ready ? "revised"
       : st.failed ? "failed" : "pending";
+    // 「AI 分析中」= 正在读框选/写提示词；「图片生成中」= 任务已提交，在等生图
+    const analysing = st.stage === "thinking";
+    const phase = analysing ? "AI 分析中" : st.stage === "running" ? "图片生成中" : "";
     const badge = st.approved
       ? (task.adopted_from ? `已确认 · 第 ${shownRound} 轮` : "已确认")
-      : st.working ? `第 ${nextRound} 轮改图中`
+      : st.working ? `第 ${nextRound} 轮 · ${phase}`
         : st.ready ? `第 ${shownRound} 轮 · 待确认`
           : st.failed ? "改图失败" : `第 ${shownRound} 轮 · 待确认`;
     const tone = st.approved ? "ok" : (st.working || st.failed || st.ready) ? "warn" : "";
+    const hasRound = round > 1 || (st.rw?.shots || []).length > 0 || st.stage === "running" || analysing;
     const veil = st.working
       ? `<div class="working-veil"><span class="spin"></span>
-           <b>${st.stage === "thinking" ? "AI 正在读框选…" : `第 ${nextRound} 轮基准图生成中…`}</b>
-           <small>${esc(st.rw.progress || "按框位改完就返图给你，框外不动")}</small>
+           <b>${analysing ? "AI 分析中…" : "图片生成中…"}</b>
+           <small>${esc(analysing ? "正在读框选、改提示词" : (st.rw.progress || "按框位生成中"))}</small>
          </div>`
+      : "";
+    const revertBtn = hasRound && !st.approved
+      ? `<button type="button" class="warn" data-revert="${esc(task.id)}">复原</button>`
       : "";
     let acts;
     if (st.approved) {
-      acts = `<div class="review-card-acts"><span class="acts-note">已确认${task.adopted_from ? "（第 2 轮）" : ""}，按它改其余颜色</span></div>`;
+      acts = "";
     } else if (st.working) {
-      acts = `<div class="review-card-acts"><span class="acts-note">改图任务已提交 · 可以先去框选别的</span></div>`;
+      acts = `<div class="review-card-acts">${revertBtn}</div>`;
     } else if (st.ready) {
       // 直接在被改出来的这张图上接着框 → 第 3 轮、第 4 轮…（不用先采纳入库）
       const roundRef = `data-round-job="${esc(shot?.jobId || "")}" data-round-task="${esc(shot?.id || "")}" `
         + `data-round-url="${esc(shot?.preview || shot?.thumb || shot?.thumb_small || "")}" `
         + `data-round-no="${esc(String(shownRound))}"`;
       acts = `<div class="review-card-acts">
-        <button type="button" data-adopt="${esc(task.id)}">这张可以</button>
+        <button type="button" data-adopt="${esc(task.id)}">确定</button>
         <button type="button" data-annotate-round="${esc(task.id)}" ${roundRef}>接着改（第 ${nextRound} 轮）</button>
-        <button type="button" data-rework="${esc(task.id)}">直接说</button>
+        ${revertBtn}
       </div>`;
     } else if (st.failed) {
       const backRef = st.rw?.shots?.[0]?.jobId
@@ -1307,11 +1315,11 @@
         : "";
       acts = `<div class="review-card-acts">
         <button type="button" data-annotate-round="${esc(task.id)}" ${backRef}>再框一次</button>
-        <button type="button" data-rework="${esc(task.id)}">直接说</button>
+        ${revertBtn}
       </div>`;
     } else {
       acts = `<div class="review-card-acts">
-        <button type="button" data-approve="${esc(task.id)}">这张可以</button>
+        <button type="button" data-approve="${esc(task.id)}">确定</button>
         <button type="button" data-annotate="${esc(task.id)}">框选改</button>
         <button type="button" data-rework="${esc(task.id)}">直接说</button>
       </div>`;
@@ -1326,13 +1334,55 @@
         <span class="badge" data-tone="${esc(tone)}">${esc(badge)}</span>
         ${veil}
       </div>
-      <figcaption>
-        <b>${esc(task.garment_name || task.garment || "款式")}</b>
-        <span>${esc(task.color_name || task.color)}${st.approved ? " · 已确认" : st.ready ? " · 第 2 轮" : " · 待确认"}</span>
-        ${why}
-      </figcaption>
-      ${acts}
+      <div class="card-body">
+        <figcaption>
+          <b>${esc(task.garment_name || task.garment || "款式")} · ${esc(task.color_name || task.color)}</b>
+          ${why}
+        </figcaption>
+        ${acts}
+      </div>
     </figure>`;
+  }
+
+  // 复原到第 1 轮：丢掉这张基准图的所有改图轮次（连同一轮的审核记忆一起丢），
+  // 免得「越改越糟还回不去」，也免得把糟的那一轮写进款式规则。
+  const revertArmed = new Map();
+  async function revertRound(button) {
+    const card = button.closest(".review-card");
+    const taskId = card?.dataset.task || button.dataset.revert;
+    const rw = reworkOf(taskId);
+    const label = (card?.querySelector("figcaption b")?.textContent || "这张").trim();
+    if (!revertArmed.has(taskId)) {
+      revertArmed.set(taskId, setTimeout(() => {
+        revertArmed.delete(taskId);
+        if (state.job) renderReview(state.job);
+      }, 5000));
+      button.textContent = "确认复原？";
+      return;
+    }
+    clearTimeout(revertArmed.get(taskId));
+    revertArmed.delete(taskId);
+    await withLoading(button, async () => {
+      try {
+        const res = await api(`/api/jobs/${state.jobId}/revert`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task_id: taskId }),
+        });
+        // 本地也清：卡片回到第 1 轮 + 这轮对话历史不再带给 AI
+        delete state.reworks[taskId];
+        if (rw?.jobId) stopWatch(rw.jobId);
+        state.harnessHistory = (state.harnessHistory || []).filter(
+          (item) => item.roundTag !== taskId
+        );
+        if (res?.job) renderJob(res.job);
+        toast("ok", `「${label}」已复原到第 1 轮，这轮的审核记忆也一起丢掉了`);
+      } catch (err) {
+        toast("bad", err.message);
+      } finally {
+        if (state.job) renderReview(state.job);
+      }
+    }, "复原中…");
   }
 
   async function adoptRound(button) {
@@ -1354,27 +1404,14 @@
     const show = Boolean(info && (info.awaiting || info.pending_ids?.length || masters.length));
     bar.hidden = !show;
     if (!show) return;
-    const stage = $("reviewStage"), note = $("reviewNote");
     const pending = masters.filter((t) => !t.approved);
     const working = pending.filter((t) => reviewCardState(t).working).length;
-    const readyCount = pending.filter((t) => reviewCardState(t).ready).length;
-    if (info.phase === "derived" && !pending.length) {
-      stage.textContent = `基准已全部确认，正在按它改其它颜色（${info.derived_done || 0}/${info.derived_total || 0}）`;
-      note.textContent = "改色中…";
-      note.dataset.warn = "0";
-    } else if (pending.length) {
-      stage.textContent = pending.length === masters.length
-        ? `基准图出来了（${masters.length} 张）：每张都能单独确认，也可以只让某一张先改色`
-        : `还有 ${pending.length} 张待确认（已确认 ${masters.length - pending.length} 张）`;
-      note.textContent = working
-        ? `${working} 张正在按框改图，等着就行；现在也可以去框选其它基准图`
-        : (readyCount
-          ? `${readyCount} 张已经出第 2 轮，看一眼对不对再确认`
-          : "确认前不会出其它颜色，也不花钱；改图只针对那一张");
-      note.dataset.warn = "0";
-    } else {
-      stage.textContent = "基准图生成中，出来就能先确认";
-      note.textContent = "";
+    // 客户要求：审核条上不要再堆说明文字，只留一个极简计数（含「改图中」提醒）
+    const head = $("reviewHead");
+    if (head) {
+      head.textContent = pending.length
+        ? `${pending.length} 张待确认${working ? ` · ${working} 张改图中` : ""}`
+        : "已全部确认";
     }
     const box = $("reviewThumbs");
     // 轮询每 1.2s 会走一遍 renderReview：卡片没变化就不重建 DOM，
@@ -1391,15 +1428,9 @@
     const approve = $("approveMasterBtn");
     if (approve) {
       const canAll = pending.length > 0;
+      approve.hidden = !canAll;
       approve.disabled = !canAll;
-      approve.textContent = canAll
-        ? (pending.length === masters.length ? "全部确认，按它们改色" : `确认剩下 ${pending.length} 张`)
-        : (info.phase === "derived" ? "已确认" : "确定，按它改色");
-    }
-    const talk = $("talkMasterBtn");
-    if (talk) {
-      talk.textContent = "改哪张？（对话）";
-      talk.disabled = pending.length === 0;
+      approve.textContent = pending.length === masters.length ? "全部确定" : `确定剩下 ${pending.length} 张`;
     }
   }
 
@@ -1475,6 +1506,12 @@
   let reworkTimer = 0;
   // 9.6.7 每张基准图一条改图任务，可以同时跑好几条：定时器按 jobId 分开存
   const reworkTimers = new Map();
+  function stopWatch(jobId) {
+    const timer = reworkTimers.get(String(jobId || ""));
+    if (timer) clearTimeout(timer);
+    reworkTimers.delete(String(jobId || ""));
+  }
+
   function stopReworkWatch() {
     if (reworkTimer) { clearTimeout(reworkTimer); reworkTimer = 0; }
     for (const timer of reworkTimers.values()) clearTimeout(timer);
@@ -1953,8 +1990,8 @@
       state.reworkJobId = jobId;
       if (note) {
         // 记进对话历史：之后在对话框里接着说，AI 知道上一轮改了哪儿
-        state.harnessHistory.push({ role: "user", content: payload.instruction });
-        state.harnessHistory.push({ role: "assistant", content: note });
+        state.harnessHistory.push({ role: "user", content: payload.instruction, roundTag: masterTaskId });
+        state.harnessHistory.push({ role: "assistant", content: note, roundTag: masterTaskId });
         state.harnessHistory = state.harnessHistory.slice(-12);
       }
     } catch (err) {
@@ -1991,6 +2028,9 @@
     const params = job.params || {};
     const isRework = params.kind === "rework";
     const styleCount = (params.selections || []).length;
+    // 客户要求：审核期间不要右上角那两行（款式张数 / 基准图修改中）——审核条自己说清楚了
+    const strip = document.querySelector(".job-strip");
+    if (strip) strip.hidden = String(job.status || "") === "review";
     $("jobTitle").textContent = isRework
       ? `改图返工 · ${job.stats.total} 张`
       : styleCount > 1

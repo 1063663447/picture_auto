@@ -147,8 +147,8 @@ def static_checks(show: bool) -> None:
     # 5) 三态判据仍在：卡片只对「没确认」的图给按钮，确认状态看 task.approved
     check("const pending = masters.filter((t) => !t.approved);" in js,
           "待确认按 task.approved 过滤（不是靠 awaiting）", show)
-    check("info.phase === \"derived\"" in js,
-          "改色进度只在 phase=derived 时显示", show)
+    check('const head = $("reviewHead");' in js and "已全部确认" in js,
+          "审核条只报待确认/改图计数，不自报改色进度", show)
     service = (ROOT / "skillbridge" / "service.py").read_text(encoding="utf-8")
     check("def review_payload(self, job: Job) -> dict:" in service,
           "后端 review_payload 仍区分 awaiting / approved", show)

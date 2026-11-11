@@ -681,7 +681,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     targets = [t for t in (ready or masters) if not wanted or t.id in wanted]
                 if not targets:
                     raise ValueError("指定的那张基准图还没出图，或不属于这条任务")
-                task_ids = [t.id for t in targets]
+                # 审核主角（采纳/统计/记忆/复原）永远是主任务上的基准图；
+                # 链式改图时 targets 是「上一轮那张图」，单独走 source_task_ids。
+                review_targets = [
+                    t for t in (ready or masters) if not wanted or t.id in wanted
+                ]
+                task_ids = [t.id for t in (review_targets or targets)]
                 count = len(pending) or max(1, len(masters))
                 source_count = len({str(t.source) for t in targets})
                 task_context = []
@@ -1443,6 +1448,21 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"ok": True, "job": job.as_dict(with_tasks=True, with_log=True), "source_job": job_id}
 
     # --------------------------------------------------------- 框选标注 --
+    @app.post("/api/jobs/{job_id}/revert")
+    async def revert_rework(request: Request, job_id: str):
+        """把这张基准图复原到第 1 轮：丢掉改图轮次 + 那一轮的审核记忆。"""
+        bench = wb(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            return JSONResponse({"ok": False, "error": "请求必须是对象"}, status_code=400)
+        task_id = str(body.get("task_id") or "").strip()
+        if not task_id:
+            return JSONResponse({"ok": False, "error": "缺少 task_id"}, status_code=400)
+        try:
+            return {"ok": True, **await bench.revert_rework(job_id, task_id)}
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
     @app.post("/api/jobs/{job_id}/annotations")
     async def upload_annotation(
         request: Request,

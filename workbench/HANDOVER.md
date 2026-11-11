@@ -142,6 +142,14 @@ workbench/
   改图时 `runner._execute_rework_task` 把标注图当 **IMAGE 2**，提示词追加 `prompts.annotation_clause(2)`（框线是地图不是设计）；
   harness 上下文带 `annotations`（每框编号/位置/要求）。回归：`tools/check_annotation.py`。
   注意：`#annotateImage` 是 `pointer-events:none`，拖拽事件落在 `#annotateStage`。
+- **审核条瘦身 + 复原（9.6.10）**：`review-cards.css` 用「一行横排紧凑卡」（92px 方图在左，
+  `flex-wrap:nowrap` + 横向滚动，`#reviewBar{max-height:min(34vh,260px)}`），成品区不再被顶没。
+  卡片状态：`AI 分析中`(thinking) / `图片生成中`(running) / `第 N 轮·待确认`(ready) / `改图失败`。
+  按钮统一「确定」；审核期隐藏 `.job-strip`、删掉 `#reviewStage`/`#reviewNote`/`#talkMasterBtn`。
+  **复原**：`POST /api/jobs/{id}/revert {task_id}` → `service.revert_rework()`：
+  删 `params.master_reviews` 里属于这张的条目（确认/沉淀都从它取要求，不删会把糟的一轮写进款式记忆）、
+  把 `stats.review_rounds` 减回去、取消还在跑的改图任务；前端删 `state.reworks[taskId]` 与带 `roundTag`
+  的对话历史。已确认/已采纳的基准图拒绝复原。回归：`tools/check_revert.py`。
 - **接着上一轮继续改（9.6.9）**：改图轮次可以链式往前推，不用先采纳。
   前端卡片在 `ready` 状态给「接着改（第 N+1 轮）」（`data-annotate-round` + `data-round-job/task/url/no`），
   `openAnnotator()` 支持传 `{jobId,taskId,url,round,masterTaskId}`——第 2 轮之后的图在**上一轮的改图任务**里。
