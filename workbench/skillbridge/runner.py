@@ -887,6 +887,40 @@ class JobRunner:
             pending, self._extra = self._extra, []
             await asyncio.gather(*pending, return_exceptions=True)
 
+    def reschedule(self, task_ids: list[str] | None = None) -> None:
+        """「重新生成」：用户把某几张（含基准图）放回队列了，立刻排进这一轮跑。
+
+        和 `kick()` 的区别：kick 只补「已确认基准的派生色」，这里可以是基准图本身。
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._extra.append(loop.create_task(self._run_rescheduled(task_ids)))
+
+    async def _run_rescheduled(self, task_ids: list[str] | None = None) -> None:
+        wanted = set(task_ids or [])
+        runnable = [
+            t for t in self.job.tasks
+            if t.status in {"pending", "queued"}
+            and not t.out
+            and not t.paused
+            and t.id not in self._kicked
+            and (not wanted or t.id in wanted)
+        ]
+        if not runnable:
+            return
+        self._kicked.update(t.id for t in runnable)
+        masters = [t for t in runnable if t.master]
+        derived = [t for t in runnable if t.master_task]
+        plain = [t for t in runnable if not t.master and not t.master_task]
+        self.job.add_log(f"重新生成：把 {len(runnable)} 张排进本轮")
+        if masters:
+            await self._gather(masters, self._execute_color_task)
+        rest = derived + plain
+        if rest:
+            await self._gather(rest, self._execute_shape_task)
+
     # -------------------------------------------------------------- one call  #
     def _resolve_size(self, source: Path) -> str:
         """`size=auto` → the preset closest to the source aspect ratio.

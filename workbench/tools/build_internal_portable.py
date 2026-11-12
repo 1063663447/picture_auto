@@ -19,7 +19,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 WB = ROOT / 'workbench'
-VERSION = '9.6.12'
+VERSION = '9.6.34'
 
 
 def sha(path: Path) -> str:
@@ -110,7 +110,7 @@ def main() -> int:
     add_tree(ROOT / 'apparel-style-recolor', stage / 'apparel-style-recolor')
     for name in ['serve.py', 'cli.py', 'requirements.txt', 'pricing.json',
                  'CHANGELOG_PORTABLE_9.3.0.md', 'CHANGELOG_WORKFLOW_9.4.0.md', 'CHANGELOG_ARTWORK_9.4.1.md',
-                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md', 'CHANGELOG_MASTER_GATE_9.6.0.md', 'CHANGELOG_STYLES_24_9.6.1.md', 'CHANGELOG_CHAT_FIRST_9.6.2.md', 'CHANGELOG_DISTILL_9.6.3.md', 'CHANGELOG_MASTER_WAIT_9.6.4.md', 'CHANGELOG_WHITE_MASTER_9.6.5.md', 'CHANGELOG_ANNOTATE_9.6.6.md', 'CHANGELOG_REVIEW_965_9.6.7.md', 'CHANGELOG_CHAIN_9.6.9.md', 'CHANGELOG_REVIEW_TIGHT_9.6.10.md', 'CHANGELOG_KPI_TOP_9.6.11.md', 'CHANGELOG_FILTER_TOP_9.6.12.md',
+                 'CHANGELOG_MODELS_9.4.2.md', 'CHANGELOG_GARMENT_LOCK_9.4.3.md', 'CHANGELOG_GROK_QUALITY_9.4.4.md', 'CHANGELOG_CONVERT_9.4.5.md', 'CHANGELOG_HOOD_CORDS_9.4.6.md', 'CHANGELOG_HOOD_CORDS_9.4.7.md', 'CHANGELOG_SWATCH_9.4.8.md', 'CHANGELOG_STYLE_PROMPTS_9.4.9.md', 'CHANGELOG_STYLES_9.5.0.md', 'CHANGELOG_MASTER_GATE_9.6.0.md', 'CHANGELOG_STYLES_24_9.6.1.md', 'CHANGELOG_CHAT_FIRST_9.6.2.md', 'CHANGELOG_DISTILL_9.6.3.md', 'CHANGELOG_MASTER_WAIT_9.6.4.md', 'CHANGELOG_WHITE_MASTER_9.6.5.md', 'CHANGELOG_ANNOTATE_9.6.6.md', 'CHANGELOG_REVIEW_965_9.6.7.md', 'CHANGELOG_CHAIN_9.6.9.md', 'CHANGELOG_REVIEW_TIGHT_9.6.10.md', 'CHANGELOG_KPI_TOP_9.6.11.md', 'CHANGELOG_FILTER_TOP_9.6.12.md', 'CHANGELOG_REWORK_STUCK_9.6.24.md', 'CHANGELOG_CARD_REWORK_MENU_9.6.25.md', 'CHANGELOG_HOOD_CORDS_SILVER_9.6.26.md', 'CHANGELOG_RIB_TEXTURE_9.6.27.md', 'CHANGELOG_CANCEL_REVIEW_9.6.30.md', 'CHANGELOG_PAUSE_TASKS_9.6.31.md', 'CHANGELOG_APPROVE_WHILE_RUNNING_9.6.32.md', 'CHANGELOG_WHITE_AND_CANCEL_STYLE_9.6.33.md',
                  'HANDOVER.md', 'REVIEW_9.4.1.md']:
         copy_file(WB / name, stage / 'workbench' / name)
     machine_keys={'WORKBENCH_DATA_DIR','WORKBENCH_HOST','WORKBENCH_PORT','WORKBENCH_SESSION_SECRET','WORKBENCH_AUTH_TOKEN','PORT'}
@@ -129,7 +129,7 @@ def main() -> int:
     copy_file(WB / 'portable/start.bat', stage / '一键启动.bat')
     repair_bat = (WB / 'portable/start.bat').read_text(encoding='ascii').replace('bootstrap.ps1\" %*', 'bootstrap.ps1\" -Repair -CheckOnly %*')
     (stage / '一键检查修复.bat').write_bytes(repair_bat.replace('\r\n', '\n').replace('\n', '\r\n').encode('ascii'))
-    (stage / '使用说明.txt').write_text(f'生图工作台 {VERSION} · 内部便携版\n\n完整解压到可写目录，双击“一键启动.bat”。自动检查并启动、打开浏览器，无需安装Python、Node或Three.js，无需填写API。适用Windows 10/11 x64 Intel/AMD。\n保持运行窗口打开；关闭窗口停止服务。重复启动会打开已运行工作台。\n文件缺失先从包内offline-cache修复，缓存缺失才从华为云/阿里云国内HTTPS源下载，显示进度并校验SHA256。图片API和AI仍需网络。\n各电脑记录位于workbench/data，不带原电脑历史任务。升级前先停止旧程序、备份旧目录，完整解压新版后可将旧workbench/data复制到对应位置；不要覆盖正在运行的目录。\n9.6.12 本版要点：基准图直接点图框选——在图上拖框标出要改的地方、每个框写一句要求，点「交给 AI 改」就自动发给 AI 并回到审核条，卡片显示「AI 分析中 / 图片生成中」，出图后变「第 N 轮 · 待确认」，可以接着改（第 3、4…轮，不用先采纳），也可以「复原」回第 1 轮并丢掉那一轮的审核记忆；多张基准图可以同时改（互不排队）；审核条与统计（筛选/花费）都挪到顶栏，成品区高度全给图片。详见 workbench 目录下的 CHANGELOG_ANNOTATE_9.6.6.md / CHANGELOG_REVIEW_TIGHT_9.6.10.md / CHANGELOG_KPI_TOP_9.6.11.md。\n包内已包含当前内部主备API、AI与飞书配置，仅供团队内部流转。日志在logs目录。\n', encoding='utf-8-sig')
+    (stage / '使用说明.txt').write_text(f'生图工作台 {VERSION} · 内部便携版\n\n完整解压到可写目录，双击“一键启动.bat”。自动检查并启动、打开浏览器，无需安装Python、Node或Three.js，无需填写API。适用Windows 10/11 x64 Intel/AMD。\n保持运行窗口打开；关闭窗口停止服务。重复启动会打开已运行工作台。\n文件缺失先从包内offline-cache修复，缓存缺失才从华为云/阿里云国内HTTPS源下载，显示进度并校验SHA256。图片API和AI仍需网络。\n各电脑记录位于workbench/data，不带原电脑历史任务。升级前先停止旧程序、备份旧目录，完整解压新版后可将旧workbench/data复制到对应位置；不要覆盖正在运行的目录。\n9.6.34 本版要点：白色不再发灰（干净纸白）；基准图的操作收进一个「改图 ⌄」菜单（框选改 / 直接说 / 重新生成），取消这款不再单独占一个按钮；多张基准图可以边跑边确认（先出图画先点确定，不用等其它图）；每张成品都能单独暂停/继续，审核期还能「取消这批」；连帽卫衣的帽绳改成整根跟衣身同色 + 两个银色金属绳头；弹力短袖钉住整件罗纹感（派生色不再被磨平成平纹）；成品卡的「改图」也拆成直接重新生成 / 对话改图 / 框选改图三项。详见 workbench 目录下的 CHANGELOG_ANNOTATE_9.6.6.md / CHANGELOG_REVIEW_TIGHT_9.6.10.md / CHANGELOG_KPI_TOP_9.6.11.md。\n包内已包含当前内部主备API、AI与飞书配置，仅供团队内部流转。日志在logs目录。\n', encoding='utf-8-sig')
     cache = stage / 'offline-cache';cache.mkdir(exist_ok=True)
     print('[2/6] Installing private embedded Python and bundled VC runtime DLLs', flush=True)
     runtime = stage / 'runtime';runtime.mkdir(exist_ok=True)

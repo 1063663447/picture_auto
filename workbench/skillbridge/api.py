@@ -593,6 +593,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
         except (KeyError, ValueError, WorkbenchError) as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
+    @app.post("/api/jobs/{job_id}/regenerate")
+    async def regenerate(
+        request: Request, job_id: str, task_ids: list[str] = Form(default=[])
+    ):
+        """重新生成指定的成品/基准图（旧成品清掉，按当前提示词重画）。"""
+        bench = wb(request)
+        try:
+            return {"ok": True, "job": bench.regenerate(job_id, task_ids)}
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
     @app.post("/api/jobs/{job_id}/cancel-style")
     async def cancel_style(
         request: Request, job_id: str, task_ids: list[str] = Form(default=[])

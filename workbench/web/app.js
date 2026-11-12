@@ -1181,9 +1181,16 @@
     //（以前那一版的按钮在「重建瞬间」点下去是没反应的）
     $("reviewThumbs")?.addEventListener("click", (event) => {
       const hit = event.target.closest(
-        "[data-approve],[data-adopt],[data-revert],[data-annotate],[data-annotate-round],[data-rework],[data-pause-review],[data-cancel-style],img[data-preview]"
+        "[data-approve],[data-adopt],[data-revert],[data-annotate],[data-annotate-round],[data-rework],[data-pause-review],[data-cancel-style],[data-review-menu],img[data-preview]"
       );
       if (!hit) return;
+      // 9.6.34 基准图的操作收进「改图 ⌄」菜单（框选改 / 直接说 / 重新生成）
+      const reviewMenu = hit.closest("[data-review-menu]");
+      if (reviewMenu) {
+        event.preventDefault();
+        openReworkMenu(reviewMenu, reviewMenu.dataset.reviewMenu, "master");
+        return;
+      }
       const revert = hit.closest("[data-revert]");
       if (revert) { revertRound(revert); return; }
       const approve = hit.closest("[data-approve]");
@@ -1308,16 +1315,11 @@
     const revertBtn = hasRound && !st.approved
       ? `<button type="button" class="warn" data-revert="${esc(task.id)}">复原</button>`
       : "";
-    // 9.6.31 基准图的出口是「取消这款」（9.6.33 由暂停改过来）：本款不再生成，卡片也不显示
+    // 9.6.34 基准图的操作收成一个「改图 ⌄」菜单：框选改 / 直接说 / 重新生成
     const paused = Boolean(task.paused);
-    const cancelStyleBtn = st.approved ? ""
-      : `<button type="button" data-cancel-style="${esc(task.id)}" `
-        + `title="本款不再生成：这张基准图和这款没开始的颜色都会取消并从列表里撤下">取消这款</button>`;
-    const pauseBtn = st.approved ? ""
-      : `<button type="button" data-pause-review="${esc(task.id)}" `
-        + `data-pause-mode="${paused ? "resume" : "pause"}" `
-        + `title="${paused ? "放回审核条继续确认" : "暂停这张基准图：不再占着审核条，成品保留"}">`
-        + `${paused ? "继续" : "暂停"}</button>`;
+    const reworkMenuBtn = st.approved ? ""
+      : `<button type="button" data-review-menu="${esc(task.id)}" `
+        + `title="改图：框选改 / 直接说 / 重新生成">改图 ⌄</button>`;
     let acts;
     if (st.approved) {
       acts = "";
@@ -1331,7 +1333,7 @@
       acts = `<div class="review-card-acts">
         <button type="button" data-adopt="${esc(task.id)}">确定</button>
         <button type="button" data-annotate-round="${esc(task.id)}" ${roundRef}>接着改（第 ${nextRound} 轮）</button>
-        ${cancelStyleBtn}
+        ${reworkMenuBtn}
         ${revertBtn}
       </div>`;
     } else if (st.failed) {
@@ -1342,15 +1344,13 @@
         : "";
       acts = `<div class="review-card-acts">
         <button type="button" data-annotate-round="${esc(task.id)}" ${backRef}>再框一次</button>
-        ${cancelStyleBtn}
+        ${reworkMenuBtn}
         ${revertBtn}
       </div>`;
     } else {
       acts = `<div class="review-card-acts">
         <button type="button" data-approve="${esc(task.id)}">确定</button>
-        <button type="button" data-annotate="${esc(task.id)}">框选改</button>
-        <button type="button" data-rework="${esc(task.id)}">直接说</button>
-        ${cancelStyleBtn}
+        ${reworkMenuBtn}
       </div>`;
     }
     const why = st.failed && st.rw.error
@@ -1999,21 +1999,31 @@
     document.getElementById("reworkMenu")?.remove();
   }
 
-  function openReworkMenu(anchor, taskId) {
+  function openReworkMenu(anchor, taskId, kind = "card") {
     closeReworkMenu();
     const task = (state.job?.tasks || []).find((t) => t.id === taskId);
     if (!task) return;
-    if (task.status !== "done") { toast("bad", "这张还没出图，等成品出来再改"); return; }
-    const items = [
-      ["regen", "直接重新生成", "同样的提示词再跑一次"],
-      ["chat", "对话改图", "跟 AI 说改哪儿，它整理成提示词"],
-      ["annotate", "框选改图", "在图上框出来，框外保持不动"],
-    ];
+    if (kind !== "master" && task.status !== "done") {
+      toast("bad", "这张还没出图，等成品出来再改");
+      return;
+    }
+    const items = kind === "master"
+      ? [
+          ["annotate", "框选改", "在图上框出要改的地方，框外不动"],
+          ["chat", "直接说", "跟 AI 说哪里不对，改完再确认"],
+          ["regen", "重新生成", "这张基准图重画一次（同提示词）"],
+        ]
+      : [
+          ["regen", "直接重新生成", "同样的提示词再跑一次"],
+          ["chat", "对话改图", "跟 AI 说改哪儿，它整理成提示词"],
+          ["annotate", "框选改图", "在图上框出来，框外保持不动"],
+        ];
     const menu = document.createElement("div");
     menu.id = "reworkMenu";
     menu.className = "rework-pop";
     menu.setAttribute("role", "menu");
     menu.dataset.task = taskId;
+    menu.dataset.kind = kind;
     menu.innerHTML = items
       .map(([key, label, hint]) => `<button type="button" role="menuitem" data-rework-act="${key}">
           <b>${label}</b><small>${hint}</small></button>`)
@@ -2690,6 +2700,23 @@
       }
     }, "取消中…");
     disarmCancelStyle(button);
+  }
+
+  /* 9.6.34 基准图的「重新生成」：清掉旧成品，按当前提示词重画这张（审核期也能用）。 */
+  async function regenerateTask(taskId) {
+    const jobId = state.jobId;
+    if (!jobId || state.job?.id !== jobId || !taskId) return;
+    const form = new FormData();
+    form.append("task_ids", taskId);
+    try {
+      const res = await api(`/api/jobs/${jobId}/regenerate`, { method: "POST", body: form });
+      if (res?.job && state.jobId === jobId) renderJob(res.job);
+      toast("ok", "已重新生成：这张按当前提示词重画，出图后回到审核条");
+      watchJob(jobId);
+      loadHistory();
+    } catch (err) {
+      toast("bad", `重新生成失败：${err.message}`);
+    }
   }
 
   async function cancelJob() {
@@ -3690,6 +3717,14 @@
         if (!menuBtn.disabled) openReworkMenu(menuBtn, menuBtn.dataset.reworkMenu);
         return;
       }
+      const reviewMenuBtn = event.target.closest("[data-review-menu]");
+      if (reviewMenuBtn) {
+        event.preventDefault();
+        if (!reviewMenuBtn.disabled) {
+          openReworkMenu(reviewMenuBtn, reviewMenuBtn.dataset.reviewMenu, "master");
+        }
+        return;
+      }
       const pauseBtn = event.target.closest("[data-pause]");
       if (pauseBtn) {
         event.preventDefault();
@@ -3724,9 +3759,25 @@
         event.preventDefault();
         const taskId = menu.dataset.task;
         const kind = act.dataset.reworkAct;
+        const menuKind = menu.dataset.kind || "card";
         const task = (state.job?.tasks || []).find((t) => t.id === taskId);
         closeReworkMenu();
-        if (!task || task.status !== "done") { toast("bad", "这张还没出图，等成品出来再改"); return; }
+        if (!task) return;
+        // 基准图（审核条）那套：框选改 / 直接说 / 重新生成
+        if (menuKind === "master") {
+          if (kind === "annotate") {
+            openAnnotator({
+              taskId, jobId: state.jobId, task, masterTaskId: taskId, mode: "master",
+              url: task.preview || task.thumb || task.thumb_small || "",
+            });
+          } else if (kind === "chat") {
+            talkMaster(taskId);
+          } else if (kind === "regen") {
+            regenerateTask(taskId);
+          }
+          return;
+        }
+        if (task.status !== "done") { toast("bad", "这张还没出图，等成品出来再改"); return; }
         if (kind === "regen") retrySingle(taskId);
         else if (kind === "chat") openHarness("rework", [taskId]);
         else if (kind === "annotate") {
@@ -3737,7 +3788,9 @@
         }
         return;
       }
-      if (!event.target.closest("#reworkMenu") && !event.target.closest("[data-rework-menu]")) {
+      if (!event.target.closest("#reworkMenu")
+        && !event.target.closest("[data-rework-menu]")
+        && !event.target.closest("[data-review-menu]")) {
         closeReworkMenu();
       }
     });

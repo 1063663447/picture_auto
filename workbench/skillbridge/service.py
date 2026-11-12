@@ -2737,6 +2737,71 @@ class Workbench:
         job.save()
         return job.as_dict(with_tasks=True, with_log=True)
 
+    def regenerate(self, job_id: str, task_ids: list[str]) -> dict:
+        """重新生成指定的成品/基准图（9.6.34）：清掉旧结果放回队列，按当前提示词再跑一次。
+
+        基准图也能重画：审核期「这张不行，重画一张」就走这里。
+        """
+        job = self.get_job(job_id)
+        wanted = [str(t) for t in (task_ids or []) if t]
+        if not wanted:
+            raise WorkbenchError("请先选中要重新生成的成品")
+        targets = [t for t in job.tasks if t.id in wanted and not t.hidden]
+        if not targets:
+            raise WorkbenchError("选中的成品不在这个任务里")
+        for task in targets:
+            task.out = None
+            task.bytes = 0
+            task.status = "pending"
+            task.approved = False
+            task.adopted_from = ""
+            task.review_note = ""
+            task.error = None
+            task.error_kind = ""
+            task.finished_at = None
+            task.started_at = None
+            task.paused = False
+            task.paused_from = ""
+            task.paused_by = ""
+        job.cancel_requested = False
+        job.error = None
+        job.zip_rel = None
+        job.params["awaiting_review"] = False
+        job.add_log(
+            "重新生成：" + "、".join(t.id for t in targets) + "（旧成品已清掉，按当前提示词重画）",
+            level="warn",
+        )
+        live = self._tasks.get(job_id)
+        if live is not None and not live.done():
+            runner = self._runners.get(job_id)
+            if runner is not None and hasattr(runner, "reschedule"):
+                runner.reschedule([t.id for t in targets])
+                job.status = "running"
+                job.stage = "重新生成中（已排进当前这一轮）"
+            else:
+                job.stage = "已排入队列，这一轮结束后重画"
+        else:
+            job.status = "running"
+            job.stage = "重新生成中"
+            try:
+                runner = self._runner_for(job)
+                task = asyncio.create_task(runner.run(), name=f"job-{job_id}-regen")
+                self._tasks[job_id] = task
+                self._runners[job_id] = runner
+                task.add_done_callback(
+                    lambda finished, jid=job_id: (
+                        self._record_after(jid, finished), self._forget(jid, finished)
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                job.status = "partial"
+                job.error = str(exc)
+                job.add_log(f"重新生成启动失败：{exc}", level="error")
+                job.save()
+                raise WorkbenchError(f"重新生成启动失败：{exc}") from exc
+        job.save()
+        return job.as_dict(with_tasks=True, with_log=True)
+
     def _settle_if_only_paused(self, job: Job) -> None:
         """剩下的活全被暂停时把任务收尾，别让界面一直转圈等一个永远不动的队列。"""
         live = [t for t in job.tasks if t.status in {"pending", "queued", "running"}]
