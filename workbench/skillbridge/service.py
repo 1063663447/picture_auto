@@ -1367,13 +1367,21 @@ class Workbench:
         pattern_mode: str = "",
         subject: str = "",
         annotation_path: str = "",
+        annotation_id: str = "",
     ) -> Job:
         """以选中的成品为参考图返工（改图）。
 
         ``annotation_path``：框选标注图的绝对路径；会复制进新任务目录并记到参数里，
         由 runner 作为「改动区域的地图」随请求发出。
+        ``annotation_id``：标注图在源任务里的相对 id（前端上传后拿到的），这里换算成绝对路径。
+        成品卡上的「框选改图」走这条：不需要经过对话，直接带标注图建一条改图任务。
         """
         source_job = self.get_job(source_job_id)
+        if annotation_id and not annotation_path:
+            annotated = self._annotation_path(source_job, annotation_id)
+            if annotated is None:
+                raise WorkbenchError("标注图找不到或路径不安全")
+            annotation_path = str(annotated)
         instruction = " ".join((instruction or "").split())
         if not instruction:
             raise WorkbenchError("请填写本次改图需求")

@@ -1370,6 +1370,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         prompt_override: str = Form(""),
         pattern_mode: str = Form(""),
         subject: str = Form(""),
+        annotation_id: str = Form(""),
         start: bool = Form(True),
     ):
         bench = wb(request)
@@ -1388,6 +1389,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             account=current_account(request),
             pattern_mode=pattern_mode,
             subject=subject,
+            annotation_id=annotation_id,
         )
         if start:
             bench.start(job.id)

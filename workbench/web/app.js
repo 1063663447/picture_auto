@@ -1751,7 +1751,7 @@
   /* ------------------------------------------------ 9.6.6 框选标注（改图对齐） -- */
   // 客户要求：点要改的基准图 → 大图 → 画框标出有歧义的部分、每个框写要改的效果/问题
   // → 交给 harness 分析并改提示词（标注图也随改图发给生图接口，提高命中率）。
-  const anno = { taskId: "", jobId: "", url: "", boxes: [], image: null, dragging: null };
+  const anno = { taskId: "", jobId: "", url: "", boxes: [], image: null, dragging: null, mode: "master" };
   let annoReady = false;
 
   function annoCount() { return anno.boxes.length; }
@@ -1806,11 +1806,13 @@
       labelText = ref.label || "";
       round = Number(ref.round) || 1;
       masterTaskId = ref.masterTaskId || "";
+      anno.mode = ref.mode === "rework" ? "rework" : "master";
     } else {
       task = (state.job?.tasks || []).find((t) => t.id === ref);
       if (!task) { toast("bad", "找不到这张图"); return; }
       url = task.preview || task.thumb || task.thumb_small || "";
       masterTaskId = task.id;
+      anno.mode = "master";
     }
     if (!url) { toast("bad", "这张图还没有可框选的大图"); return; }
     anno.taskId = task?.id || "";
@@ -1830,6 +1832,13 @@
     if (img) {
       img.onload = () => { anno.image = img; renderAnnoLayer(); };
       img.src = anno.url;
+    }
+    // 成品卡那条路不经过对话：按钮别再说「交给 AI」，免得以为还要再说一句
+    const submit = $("annotateSubmit");
+    if (submit) submit.textContent = anno.mode === "rework" ? "开始改图" : "交给 AI 改";
+    const hint = $("annotateHint");
+    if (hint && anno.mode === "rework") {
+      hint.textContent = "按住鼠标在图上拖，框出要改的地方（可画多个）；框外保持不动";
     }
     renderAnnoLayer();
     const dialog = $("annotateDialog");
@@ -1948,8 +1957,64 @@
     return `按我框选的位置改「${which}」：${summary}。框外不要动，标注框线不要画进成品。`;
   }
 
-  async function submitAnnotation(button) {
-    if (!anno.boxes.length) { toast("bad", "先画一个框再提交"); return; }
+  /* ------------------------------------------- 9.6.25 成品卡的「改图」三项 -- */
+  // 出好的图要改，三条路各有用处：
+  //   直接重新生成 = 同样的提示词再跑一次（不满意但懒得说改哪儿）
+  //   对话改图     = 和 AI 说一句（它会整理成提示词，走一条新的改图任务）
+  //   框选改图     = 在图上框出要改的地方，框外不动（带标注图，最省话）
+  // 菜单用 fixed 定位挂在 body 上：卡片本身 overflow:hidden，直接放在卡片里会被裁掉。
+  function closeReworkMenu() {
+    document.getElementById("reworkMenu")?.remove();
+  }
+
+  function openReworkMenu(anchor, taskId) {
+    closeReworkMenu();
+    const task = (state.job?.tasks || []).find((t) => t.id === taskId);
+    if (!task) return;
+    if (task.status !== "done") { toast("bad", "这张还没出图，等成品出来再改"); return; }
+    const items = [
+      ["regen", "直接重新生成", "同样的提示词再跑一次"],
+      ["chat", "对话改图", "跟 AI 说改哪儿，它整理成提示词"],
+      ["annotate", "框选改图", "在图上框出来，框外保持不动"],
+    ];
+    const menu = document.createElement("div");
+    menu.id = "reworkMenu";
+    menu.className = "rework-pop";
+    menu.setAttribute("role", "menu");
+    menu.dataset.task = taskId;
+    menu.innerHTML = items
+      .map(([key, label, hint]) => `<button type="button" role="menuitem" data-rework-act="${key}">
+          <b>${label}</b><small>${hint}</small></button>`)
+      .join("");
+    document.body.appendChild(menu);
+    const rect = anchor.getBoundingClientRect();
+    const width = menu.offsetWidth || 210;
+    const left = Math.max(10, Math.min(rect.right - width, window.innerWidth - width - 10));
+    let top = rect.top - menu.offsetHeight - 8;
+    if (top < 10) top = rect.bottom + 8;      // 上面放不下就往下弹
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  // 框选改图（成品卡这条路）：不经过对话，直接把标注图 + 框位要求提交成一条改图任务
+  async function submitCardRework({ taskId, jobId, annotationId, summary, task }) {
+    const form = new FormData();
+    form.append("task_ids", taskId);
+    form.append("instruction", annotationInstruction(task, summary));
+    if (annotationId) form.append("annotation_id", annotationId);
+    form.append("start", "true");
+    try {
+      const res = await api(`/api/jobs/${jobId}/rework`, { method: "POST", body: form });
+      if (!res?.ok || !res?.job?.id) throw new Error(res?.error || "服务端没有返回改图任务");
+      toast("ok", "已按框改这张（新任务），出图后单独下载");
+      watchJob(res.job.id);
+      loadHistory();
+    } catch (err) {
+      toast("bad", `框选改图没提交成功：${err.message}`);
+    }
+  }
+
+  async function submitAnnotation(button) {    if (!anno.boxes.length) { toast("bad", "先画一个框再提交"); return; }
     const empty = anno.boxes.filter((box) => !(box.note || "").trim());
     if (empty.length) {
       toast("bad", `框${empty.map((b) => b.n).join("、")} 还没写要改什么`);
@@ -1979,6 +2044,11 @@
       const summary = annotationText();
       const boxes = anno.boxes.map((box) => ({ ...box }));
       closeAnnotator();
+      // 成品卡那条路：不走对话、不进审核条，直接建改图任务并跳过去看进度
+      if (anno.mode === "rework") {
+        await submitCardRework({ taskId, jobId, annotationId, summary, task });
+        return;
+      }
       // 立刻回到审核条，并把这张标成「AI 正在读框选…」（保留当前显示的是第几轮）
       setRework(masterTaskId, {
         stage: "thinking", jobId: "", error: "", progress: "",
@@ -2282,7 +2352,8 @@
       </div>
       <div class="acts">
         <a class="btn btn-ghost btn-sm" data-dl>${icon("i-download", 13)}下载</a>
-        <button class="btn btn-ghost btn-sm" data-rework="${esc(task.id)}">${icon("i-chat", 13)}改图</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-rework-menu="${esc(task.id)}"
+                title="改图：直接重新生成 / 对话改图 / 框选改图">${icon("i-chat", 13)}改图 ⌄</button>
       </div>`;
     return {
       el,
@@ -2293,7 +2364,7 @@
       state: el.querySelector(".state"),
       input: el.querySelector("input[data-task]"),
       dl: el.querySelector("[data-dl]"),
-      rework: el.querySelector("[data-rework]"),
+      rework: el.querySelector("[data-rework-menu]"),
       acts: el.querySelector(".acts"),
       file: el.querySelector(".meta .file"),
       err: null,
@@ -3430,10 +3501,10 @@
     });
     grid.addEventListener("click", (event) => {
       if(state.jobLoading){event.preventDefault();return;}
-      const rework = event.target.closest("[data-rework]");
-      if (rework) {
+      const menuBtn = event.target.closest("[data-rework-menu]");
+      if (menuBtn) {
         event.preventDefault();
-        if (!rework.disabled) openHarness("rework", [rework.dataset.rework]);
+        if (!menuBtn.disabled) openReworkMenu(menuBtn, menuBtn.dataset.reworkMenu);
         return;
       }
       const retry = event.target.closest("[data-retry]");
@@ -3453,12 +3524,42 @@
       }
     });
 
+    // 「改图」三项菜单（9.6.25）：菜单挂在 body 上，所以在这里统一收口
+    document.addEventListener("click", (event) => {
+      const menu = document.getElementById("reworkMenu");
+      if (!menu) return;
+      const act = event.target.closest("[data-rework-act]");
+      if (act) {
+        event.preventDefault();
+        const taskId = menu.dataset.task;
+        const kind = act.dataset.reworkAct;
+        const task = (state.job?.tasks || []).find((t) => t.id === taskId);
+        closeReworkMenu();
+        if (!task || task.status !== "done") { toast("bad", "这张还没出图，等成品出来再改"); return; }
+        if (kind === "regen") retrySingle(taskId);
+        else if (kind === "chat") openHarness("rework", [taskId]);
+        else if (kind === "annotate") {
+          openAnnotator({
+            taskId, jobId: state.jobId, task, mode: "rework",
+            url: task.preview || task.thumb || task.thumb_small || "",
+          });
+        }
+        return;
+      }
+      if (!event.target.closest("#reworkMenu") && !event.target.closest("[data-rework-menu]")) {
+        closeReworkMenu();
+      }
+    });
+    window.addEventListener("resize", closeReworkMenu);
+    $("galleryScroll")?.addEventListener("scroll", closeReworkMenu, { passive: true });
+
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (!$("harnessDrawer").hidden) closeHarness();
       if (!$("promptDrawer").hidden) closePrompt();
       if (!$("feishuDrawer").hidden) closeFeishu();
       if (!$("accountsDrawer").hidden) hideAccounts();
+      closeReworkMenu();
     });
 
     bindAurora();
