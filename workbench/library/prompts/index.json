@@ -32,9 +32,9 @@
     {
       "slug": "06-hoodie",
       "file": "06-hoodie.json",
-      "notes": "连帽卫衣：帽子+帽绳（绳与衣身同色系）、袋鼠兜、罗纹袖口下摆",
-      "positive_chars": 2826,
-      "negative_chars": 693
+      "notes": "连帽卫衣：帽子+帽绳（整根跟衣身同色，两个绳头是银色金属头）、袋鼠兜、罗纹袖口下摆",
+      "positive_chars": 3030,
+      "negative_chars": 1011
     },
     {
       "slug": "07-washed-tee",
@@ -186,9 +186,9 @@
     {
       "slug": "hoodie",
       "file": "hoodie.json",
-      "notes": "",
-      "positive_chars": 2784,
-      "negative_chars": 693
+      "notes": "连帽卫衣（skill 自带版）：帽绳整根跟衣身同色，绳头银色金属头",
+      "positive_chars": 2988,
+      "negative_chars": 1011
     },
     {
       "slug": "short-sleeve",

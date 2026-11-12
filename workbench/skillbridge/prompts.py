@@ -1432,20 +1432,22 @@ def garment_forbidden(garment: GarmentType) -> str:
     return ", ".join(items) if items else "no change to the garment type"
 
 
-#: **帽绳色系约束**（只对连帽款注入，放在提示词靠前位置）。
+#: **帽绳规格**（只对连帽款注入，放在提示词靠前位置）。
 #: 客户原话「连帽卫衣的带子容易串」= **颜色串色**：黑卫衣生成出白帽绳。
-#: 只写「同色系」还不够（模型会把源图的白绳当设计保留），所以把「源图那根绳是旧色、必须换掉」
-#: 直接写死，并给出每种色的具体对照。
+#: 9.6.26 又补了一条更硬的规格：绳子整根跟衣身同色，绳头是**银色金属头**（客户给的对照片）——
+#: 之前只写「同色系」，模型会把源图那根绳的材质/毛边/乱色一起搬过来，两根还互不一致。
 DRAWSTRING_CLAUSE = (
-    "HOOD CORD COLOUR — the two hood cords must be the SAME colour as THIS hoodie's fabric: a black "
-    "or charcoal hoodie gets black / charcoal cords, a white or off-white hoodie gets off-white "
-    "cords, a navy hoodie gets navy cords. The cords are cut from the garment's own fabric, so they "
-    "share its hue family, its tonal bracket, its shading and its shadow; only the cord texture and "
-    "the cord ends stay as the photo shows. The cord colour in the source photo belongs to the OLD "
-    "colourway of that photo and must be REPLACED by this colourway's colour — never copied. If the "
-    "source shows white or contrast cords on a dark hoodie, those white cords must become the dark "
-    "fabric colour here. Same for every colourway in this batch: cords follow their own garment, not "
-    "the source and not another colourway."
+    "HOOD DRAWSTRING — fixed design, identical on every colourway. (1) COLOUR: the whole length of "
+    "both cords is the SAME colour as THIS hoodie's fabric — white hoodie gets white cords, black "
+    "gets black, charcoal gets charcoal, grey gets grey, navy gets navy, sage gets sage; exactly that "
+    "colour, not a tone lighter or darker. The cords are made from the garment's own fabric. "
+    "(2) TIPS: each cord ends in a SHORT SILVER METAL AGLET — a small polished silver metal end cap, "
+    "exactly one per cord, both tips silver and the same size. (3) TWINS: the two cords are identical "
+    "twins — same colour, same thickness, same length, same silver tip — hanging symmetrically out of "
+    "the two eyelets and starting at the same height. The cords in the source photo belong to the OLD "
+    "colourway of that photo: replace their colour with this colourway's fabric colour, never copy "
+    "it. Never one cord lighter than the other; never a frayed, tasselled, knotted or tufted end; "
+    "never stone, marble, burlap or thick-rope texture."
 )
 
 
@@ -1462,15 +1464,23 @@ def drawstring_clause(garment: GarmentType | None) -> str:
     return DRAWSTRING_CLAUSE if is_hooded(garment) else ""
 
 
+#: 帽绳的负面清单（9.6.26：绳身跟衣身同色、绳头银色的反面写清楚，单列成常量方便复用/校验）
+DRAWSTRING_NEGATIVE = (
+    "Do not colour the cord body anything other than this garment's own fabric colour; do not "
+    "keep the source photo's cord colour (no white cords on a dark hoodie, no charcoal cords on a "
+    "light hoodie); do not borrow another colourway's cord colour; do not make the two cords "
+    "differ in colour, thickness, length or tip; do not draw frayed, tasselled, knotted or tufted "
+    "cord ends; do not texture the cords like stone, marble, burlap or thick rope; do not use "
+    "gold, brass, black or gunmetal tips — the tips are plain polished SILVER metal; do not make "
+    "the whole cord metallic (only the two bottom tips are silver); do not remove the cords, the "
+    "eyelets or the hood."
+)
+
+
 def drawstring_negative(garment: GarmentType | None) -> str:
     if not is_hooded(garment):
         return ""
-    return (
-        "Do not give the hood cords a colour from outside the garment's colour family, do not put "
-        "white or silver cords on a dark hoodie, do not put charcoal cords on a light hoodie, do not "
-        "borrow the cord colour of another colourway, do not make the cords glossy or metallic, and "
-        "do not leave the cords uncoloured while the garment is recoloured."
-    )
+    return DRAWSTRING_NEGATIVE
 
 
 #: ---------------------------------------------------------------------------
