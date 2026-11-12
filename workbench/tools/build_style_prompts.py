@@ -41,7 +41,7 @@ NOTES = {
     "07-washed-tee": "水洗T恤：oversize 落肩、水洗做旧面料、平口",
     "08-tank-top": "背心：宽肩带高袖笼、深圆领、无袖、衣长偏短",
     "09-kids-cotton-tee": "童装纯棉短袖：儿童哑光纯棉、落肩（已被 21 童装索罗娜取代）",
-    "10-stretch-tee": "弹力短袖：紧身弹力针织、贴身、平口",
+    "10-stretch-tee": "弹力短袖：紧身弹力**罗纹针织**（整件竖条罗纹，每个颜色都要保住纹理）、平口、领口罗纹",
     "11-kids-dolman-tee": "童装牛角袖：插肩双色（身子白、袖子+领口才是这个色）",
     "12-curved-hem-tee": "弧形短袖：下摆呈弧形（中间低两侧高）、宽领口",
     "13-mens-tank": "男士背心：宽肩带、罗纹圆领、无袖宽松",
@@ -97,6 +97,20 @@ DETAIL = {
         "from the neckline down to the underarm on both sides — no straight shoulder seam, no set-in "
         "armhole. Do not flood the whole garment with the colourway colour and do not make it all "
         "white: keep the white body with coloured sleeves and neckband, with child proportions."
+    ),
+    "10-stretch-tee": (
+        "RIB-KNIT FABRIC TEXTURE — HIGHEST-PRIORITY MATERIAL RULE, it must hold on EVERY colourway. "
+        "This style is fine rib-knit jersey: the whole body and both sleeves show dense, fine vertical "
+        "ribs (a 1x1 / 2x1 rib-knit look), evenly pitched, running down the garment and curving over "
+        "the bust, the side seams and the sleeves. The ribs belong to the FABRIC, not to the colour: "
+        "after the recolour they must still be clearly visible, in the same pitch, density, depth and "
+        "direction as IMAGE 2 — on the master image AND on every derived colourway of this batch. The "
+        "new colour is applied TO the ribbed knit, so the vertical rib lines stay readable in the new "
+        "shade, including in shadow and in the highlights. Never flatten the ribs into smooth plain "
+        "single-jersey, never render the new colour as a flat matte surface, never let the rib lines "
+        "disappear or blur out, and never change the rib pitch. Hems stay PLAIN folded self-fabric "
+        "(the hem is plain, the FABRIC is ribbed — do not turn the hems or the sleeve openings into "
+        "rib-knit bands); the neckband is ribbed in the same pitch."
     ),
     "12-curved-hem-tee": (
         "CURVED HEM — the bottom hem is a crescent, not a level line: it dips lowest at the centre "

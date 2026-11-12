@@ -90,8 +90,9 @@ STYLE_META: dict[str, dict] = {
     "10": {
         "slug": "10-stretch-tee",
         "name": "10 弹力短袖",
-        "phrase": "a stretch short-sleeve t-shirt (polyester-spandex jersey, fitted body, "
-                  "short sleeves, ribbed neckband)",
+        "phrase": "a stretch short-sleeve t-shirt in fine rib-knit jersey (dense vertical ribs "
+                  "across the body and both sleeves, fitted body, short sleeves, ribbed neckband, "
+                  "plain folded sleeve and body hems)",
         "aliases": ["10 弹力短袖", "弹力短袖", "10#TLDX", "stretch t-shirt", "stretch tee"],
     },
     "21": {

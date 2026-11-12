@@ -60,9 +60,9 @@
     {
       "slug": "10-stretch-tee",
       "file": "10-stretch-tee.json",
-      "notes": "弹力短袖：紧身弹力针织、贴身、平口",
-      "positive_chars": 2862,
-      "negative_chars": 522
+      "notes": "弹力短袖：紧身弹力**罗纹针织**（整件竖条罗纹，每个颜色都要保住纹理）、平口（袖口下摆是无罗纹带的平折边）、领口罗纹",
+      "positive_chars": 4067,
+      "negative_chars": 845
     },
     {
       "slug": "11-kids-dolman-tee",
