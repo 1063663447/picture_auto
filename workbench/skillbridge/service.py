@@ -2533,14 +2533,38 @@ class Workbench:
         return job.as_dict(with_tasks=False, with_log=False)
 
     def cancel(self, job_id: str) -> dict:
+        """取消任务：跑着的就中断，停在「等确认基准图」的就直接把整批收尾。
+
+        9.6.28：以前这里只置 `cancel_requested` 并 cancel 掉 runner 的 asyncio 任务。
+        可两段式任务停在 `review` 等人工确认时**根本没有 runner 在跑**，于是点了取消什么都不变，
+        界面永远「等你点确定」，整批把后面的活全堵住。现在没人跑就直接收尾成 canceled
+        （已出的成品保留，没开始的颜色标 cancelled）。
+        """
         job = self.get_job(job_id)
         job.cancel_requested = True
         task = self._tasks.get(job_id)
         if task and not task.done():
             task.cancel()
-        job.add_log("收到取消请求", level="warn")
+            job.add_log("收到取消请求（正在生成的这张会中断）", level="warn")
+            job.save()
+            # 带 tasks 返回：前端可以直接整页重画（不带任务的 dict 会把画廊清空）
+            return job.as_dict(with_tasks=True, with_log=True)
+        waiting = 0
+        for item in job.tasks:
+            if item.status in {"pending", "queued", "running"}:
+                item.status = "canceled"
+                item.error = item.error or "已取消"
+                waiting += 1
+        if str(job.status) not in {"done", "partial", "failed", "canceled"}:
+            job.status = "canceled"
+            job.stage = "已取消" + (f"：{waiting} 张没开始的颜色已跳过" if waiting else "")
+            job.finished_at = time.time()
+        job.add_log(
+            f"任务已取消" + (f"，跳过 {waiting} 张没开始的成品" if waiting else ""),
+            level="warn",
+        )
         job.save()
-        return job.as_dict(with_tasks=False, with_log=False)
+        return job.as_dict(with_tasks=True, with_log=True)
 
     def delete(self, job_id: str) -> None:
         job = self.get_job(job_id)

@@ -1176,6 +1176,7 @@
     if (reviewBound) return;
     reviewBound = true;
     $("approveMasterBtn")?.addEventListener("click", (event) => approveMaster(event.currentTarget));
+    $("reviewCancelBtn")?.addEventListener("click", (event) => cancelReviewBatch(event.currentTarget));
     // 9.6.7 卡片用事件委托：轮询重建 DOM 时不会把点击监听一起丢掉
     //（以前那一版的按钮在「重建瞬间」点下去是没反应的）
     $("reviewThumbs")?.addEventListener("click", (event) => {
@@ -1404,7 +1405,11 @@
     hydrateReworks(job);
     const info = reviewInfo(job);
     const masters = (job?.tasks || []).filter((t) => t.master && t.thumb_small);
-    const show = Boolean(info && (info.awaiting || info.pending_ids?.length || masters.length));
+    // 取消/失败/完成的单子不该再顶着审核条（否则会有人去点「确定」）
+    const show = Boolean(
+      info && !TERMINAL.includes(job.status)
+      && (info.awaiting || info.pending_ids?.length || masters.length)
+    );
     bar.hidden = !show;
     if (!show) return;
     const pending = masters.filter((t) => !t.approved);
@@ -2568,9 +2573,62 @@
     if(state.jobLoading||!state.jobId||state.job?.id!==state.jobId)return;
     const jobId=state.jobId;
     await withLoading($("cancelBtn"), async () => {
-      try { await api(`/api/jobs/${jobId}/cancel`, { method: "POST" }); }
+      try {
+        const res = await api(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+        if (res?.job && state.jobId === jobId) renderJob(res.job);
+        toast("ok", "已取消：已经出的成品还在");
+        watchJob(jobId);
+      }
       catch (err) { toast("bad", err.message); }
     }, "取消中…");
+  }
+
+  /* 9.6.28 审核期卡住时的出路：两段式任务停在「等你点确定」不会自己往下走，
+     以前只能去工具栏点取消，而且那会儿后端根本没在跑、点了也不收尾。
+     两步确认：第一下按钮变成「确认取消这批」，再点才真取消；点别处自动复原（不设超时，
+     免得手慢一点就白点）。 */
+  let cancelArmed = false;
+  function disarmCancel(button) {
+    cancelArmed = false;
+    if (button) {
+      button.textContent = "取消这批";
+      delete button.dataset.armed;
+    }
+  }
+  async function cancelReviewBatch(button) {
+    const jobId = state.jobId;
+    if (!jobId || state.job?.id !== jobId) return;
+    if (!cancelArmed) {
+      cancelArmed = true;
+      if (button) {
+        button.textContent = "确认取消这批";
+        button.dataset.armed = "1";
+      }
+      // 下一次点到别处就复原（setTimeout 是为了跳过当前这一下）
+      setTimeout(() => {
+        document.addEventListener("click", function once(event) {
+          document.removeEventListener("click", once);
+          if (!event.target.closest("#reviewCancelBtn")) disarmCancel(button);
+        });
+      }, 0);
+      return;
+    }
+    cancelArmed = false;
+    await withLoading(button, async () => {
+      try {
+        const res = await api(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+        if (res?.job && state.jobId === jobId) renderJob(res.job);
+        toast("ok", "这批已取消：已出的成品还在，没开始的颜色不再生成");
+        watchJob(jobId);
+        loadHistory();
+      } catch (err) {
+        toast("bad", `取消失败：${err.message}`);
+      }
+    }, "取消中…");
+    if (button) {
+      button.textContent = "取消这批";
+      delete button.dataset.armed;
+    }
   }
   async function retryTasks(button, form) {
     const blocked=submissionBlockedReason();if(blocked){toast("bad",blocked);return;}
