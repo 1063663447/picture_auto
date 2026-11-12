@@ -193,6 +193,9 @@ class JobRunner:
         self.model = str(params.get("model") or "") or None
         self._aspect_cache: dict[Path, float] = {}
         self._tasks_running: set[asyncio.Task] = set()
+        #: 9.6.32 边跑边确认：审核期新确认的基准图，它的派生色立刻排进这一轮
+        self._extra: list[asyncio.Task] = []
+        self._kicked: set[str] = set()
         self._last_save = 0.0
         # 打包失败但图片都在时不再让整批变 failed（成品还能单张下载/批量导出）
         self.package_error = ""
@@ -484,6 +487,8 @@ class JobRunner:
                 await self._run_two_phase()
             else:
                 await self._run_single_pass()
+            # 这一轮里被「边跑边确认」临时排进来的派生色，收尾前等它们跑完
+            await self._drain_extra()
 
             if self.job.cancel_requested:
                 self._mark_unfinished_canceled()
@@ -576,6 +581,8 @@ class JobRunner:
         # ① 先把基准色出完（同款各色共用这一版版型）
         if masters:
             await self._gather(masters, self._execute_color_task)
+        # 跑基准的这段时间里运营可能已经确认了某一张：它的派生色已经在跑了，等它们收尾
+        await self._drain_extra()
         if self.review_gate:
             # 基准图审核闸门：这一趟只出基准，停下来等运营确认（不打包、不派生）
             stuck = [t for t in self.job.tasks if t.master and not t.out]
@@ -835,11 +842,50 @@ class JobRunner:
         tasks = [
             asyncio.create_task(guarded(item, index)) for index, item in enumerate(items)
         ]
-        self._tasks_running = set(tasks)
+        # 可能有多批同时在跑（边跑边确认会再排一批）：这里做并集，别把别人的任务丢掉
+        previous = self._tasks_running
+        self._tasks_running = previous | set(tasks)
         try:
             await asyncio.gather(*tasks, return_exceptions=True)
         finally:
-            self._tasks_running = set()
+            self._tasks_running = previous
+
+    # ---------------------------------------------- 边跑边确认（9.6.32） --
+    def kick(self) -> None:
+        """审核期又确认了一张基准图：不用等这一轮结束，把它的派生色立刻排进去。
+
+        并发仍然走 `self.sem` 和飞书闸门（`_guarded_call` 里排队），不会绕过限流。
+        """
+        if not (self.review_gate or self.review_mode):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._extra.append(loop.create_task(self._kick_approved()))
+
+    async def _kick_approved(self) -> None:
+        approved = {t.id for t in self.job.tasks if t.master and t.approved}
+        runnable = [
+            t for t in self.job.tasks
+            if t.master_task in approved
+            and t.status in {"pending", "queued"}
+            and not t.out
+            and not t.paused
+            and t.id not in self._kicked
+        ]
+        if not runnable:
+            return
+        self._kicked.update(t.id for t in runnable)
+        self.job.add_log(
+            f"基准刚确认：先把这些颜色排进本轮（{len(runnable)} 张，不用等整轮结束）"
+        )
+        await self._gather(runnable, self._execute_shape_task)
+
+    async def _drain_extra(self) -> None:
+        while self._extra:
+            pending, self._extra = self._extra, []
+            await asyncio.gather(*pending, return_exceptions=True)
 
     # -------------------------------------------------------------- one call  #
     def _resolve_size(self, source: Path) -> str:

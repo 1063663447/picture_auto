@@ -320,8 +320,8 @@ class Job:
                 "derived_done": sum(1 for t in self.tasks if t.master_task and t.out),
                 "rounds": self.rework_rounds(),
                 "can_approve": (
-                    self.status == "review"
-                    and any(t.out and not t.paused for t in masters)
+                    # 9.6.32 不再要求整批停在 review：还有别的基准在生成时也该能确认先出来的那张
+                    any(t.out and not t.approved and not t.paused for t in masters)
                     and any(t.master_task for t in self.tasks)
                 ),
             }

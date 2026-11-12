@@ -81,6 +81,8 @@ class Workbench:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.jobs: dict[str, Job] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        #: 9.6.32 每条在跑的任务对应的 runner 实例（审核期「边跑边确认」要用它把派生色插进本轮）
+        self._runners: dict[str, object] = {}
         self._distill: dict[str, asyncio.Task] = {}
         self._provider_sems: dict[str, asyncio.Semaphore] = {}
         self._model_cache: dict[str, tuple[float, dict]] = {}
@@ -1792,6 +1794,7 @@ class Workbench:
         runner = self._runner_for(job)
         task = asyncio.create_task(runner.run(), name=f"job-{job_id}")
         self._tasks[job_id] = task
+        self._runners[job_id] = runner
         task.add_done_callback(
             lambda finished, jid=job_id: (self._record_after(jid, finished), self._forget(jid, finished))
         )
@@ -1986,6 +1989,7 @@ class Workbench:
     def _forget(self, job_id: str, task: asyncio.Task) -> None:
         if self._tasks.get(job_id) is task:
             self._tasks.pop(job_id, None)
+            self._runners.pop(job_id, None)
 
     # ----------------------------------------------- 框选标注（改动区域地图） --
     def _annotation_dir(self, job: Job) -> Path:
@@ -2110,8 +2114,11 @@ class Workbench:
         `adopt`：{基准任务 id: "任务id::task_id"}，用于「对话框里改完，采纳这次结果当基准」。
         """
         job = self.get_job(job_id)
-        if job_id in self._tasks and not self._tasks[job_id].done():
-            raise WorkbenchError("任务正在运行中，等这一轮结束再确认")
+        # 9.6.32 多张基准图时允许「边跑边确认」：以前这里硬拦「任务正在运行中，等这一轮结束再确认」，
+        # 一张确认完、另一张还在生成，就得干等整轮。现在确认立刻生效，刚确认这张的派生色
+        # 直接排进正在跑的那一轮（并发仍由 runner 的 sem + 飞书闸门控，不绕限流）。
+        running = self._tasks.get(job_id)
+        live = running if (running is not None and not running.done()) else None
         adopt = adopt or {}
         state = self.review_payload(job)
         if not adopt and not (state["awaiting"] or state["pending_ids"]):
@@ -2169,21 +2176,35 @@ class Workbench:
             + (f"；确认备注：{note}" if note else "")
         )
         job.save()
-        try:
-            runner = self._runner_for(job)
-            task = asyncio.create_task(runner.run(), name=f"job-{job_id}-derived")
-            self._tasks[job_id] = task
-            task.add_done_callback(
-                lambda finished, jid=job_id: (
-                    self._record_after(jid, finished), self._forget(jid, finished)
+        # 这一轮还在跑 → 让它在当前这一轮里直接补跑这张基准的派生色，不再另起任务
+        if live is not None:
+            runner = self._runners.get(job_id)
+            if runner is not None and hasattr(runner, "kick"):
+                try:
+                    runner.kick()
+                    job.stage = "基准已确认：这张的颜色已经排进本轮，不用等其它基准出图"
+                    job.add_log("边跑边确认：刚确认这张的派生色已排进本轮（并发仍受闸门限制）")
+                    job.save()
+                except Exception as exc:  # noqa: BLE001 - 插不进就等这轮结束再跑，别报错
+                    job.add_log(f"边跑边确认没排进去（{exc}），这轮结束后再跑", level="warn")
+                    job.save()
+        else:
+            try:
+                runner = self._runner_for(job)
+                task = asyncio.create_task(runner.run(), name=f"job-{job_id}-derived")
+                self._tasks[job_id] = task
+                self._runners[job_id] = runner
+                task.add_done_callback(
+                    lambda finished, jid=job_id: (
+                        self._record_after(jid, finished), self._forget(jid, finished)
+                    )
                 )
-            )
-        except Exception as exc:  # noqa: BLE001
-            job.status = "partial"
-            job.error = str(exc)
-            job.add_log(f"改色启动失败：{exc}", level="error")
-            job.save()
-            raise WorkbenchError(f"改色启动失败：{exc}") from exc
+            except Exception as exc:  # noqa: BLE001
+                job.status = "partial"
+                job.error = str(exc)
+                job.add_log(f"改色启动失败：{exc}", level="error")
+                job.save()
+                raise WorkbenchError(f"改色启动失败：{exc}") from exc
         # 静默沉淀：不等它、不弹窗。改色已经在跑，评估完写进款式规则与统计
         learned: list[dict] = []
         if self.defaults().get("auto_learn", True):
