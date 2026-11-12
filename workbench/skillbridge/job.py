@@ -231,6 +231,48 @@ class Job:
             return round(max(0.0, self.finished_at - self.created_at), 2)
         return None
 
+    def rework_rounds(self) -> list[dict]:
+        """把 `params.master_reviews` 的改图轮次摊平成前端可直接渲染的列表。
+
+        9.6.24：以前「第几轮、改好的那张图」只活在前端内存里，页面一刷新卡片就退回
+        「第 1 轮 · 待确认」——改图明明成了，用户看不到也点不了确定，整批就一直挂着。
+        现在服务端把每一轮记下来（reject_master 写入 + 返工任务收尾时回填），
+        这里按基准图给出**最新一轮**，前端拿它就能恢复卡片。
+        """
+        entries = (self.params or {}).get("master_reviews")
+        if not isinstance(entries, list):
+            return []
+        latest: dict[str, dict] = {}
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            rework_job = str(item.get("rework_job") or "")
+            targets = [str(t) for t in (item.get("master_ids") or []) if t]
+            if not rework_job or not targets:
+                continue
+            shot = str(item.get("task") or "")
+            round_no = int(item.get("round") or 1)
+            status = str(item.get("status") or ("done" if shot else "running"))
+            for task_id in targets:
+                prev = latest.get(task_id)
+                if prev is not None and round_no < prev["round"]:
+                    continue
+                latest[task_id] = {
+                    "task_id": task_id,
+                    # 前端说「第几轮」是**图**的轮次：第 1 轮就是最初那张基准图，
+                    # 第一次改图出来的是第 2 轮。服务端 `rework_round` 数的是「第几次改图」，
+                    # 所以这里 +1 对齐卡片上的数字。
+                    "round": round_no + 1,
+                    "rework_round": round_no,
+                    "job_id": rework_job,
+                    "status": status,
+                    "task": shot,
+                    "error": str(item.get("error") or ""),
+                    "thumb": f"/api/jobs/{rework_job}/thumb/{shot}?w=520" if shot else None,
+                    "preview": f"/api/jobs/{rework_job}/thumb/{shot}?w=1600" if shot else None,
+                }
+        return sorted(latest.values(), key=lambda r: (r["task_id"], r["round"]))
+
     def as_dict(
         self, *, with_tasks: bool = True, with_log: bool = True, with_prompts: bool = False
     ) -> dict:
@@ -266,6 +308,7 @@ class Job:
                 "approved_ids": [t.id for t in masters if t.approved],
                 "derived_total": sum(1 for t in self.tasks if t.master_task),
                 "derived_done": sum(1 for t in self.tasks if t.master_task and t.out),
+                "rounds": self.rework_rounds(),
                 "can_approve": (
                     self.status == "review"
                     and any(t.out for t in masters)

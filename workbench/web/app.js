@@ -1400,6 +1400,8 @@
     bindReviewActions();
     const bar = $("reviewBar");
     if (!bar) return;
+    // 刷新/重进任务时，用服务端记下的改图轮次把卡片状态补回来（9.6.24）
+    hydrateReworks(job);
     const info = reviewInfo(job);
     const masters = (job?.tasks || []).filter((t) => t.master && t.thumb_small);
     const show = Boolean(info && (info.awaiting || info.pending_ids?.length || masters.length));
@@ -1519,14 +1521,90 @@
     reworkTimers.clear();
   }
 
+  // 9.6.24 服务端记着每张基准图改到第几轮（job.review.rounds）。刷新页面后内存里的
+  // state.reworks 是空的，卡片就退回「第 1 轮 · 待确认」——改图明明成了，用户看不到
+  // 也没法点确定，整批就一直挂着。这里按服务端记录把卡片状态补回来。
+  let hydrateAt = 0;
+  function hydrateReworks(job) {
+    const rounds = (job && job.review && job.review.rounds) || [];
+    if (!rounds.length) return;
+    const now = Date.now();
+    if (now - hydrateAt < 1200) return;   // 主任务轮询 1.2s 一轮，别每帧都算
+    hydrateAt = now;
+    for (const round of rounds) {
+      const taskId = round.task_id;
+      if (!taskId || !round.job_id) continue;
+      const cur = reworkOf(taskId);
+      // 本地已经在跟同一条改图任务（提交中/生成中/已出图/已采纳）：以本地为准
+      if (cur && (cur.stage === "thinking" || cur.jobId === round.job_id)) continue;
+      // 本地盯的是另一条任务且还没跑完：别拿旧轮次盖掉它
+      if (cur && cur.stage === "running") continue;
+      // 这张已经确认过了：卡片自己会显示「已确认」，不用再补轮次
+      const masterTask = (job.tasks || []).find((t) => t.id === taskId);
+      if (masterTask && masterTask.approved) continue;
+      if (round.status === "done" && round.task) {
+        setRework(taskId, {
+          stage: "ready", jobId: round.job_id, progress: "", note: "", error: "",
+          round: Number(round.round) || 2,
+          shots: [{
+            id: round.task, jobId: round.job_id,
+            thumb: round.preview || round.thumb || "",
+            preview: round.preview || round.thumb || "",
+            thumb_small: round.thumb || "",
+          }],
+        }, { quiet: true });
+      } else if (round.status === "failed") {
+        setRework(taskId, {
+          stage: "failed", jobId: round.job_id, error: round.error || "改图没出图",
+        }, { quiet: true });
+      } else if (round.status === "running") {
+        setRework(taskId, { stage: "running", jobId: round.job_id, progress: "生成中" }, { quiet: true });
+        if (!reworkTimers.has(String(round.job_id))) watchReworkFor(round.job_id, [taskId]);
+      }
+    }
+  }
+
+  // 重新拉一次主任务（改图任务查不到时，用它把服务端记下的真实轮次捞回来）
+  async function refreshParentJob() {
+    const jobId = state.jobId;
+    if (!jobId) return;
+    try {
+      const data = await api(`/api/jobs/${jobId}`, { cache: "no-store" });
+      if (data && data.job && data.job.id === jobId) {
+        hydrateAt = 0;            // 强制让 hydrateReworks 这次一定跑
+        renderJob(data.job);
+      }
+    } catch (_) { /* 拉不到就交给调用方的失败分支 */ }
+  }
+
   // 盯一条改图任务：出图就分发给对应的基准图卡片，失败/中断就标出来
+  // 9.6.24 加了放弃条件：查不到任务（服务重启/被清）或太久不出图时，先回主任务捞
+  // 服务端记下的轮次，捞不到才标失败。以前这里 catch 完就无限重试，界面永远「生成中」。
   function watchReworkFor(jobId, taskIds, onSettled) {
     const ids = (taskIds || []).filter(Boolean);
     if (!jobId || !ids.length) return;
+    let startedAt = Date.now();
+    let misses = 0;
+    const settle = (ok) => { if (typeof onSettled === "function") onSettled(ok); };
+    // 放弃之前先回主任务捞一次服务端记下的轮次；真捞不到才标失败（要让用户看见）
+    const giveUp = async (why) => {
+      stopWatch(jobId);
+      await refreshParentJob();
+      const recovered = ids.some((taskId) => {
+        const entry = reworkOf(taskId);
+        return entry && (entry.stage === "ready" || entry.stage === "failed");
+      });
+      if (!recovered) {
+        ids.forEach((taskId) => setRework(taskId, { stage: "failed", jobId, error: why }));
+        toast("bad", why);
+      }
+      settle(recovered);
+    };
     const tick = async () => {
       reworkTimers.delete(jobId);
       try {
         const data = await api(`/api/jobs/${jobId}`, { cache: "no-store" });
+        misses = 0;
         const job = data.job || {};
         const shots = (job.tasks || []).filter((t) => t.out && (t.thumb_small || t.preview));
         if (shots.length) {
@@ -1541,14 +1619,14 @@
             });
           });
           if ($("harnessDrawer") && !$("harnessDrawer").hidden) chatReworkCard(shots, jobId, ids);
-          if (typeof onSettled === "function") onSettled(true);
+          settle(true);
           toast("ok", "第 2 轮基准图出来了，看一眼这份改得对不对");
           return;
         }
         if (TERMINAL.includes(job.status)) {
           const why = job.error || job.stage || "改图没出图";
           ids.forEach((taskId) => setRework(taskId, { stage: "failed", jobId, error: why }));
-          if (typeof onSettled === "function") onSettled(false);
+          settle(false);
           return;
         }
         ids.forEach((taskId) => {
@@ -1556,7 +1634,25 @@
             setRework(taskId, { progress: job.stage || "" }, { quiet: true });
           }
         });
-      } catch (_) { /* 网络抖一下就下一轮再试 */ }
+      } catch (_) {
+        // 网络抖一下可以忍；一直查不到（服务重启/任务被清）就不能无限转圈了
+        misses += 1;
+        if (misses >= 4) {
+          await giveUp("改图任务查不到了（服务可能重启过），已回主任务重新读取进度");
+          return;
+        }
+      }
+      if (Date.now() - startedAt > 12 * 60 * 1000) {
+        await refreshParentJob();
+        const still = ids.map((taskId) => reworkOf(taskId)).find((entry) => entry && entry.stage === "running");
+        if (still) {
+          startedAt = Date.now();   // 服务端还在跑，再给 12 分钟
+          misses = 0;
+        } else {
+          await giveUp("改图超过 12 分钟还没出图，可以再框一次或换个接口试试");
+          return;
+        }
+      }
       reworkTimers.set(jobId, setTimeout(tick, 2200));
     };
     tick();

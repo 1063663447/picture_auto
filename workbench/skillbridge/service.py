@@ -514,7 +514,37 @@ class Workbench:
         job = self.jobs.get(job_id)
         if job is None:
             raise WorkbenchError(f"任务不存在：{job_id}")
+        self._reconcile_rounds(job)
         return job
+
+    def _reconcile_rounds(self, job: Job) -> None:
+        """历史兜底：改图任务早就跑完了，但主任务那一轮还记着「进行中」。
+
+        收尾回填（`_update_master_rounds`）只在任务刚跑完那一刻执行；9.6.24 之前挂住的
+        老单子、或者收尾时正好在重启，就会一直是「修改中」。这里每次读任务时顺手对齐一次，
+        代价只有一次字典查找，所以老单子升级后也能自己好。
+        """
+        reviews = (job.params or {}).get("master_reviews")
+        if not isinstance(reviews, list) or not reviews:
+            return
+        stale: set[str] = set()
+        for item in reviews:
+            if not isinstance(item, dict):
+                continue
+            rework_job = str(item.get("rework_job") or "")
+            if not rework_job or rework_job == job.id:
+                continue
+            if str(item.get("status") or "") in {"done", "failed"} and item.get("task"):
+                continue
+            other = self.jobs.get(rework_job)
+            if other is None or str(other.status) not in {"done", "partial", "failed", "canceled"}:
+                continue
+            stale.add(rework_job)
+        for rework_job in stale:
+            try:
+                self._update_master_rounds(rework_job)
+            except Exception:  # noqa: BLE001 - 对齐失败不影响读任务
+                pass
 
     def list_jobs(self) -> list[dict]:
         jobs = sorted(self.jobs.values(), key=lambda j: j.created_at, reverse=True)
@@ -1763,6 +1793,12 @@ class Workbench:
         job = self.jobs.get(job_id)
         if job is None:
             return
+        # 9.6.24 先把「改图轮次」回填到发起它的主任务上（纯内存 + 落盘，最便宜的一步）：
+        # 主任务一直停在「基准图修改中」、页面一刷新第 N 轮就丢，就是这么来的。
+        try:
+            self._update_master_rounds(job_id)
+        except Exception as exc:  # noqa: BLE001 - 回填失败不能挡住后面的记账
+            job.add_log(f"改图轮次回填失败：{exc}", level="warn")
         # 写飞书多维表格（同步 IO，丢线程池，别堵事件循环）
         # 线程池里抛的异常默认没人接，这里显式接住并写进 job 日志 + 待补写账本
         def _sync() -> None:
@@ -1800,6 +1836,72 @@ class Workbench:
             job.save()
         except Exception:  # noqa: BLE001
             pass
+
+    def _update_master_rounds(self, rework_job_id: str) -> None:
+        """返工任务收尾后，把结果回填到发起它的主任务的审核记录里。
+
+        没有这一步的时候：主任务只会一直停在「基准图修改中」，前端那份「第 N 轮」状态
+        又只在内存里，页面一刷新就退化成「第 1 轮 · 待确认」，于是「飞书里图都出来了，
+        界面还卡着」。
+        """
+        rework = self.jobs.get(rework_job_id)
+        if rework is None:
+            return
+        # 只有整条任务收尾了才回填：done/partial（有图没图都可能）、failed、canceled
+        if str(rework.status) not in {"done", "partial", "failed", "canceled"}:
+            return
+        shot = next((t for t in rework.tasks if t.out), None)
+        status = "done" if shot is not None else "failed"
+        for parent in list(self.jobs.values()):
+            if parent.id == rework_job_id:
+                continue
+            reviews = (parent.params or {}).get("master_reviews")
+            if not isinstance(reviews, list) or not reviews:
+                continue
+            touched = False
+            for item in reviews:
+                if not isinstance(item, dict):
+                    continue
+                if str(item.get("rework_job") or "") != rework_job_id:
+                    continue
+                if str(item.get("status") or "") == status and (
+                    shot is None or str(item.get("task") or "") == shot.id
+                ):
+                    continue  # 已经回填过，别重复写日志
+                round_no = int(item.get("round") or 1)
+                fresh = str(item.get("status") or "") != status or (
+                    shot is not None and str(item.get("task") or "") != shot.id
+                )
+                item["status"] = status
+                item["finished_at"] = time.time()
+                shown = round_no + 1   # 卡片上的「第 N 轮」数的是图的轮次
+                # 只有还停在「等确认」的主任务才改 stage：已经确认过的老单子别被改写
+                waiting = str(parent.status) == "review"
+                if shot is not None:
+                    item["task"] = shot.id
+                    item.pop("error", None)
+                    if waiting:
+                        parent.stage = (
+                            f"基准图第 {shown} 轮已出图，等你确认"
+                            "（点「确定」就按这张给其余颜色改色）"
+                        )
+                    if fresh:
+                        parent.add_log(
+                            f"改图任务 {rework_job_id} 完成，第 {shown} 轮结果挂到基准图审核"
+                        )
+                else:
+                    why = str(rework.error or rework.stage or "改图没出图")[:80]
+                    item["error"] = why
+                    if waiting:
+                        parent.stage = f"基准图第 {shown} 轮没出图：{why}"
+                    if fresh:
+                        parent.add_log(
+                            f"改图任务 {rework_job_id} 失败，第 {shown} 轮没有出图：{why}",
+                            level="warn",
+                        )
+                touched = True
+            if touched:
+                parent.save()
 
     # ---------------------------------------------------------------- notify #
     def public_url(self) -> str:
@@ -2176,7 +2278,7 @@ class Workbench:
         )
         round_no = int(rework.params.get("rework_round") or 1)
         job.stage = (
-            f"基准图第 {round_no} 轮修改中：改好后采纳，就会按新图改色"
+            f"基准图第 {round_no + 1} 轮修改中：改好后采纳，就会按新图改色"
             if round_no > 1 else "基准图修改中：改好后在对话框里确认，就会按新图改色"
         )
         job.add_log(

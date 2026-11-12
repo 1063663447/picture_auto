@@ -92,7 +92,14 @@
     clearTimeout(waitTimer);const s=state();if(!s?.job||s.jobLoading||terminal.includes(s.job.status)||pending)return;
     if(!document.hidden){
       const job=s.job,stats=job.stats,phase=bridge.jobPhase(job),parts=[];
-      if(phase.packaging)parts.push(job.params?.packaging_progress?`生成完成，校验打包 ${job.params.packaging_progress}`:/打包|校验|packag/i.test(job.stage||'')?job.stage:'生成完成，正在打包');
+      // 9.6.24 基准图审核期其实什么都没在跑：以前这里照样打印「N 张待处理 · 仍在处理中」，
+      // 一挂就是十几分钟，看着像卡死。现在老实说「等你确认」。
+      const review=job.review&&job.review.enabled&&job.review.awaiting?job.review:null;
+      if(review){
+        const pendingCount=(review.pending_ids||[]).length;
+        parts.push(pendingCount?`等你点「确定」确认基准图（${pendingCount} 张待确认）`:'等你确认基准图');
+        if(review.derived_total)parts.push(`其余 ${review.derived_total} 个颜色确认后才开始`);
+      }else if(phase.packaging)parts.push(job.params?.packaging_progress?`生成完成，校验打包 ${job.params.packaging_progress}`:/打包|校验|packag/i.test(job.stage||'')?job.stage:'生成完成，正在打包');
       else{
         if(stats.running)parts.push(`${stats.running} 张生成中`);
         const waiting=(stats.pending||0)+(stats.queued||0);if(waiting)parts.push(`${waiting} 张待处理`);
@@ -100,7 +107,7 @@
       }
       if(stats.failed)parts.push(`${stats.failed} 张失败`);
       parts.push(`已等待 ${Math.max(1,Math.floor((Date.now()-job.created_at*1000)/1000))}s`);
-      if(Date.now()-lastArrival>20000)parts.push(phase.packaging?'可先查看已完成图片，打包结束后提供整包下载':'仍在处理中，可先查看已完成图片');
+      if(!review&&Date.now()-lastArrival>20000)parts.push(phase.packaging?'可先查看已完成图片，打包结束后提供整包下载':'仍在处理中，可先查看已完成图片');
       text($('progressStats'),parts.join(' · '));
     }
     waitTimer=setTimeout(waitFeedback,1000);
