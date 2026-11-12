@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=9.6.30" />
-<link rel="stylesheet" href="/aurora.css?v=9.6.30" />
-<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.30" />
-<link rel="stylesheet" href="/blackglass/type.css?v=9.6.30" />
-<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.30" />
-<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.30" />
-<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.30" />
-<link rel="stylesheet" href="/blackglass.css?v=9.6.30" />
-<link rel="stylesheet" href="/graphite.css?v=9.6.30" />
-<link rel="stylesheet" href="/ai-workflow.css?v=9.6.30" />
-<link rel="stylesheet" href="/review-cards.css?v=9.6.30" />
-<link rel="stylesheet" href="/annotate.css?v=9.6.30" />
+<link rel="stylesheet" href="/style.css?v=9.6.31" />
+<link rel="stylesheet" href="/aurora.css?v=9.6.31" />
+<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.31" />
+<link rel="stylesheet" href="/blackglass/type.css?v=9.6.31" />
+<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.31" />
+<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.31" />
+<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.31" />
+<link rel="stylesheet" href="/blackglass.css?v=9.6.31" />
+<link rel="stylesheet" href="/graphite.css?v=9.6.31" />
+<link rel="stylesheet" href="/ai-workflow.css?v=9.6.31" />
+<link rel="stylesheet" href="/review-cards.css?v=9.6.31" />
+<link rel="stylesheet" href="/annotate.css?v=9.6.31" />
 </head>
 <body class="flow-shell booting">
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -234,6 +234,10 @@
             <label class="check"><input type="checkbox" id="selAll" /><span>全选成品</span></label>
             <span class="count" id="selCount">已选 0 张</span>
             <div class="grow"></div>
+            <button class="btn btn-ghost btn-sm" type="button" id="batchPauseBtn" disabled
+                    title="暂停选中的这几张：不会开跑，之后点「继续选中」放回队列">暂停选中</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="batchResumeBtn" disabled
+                    title="把选中的暂停项放回队列接着跑">继续选中</button>
             <button class="btn btn-accent btn-sm" type="button" id="batchReworkBtn" disabled><svg><use href="#i-chat"/></svg>批量改图</button>
             <button class="btn btn-ghost btn-sm" type="button" id="batchExportBtn" disabled><svg><use href="#i-download"/></svg>批量导出</button>
           </div>
@@ -435,11 +439,11 @@
 <div class="scrim" id="usageScrim" hidden></div><aside class="drawer" id="usageDrawer" hidden aria-modal="true" role="dialog" aria-label="我的用量"><div class="drawer-head"><span class="avatar"><svg><use href="#i-coins"/></svg></span><div class="who"><b>我的用量与花费</b><span>按工作台用量记录计价</span></div><button class="btn btn-quiet btn-icon" id="usageClose" type="button" aria-label="关闭用量"><svg><use href="#i-x"/></svg></button></div><div class="chat" id="usageBody"></div><div class="drawer-foot"><button class="btn btn-ghost" id="usageReload" type="button">刷新用量</button></div></aside>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.30"></script>
-<script src="/blackglass/atmosphere.js?v=9.6.30"></script>
-<script src="/blackglass/effects.js?v=9.6.30"></script>
-<script src="/blackglass-ui.js?v=9.6.30"></script>
-<script src="/ai-workflow.js?v=9.6.30"></script>
-<script src="/app.js?v=9.6.30"></script>
+<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.31"></script>
+<script src="/blackglass/atmosphere.js?v=9.6.31"></script>
+<script src="/blackglass/effects.js?v=9.6.31"></script>
+<script src="/blackglass-ui.js?v=9.6.31"></script>
+<script src="/ai-workflow.js?v=9.6.31"></script>
+<script src="/app.js?v=9.6.31"></script>
 </body>
 </html>

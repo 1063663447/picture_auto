@@ -2566,6 +2566,116 @@ class Workbench:
         job.save()
         return job.as_dict(with_tasks=True, with_log=True)
 
+    # ------------------------------------------------------- 单张/多张暂停 --
+    def pause_tasks(self, job_id: str, task_ids: list[str]) -> dict:
+        """暂停指定的几张（可以包含基准图）。
+
+        - 还没开始（pending / queued）：标成 paused，runner 不再开跑；
+        - 基准图（已出图、在等确认）：标成 paused，从审核条上撤下来，不再拦着这批；
+          它派生出来的、还没开始的颜色一起暂停（否则永远等不到基准）；
+        - 正在生成：允许标暂停，但那一次接口调用停不下来，跑完这张就停（不重试、不派生）。
+        """
+        job = self.get_job(job_id)
+        wanted = [str(t) for t in (task_ids or []) if t]
+        if not wanted:
+            raise WorkbenchError("请先选中要暂停的成品")
+        targets = [t for t in job.tasks if t.id in wanted]
+        if not targets:
+            raise WorkbenchError("选中的成品不在这个任务里")
+        changed: list[str] = []
+        cascade: list[str] = []
+        for task in targets:
+            if task.paused:
+                continue
+            task.paused = True
+            task.paused_from = task.status
+            task.paused_by = ""
+            # 已出图的基准图（done）保留成品，只是从审核条上撤下来
+            if task.status != "done":
+                task.status = "paused"
+            changed.append(task.id)
+            if task.master:
+                for other in job.tasks:
+                    if other.id == task.id or other.paused or other.out:
+                        continue
+                    if other.master_task == task.id:
+                        # 同款派生色：基准停了它也跑不了（记下是被这张连带暂停的）
+                        other.paused = True
+                        other.paused_from = other.status
+                        other.paused_by = task.id
+                        other.status = "paused"
+                        cascade.append(other.id)
+        if changed:
+            job.add_log(
+                f"已暂停 {len(changed)} 张" + (f"（连带 {len(cascade)} 张派生色）" if cascade else ""),
+                level="warn",
+            )
+        self._settle_if_only_paused(job)
+        job.save()
+        return job.as_dict(with_tasks=True, with_log=True)
+
+    def resume_tasks(self, job_id: str, task_ids: list[str]) -> dict:
+        """继续：把暂停的几张放回队列；暂停基准图时连带暂停的派生色一起放回。"""
+        job = self.get_job(job_id)
+        wanted = [str(t) for t in (task_ids or []) if t]
+        if not wanted:
+            raise WorkbenchError("请先选中要继续的成品")
+        targets = [t for t in job.tasks if t.id in wanted and t.paused]
+        if not targets:
+            raise WorkbenchError("选中的成品没有在暂停状态")
+        for task in targets:
+            self._resume_one(task)
+            if task.master:
+                for other in job.tasks:
+                    if other.paused and other.paused_by == task.id:
+                        self._resume_one(other)
+        job.add_log(f"继续 {len(targets)} 张：放回队列", level="info")
+        # 还有基准图没确认 → 回到审核态，不急着开 runner
+        awaiting = [t for t in job.tasks if t.master and t.out and not t.approved and not t.paused]
+        if awaiting:
+            job.status = "review"
+            job.stage = "基准图已出，等你确认（确认后按这张图改其余颜色）"
+            job.save()
+            return job.as_dict(with_tasks=True, with_log=True)
+        if str(job.status) in {"done", "partial", "failed", "canceled"}:
+            job.status = "running"
+            job.stage = "继续生成中"
+        job.save()
+        if all(str(t.status) not in {"pending", "queued"} for t in job.tasks):
+            return job.as_dict(with_tasks=True, with_log=True)
+        if job_id not in self._tasks or self._tasks[job_id].done():
+            try:
+                self.start(job_id)
+            except WorkbenchError:
+                pass
+        return job.as_dict(with_tasks=True, with_log=True)
+
+    @staticmethod
+    def _resume_one(task) -> None:
+        task.paused = False
+        back = task.paused_from or "pending"
+        task.paused_from = ""
+        task.paused_by = ""
+        task.status = back if (back == "done" and task.out) else "pending"
+        task.error = None
+
+    def _settle_if_only_paused(self, job: Job) -> None:
+        """剩下的活全被暂停时把任务收尾，别让界面一直转圈等一个永远不动的队列。"""
+        live = [t for t in job.tasks if t.status in {"pending", "queued", "running"}]
+        if live:
+            return
+        if str(job.status) in {"done", "partial", "failed", "canceled", "paused"}:
+            return
+        paused = [t for t in job.tasks if t.paused]
+        done = sum(1 for t in job.tasks if t.out)
+        job.status = "partial" if done else "canceled"
+        job.stage = (
+            f"已暂停：{len(paused)} 张没生成（选中后点「继续」可以接着跑）"
+            if paused else "已收尾"
+        )
+        job.finished_at = time.time()
+        job.add_log(job.stage, level="warn")
+
     def delete(self, job_id: str) -> None:
         job = self.get_job(job_id)
         task = self._tasks.pop(job_id, None)

@@ -62,9 +62,9 @@
     const s=state(),tasks=s?.job?.tasks||[];
     const master=task.master_task&&tasks.find(t=>t.id===task.master_task);
     const dependency=task.status==='pending'&&task.master_task;
-    const labels={pending:dependency?'等待基准批次':'等待调度',queued:'排队中',running:'正在生成',failed:'这张暂未完成',canceled:'已取消',done:entry.el.classList.contains('image-ready')?'显影完成':'正在读取成品图',skipped:'成品已就绪'};
+    const labels={pending:dependency?'等待基准批次':'等待调度',queued:'排队中',running:'正在生成',failed:'这张暂未完成',canceled:'已取消',done:entry.el.classList.contains('image-ready')?'显影完成':'正在读取成品图',skipped:'成品已就绪',paused:'已暂停'};
     const ahead=task.queue_ahead==null?null:Number(task.queue_ahead);
-    const messages={pending:dependency?(master&&['done','skipped'].includes(master.status)?'本色基准已完成，等待其余基准任务':'基准版型完成后自动派生本色'):'等待服务端调度',queued:ahead!=null&&ahead>0?`前方还有 ${ahead} 张，等待调用`:'等待接口并发位或调度',running:task.master?'正在建立本款基准版型':'版型与色彩正在逐步显影',failed:'可单独重试，其他成品保留',canceled:'已完成图片仍可查看',done:'成品已返回，解码后自动翻面',skipped:'已有成品，可直接查看'};
+    const messages={pending:dependency?(master&&['done','skipped'].includes(master.status)?'本色基准已完成，等待其余基准任务':'基准版型完成后自动派生本色'):'等待服务端调度',queued:ahead!=null&&ahead>0?`前方还有 ${ahead} 张，等待调用`:'等待接口并发位或调度',running:task.master?'正在建立本款基准版型':'版型与色彩正在逐步显影',failed:'可单独重试，其他成品保留',canceled:'已完成图片仍可查看',done:'成品已返回，解码后自动翻面',skipped:'已有成品，可直接查看',paused:'勾选后点「继续选中」放回队列'};
     text(entry.backText,labels[task.status]||task.status);text(entry.backMessage,messages[task.status]||'');
     const tag=entry.el.querySelector('.sync-tag');if(tag){tag.hidden=!task.master&&!task.master_task;text(tag,task.master?'基准版型':'跟随基准');}
     if(task.person_alert){
@@ -73,12 +73,12 @@
     }else entry.el.querySelector('.person-warning')?.remove();
     entry.el.title=`${task.garment_name||''} · ${task.color_name} · ${task.item}${task.view?' / '+task.view:''}\n${task.out||''}${task.person_alert?'\n警告：主体需复查':''}`;
   }
-  function matches(task){return filter==='all'||(filter==='done'?['done','skipped'].includes(task.status):filter==='queued'?['pending','queued','canceled'].includes(task.status):task.status===filter);}
+  function matches(task){return filter==='all'||(filter==='done'?['done','skipped'].includes(task.status):filter==='queued'?['pending','queued','canceled','paused'].includes(task.status):task.status===filter);}
   function applyFilter(){
     const s=state();if(!s||pending)return;
     const counts={all:s.job?.tasks.length||0,done:0,running:0,queued:0,failed:0};let shown=0;
     for(const task of s.job?.tasks||[]){
-      const group=['done','skipped'].includes(task.status)?'done':['pending','queued','canceled'].includes(task.status)?'queued':task.status;if(group in counts)counts[group]++;
+      const group=['done','skipped'].includes(task.status)?'done':['pending','queued','canceled','paused'].includes(task.status)?'queued':task.status;if(group in counts)counts[group]++;
       const entry=s.cards.get(task.id);if(!entry)continue;const visible=matches(task),disabled=!task.out,unavailable=task.thumb?'false':'true';
       if(entry.el.hidden===visible)entry.el.hidden=!visible;if(visible)shown++;
       if(entry.input.disabled!==disabled)entry.input.disabled=disabled;
@@ -103,6 +103,7 @@
       else{
         if(stats.running)parts.push(`${stats.running} 张生成中`);
         const waiting=(stats.pending||0)+(stats.queued||0);if(waiting)parts.push(`${waiting} 张待处理`);
+        if(stats.paused)parts.push(`${stats.paused} 张已暂停（勾选后点「继续选中」）`);
         if(job.params?.queue?.gate_ahead>0)parts.push(`接口队列前方 ${job.params.queue.gate_ahead}`);
       }
       if(stats.failed)parts.push(`${stats.failed} 张失败`);

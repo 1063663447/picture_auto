@@ -582,6 +582,27 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def cancel_job(request: Request, job_id: str):
         return {"ok": True, "job": wb(request).cancel(job_id)}
 
+    @app.post("/api/jobs/{job_id}/pause")
+    async def pause_tasks(
+        request: Request, job_id: str, task_ids: list[str] = Form(default=[])
+    ):
+        """暂停指定的几张（可以包含基准图）：单张/多张都走这里。"""
+        bench = wb(request)
+        try:
+            return {"ok": True, "job": bench.pause_tasks(job_id, task_ids)}
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    @app.post("/api/jobs/{job_id}/resume")
+    async def resume_tasks(
+        request: Request, job_id: str, task_ids: list[str] = Form(default=[])
+    ):
+        bench = wb(request)
+        try:
+            return {"ok": True, "job": bench.resume_tasks(job_id, task_ids)}
+        except (KeyError, ValueError, WorkbenchError) as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
     @app.delete("/api/jobs/{job_id}")
     async def delete_job(request: Request, job_id: str):
         wb(request).delete(job_id)

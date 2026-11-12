@@ -277,8 +277,10 @@ class JobRunner:
     def _mark_unfinished_canceled(self) -> None:
         """A cancelled asyncio task never reaches its own status update."""
         for task in self.job.tasks:
-            if task.status in {"pending", "queued", "running"}:
+            if task.status in {"pending", "queued", "running", "paused"}:
                 task.status = "canceled"
+                task.paused = False
+                task.paused_from = ""
                 task.error = task.error or "已取消"
                 task.finished_at = time.time()
         self._save(force=True)
@@ -497,6 +499,20 @@ class JobRunner:
                 self._save(force=True)
                 return
 
+            # 9.6.31 还有被暂停的图：本轮先收尾（不打包，免得 skill 数图对不上），
+            # 用户点「继续」会重新开跑剩下的。
+            paused_left = [t for t in self.job.tasks if str(t.status) == "paused"]
+            if paused_left:
+                self.job.status = "partial"
+                self.job.stage = (
+                    f"已暂停：{len(paused_left)} 张没生成（选中后点「继续」可以接着跑）"
+                )
+                self.job.add_log(
+                    f"{len(paused_left)} 张处于暂停，本轮先收尾，暂不打包", level="warn"
+                )
+                self._save(force=True)
+                return
+
             self.job.params["generation_finished_at"] = time.time()
             self.job.status = "packaging"
             self.job.stage = f"图片处理完成 {self.job.counts()['finished']}/{len(self.job.tasks)}，校验并打包"
@@ -542,8 +558,12 @@ class JobRunner:
 
     async def _run_single_pass(self) -> None:
         def open_tasks(items: list[Task]) -> list[Task]:
-            """只跑还没出图的：重复点开始 / 确认后继续，都不能把已完成的图再买一次。"""
-            return [t for t in items if t.status not in {"done", "skipped"} and not t.out]
+            """只跑还没出图的：重复点开始 / 确认后继续，都不能把已完成的图再买一次。
+            9.6.31：被暂停（paused）的这张也不跑，等用户点「继续」。"""
+            return [
+                t for t in items
+                if t.status not in {"done", "skipped", "paused"} and not t.out
+            ]
 
         masters = open_tasks([t for t in self.job.tasks if t.master])
         derived = open_tasks([t for t in self.job.tasks if t.master_task])
@@ -901,10 +921,13 @@ class JobRunner:
         if not self.review_gate:
             return
         masters = [t for t in self.job.tasks if t.master]
-        ready = [t for t in masters if t.out and not t.approved]
+        ready = [t for t in masters if t.out and not t.approved and not t.paused]
         if not ready:
             return
-        pending = [t for t in masters if not t.out and t.status not in {"failed", "canceled"}]
+        pending = [
+            t for t in masters
+            if not t.out and t.status not in {"failed", "canceled", "paused"}
+        ]
         self.job.status = "review"
         if pending:
             self.job.stage = (

@@ -1181,7 +1181,7 @@
     //（以前那一版的按钮在「重建瞬间」点下去是没反应的）
     $("reviewThumbs")?.addEventListener("click", (event) => {
       const hit = event.target.closest(
-        "[data-approve],[data-adopt],[data-revert],[data-annotate],[data-annotate-round],[data-rework],img[data-preview]"
+        "[data-approve],[data-adopt],[data-revert],[data-annotate],[data-annotate-round],[data-rework],[data-pause-review],img[data-preview]"
       );
       if (!hit) return;
       const revert = hit.closest("[data-revert]");
@@ -1207,6 +1207,12 @@
       if (annotate) { openAnnotator(annotate.dataset.annotate); return; }
       const rework = hit.closest("[data-rework]");
       if (rework) { talkMaster(rework.dataset.rework); return; }
+      // 9.6.31 基准图也能暂停/继续
+      const pauseHit = hit.closest("[data-pause-review]");
+      if (pauseHit) {
+        pauseTasks([pauseHit.dataset.pauseReview], pauseHit.dataset.pauseMode === "resume", pauseHit);
+        return;
+      }
       const img = hit.closest("img[data-preview]");
       if (img) {
         const card = img.closest(".review-card");
@@ -1278,12 +1284,14 @@
     // 「AI 分析中」= 正在读框选/写提示词；「图片生成中」= 任务已提交，在等生图
     const analysing = st.stage === "thinking";
     const phase = analysing ? "AI 分析中" : st.stage === "running" ? "图片生成中" : "";
-    const badge = st.approved
-      ? (task.adopted_from ? `已确认 · 第 ${shownRound} 轮` : "已确认")
-      : st.working ? `第 ${nextRound} 轮 · ${phase}`
-        : st.ready ? `第 ${shownRound} 轮 · 待确认`
-          : st.failed ? "改图失败" : `第 ${shownRound} 轮 · 待确认`;
-    const tone = st.approved ? "ok" : (st.working || st.failed || st.ready) ? "warn" : "";
+    const badge = task.paused && !st.approved
+      ? "已暂停"
+      : st.approved
+        ? (task.adopted_from ? `已确认 · 第 ${shownRound} 轮` : "已确认")
+        : st.working ? `第 ${nextRound} 轮 · ${phase}`
+          : st.ready ? `第 ${shownRound} 轮 · 待确认`
+            : st.failed ? "改图失败" : `第 ${shownRound} 轮 · 待确认`;
+    const tone = st.approved ? "ok" : (task.paused || st.working || st.failed || st.ready) ? "warn" : "";
     const hasRound = round > 1 || (st.rw?.shots || []).length > 0 || st.stage === "running" || analysing;
     const veil = st.working
       ? `<div class="working-veil"><span class="spin"></span>
@@ -1294,6 +1302,13 @@
     const revertBtn = hasRound && !st.approved
       ? `<button type="button" class="warn" data-revert="${esc(task.id)}">复原</button>`
       : "";
+    // 9.6.31 基准图也能暂停：暂停后不再占着审核条（成品还在），要的时候点「继续」
+    const paused = Boolean(task.paused);
+    const pauseBtn = st.approved ? ""
+      : `<button type="button" data-pause-review="${esc(task.id)}" `
+        + `data-pause-mode="${paused ? "resume" : "pause"}" `
+        + `title="${paused ? "放回审核条继续确认" : "暂停这张基准图：不再占着审核条，成品保留"}">`
+        + `${paused ? "继续" : "暂停"}</button>`;
     let acts;
     if (st.approved) {
       acts = "";
@@ -1307,6 +1322,7 @@
       acts = `<div class="review-card-acts">
         <button type="button" data-adopt="${esc(task.id)}">确定</button>
         <button type="button" data-annotate-round="${esc(task.id)}" ${roundRef}>接着改（第 ${nextRound} 轮）</button>
+        ${pauseBtn}
         ${revertBtn}
       </div>`;
     } else if (st.failed) {
@@ -1317,6 +1333,7 @@
         : "";
       acts = `<div class="review-card-acts">
         <button type="button" data-annotate-round="${esc(task.id)}" ${backRef}>再框一次</button>
+        ${pauseBtn}
         ${revertBtn}
       </div>`;
     } else {
@@ -1324,6 +1341,7 @@
         <button type="button" data-approve="${esc(task.id)}">确定</button>
         <button type="button" data-annotate="${esc(task.id)}">框选改</button>
         <button type="button" data-rework="${esc(task.id)}">直接说</button>
+        ${pauseBtn}
       </div>`;
     }
     const why = st.failed && st.rw.error
@@ -2357,6 +2375,7 @@
       </div>
       <div class="acts">
         <a class="btn btn-ghost btn-sm" data-dl>${icon("i-download", 13)}下载</a>
+        <button class="btn btn-ghost btn-sm" type="button" data-pause="${esc(task.id)}" hidden>暂停</button>
         <button class="btn btn-ghost btn-sm" type="button" data-rework-menu="${esc(task.id)}"
                 title="改图：直接重新生成 / 对话改图 / 框选改图">${icon("i-chat", 13)}改图 ⌄</button>
       </div>`;
@@ -2370,6 +2389,7 @@
       input: el.querySelector("input[data-task]"),
       dl: el.querySelector("[data-dl]"),
       rework: el.querySelector("[data-rework-menu]"),
+      pause: el.querySelector("[data-pause]"),
       acts: el.querySelector(".acts"),
       file: el.querySelector(".meta .file"),
       err: null,
@@ -2507,6 +2527,24 @@
 
     if(entry.rework.disabled!==(status!=="done"))entry.rework.disabled=status!=="done";
 
+    // 9.6.31 单张暂停/继续：暂停中的显示「继续」，还没出图的显示「暂停」
+    if (entry.pause) {
+      const paused = Boolean(task.paused) || status === "paused";
+      const canPause = !paused && (status === "pending" || status === "queued" || status === "running");
+      const show = paused || canPause;
+      if (entry.pause.hidden !== !show) entry.pause.hidden = !show;
+      const label = paused ? "继续" : "暂停";
+      if (entry.pause.textContent !== label) entry.pause.textContent = label;
+      entry.pause.dataset.pauseMode = paused ? "resume" : "pause";
+      const disabled = !paused && status === "running";
+      if (entry.pause.disabled !== disabled) entry.pause.disabled = disabled;
+      entry.pause.title = paused
+        ? "放回队列接着跑"
+        : status === "running"
+          ? "这张正在生成，接口调用停不下来：跑完这张就停，不再重试"
+          : "暂停这张：不会开跑，之后可以继续";
+    }
+
     if (status === "failed") {
       if (!entry.retry) {
         entry.retry = document.createElement("button");
@@ -2533,6 +2571,12 @@
     const count=state.selected.size,label=`已选 ${count} 张`;
     if($("selCount").textContent!==label)$("selCount").textContent=label;
     $("batchReworkBtn").disabled=count===0||Boolean(submissionBlockedReason());$("batchExportBtn").disabled=state.jobLoading||(ready.length===0&&count===0);
+    // 暂停/继续按选中的状态各自可用：选中里有能暂停的就亮「暂停选中」，有暂停中的就亮「继续选中」
+    const picked=(state.job?.tasks||[]).filter(t=>state.selected.has(t.id));
+    const canPause=picked.some(t=>!t.paused&&["pending","queued","running"].includes(t.status));
+    const canResume=picked.some(t=>Boolean(t.paused)||t.status==="paused");
+    if($("batchPauseBtn"))$("batchPauseBtn").disabled=state.jobLoading||!canPause;
+    if($("batchResumeBtn"))$("batchResumeBtn").disabled=state.jobLoading||!canResume;
     $("selAll").checked=ready.length>0&&count===ready.length;
   }
 
@@ -2569,6 +2613,28 @@
   }
 
   /* --------------------------------------------------------------- actions */
+  /* 9.6.31 单张/多张暂停：某一两张不想跑（或基准图占着审核条）就停掉它，不用整批取消。
+     暂停的不会开跑；继续会把它们放回队列（整批已经收尾的话会重新开跑）。 */
+  async function pauseTasks(taskIds, resume, button) {
+    const ids = (taskIds || []).filter(Boolean);
+    const jobId = state.jobId;
+    if (!jobId || state.job?.id !== jobId) return;
+    if (!ids.length) { toast("bad", "先勾选要处理的那几张"); return; }
+    const form = new FormData();
+    ids.forEach((id) => form.append("task_ids", id));
+    const url = `/api/jobs/${jobId}/${resume ? "resume" : "pause"}`;
+    try {
+      const res = await api(url, { method: "POST", body: form });
+      if (res?.job && state.jobId === jobId) renderJob(res.job);
+      toast("ok", resume
+        ? `已继续 ${ids.length} 张`
+        : `已暂停 ${ids.length} 张（选中后点「继续选中」可以接着跑）`);
+      watchJob(jobId);
+    } catch (err) {
+      toast("bad", `${resume ? "继续" : "暂停"}失败：${err.message}`);
+    }
+  }
+
   async function cancelJob() {
     if(state.jobLoading||!state.jobId||state.job?.id!==state.jobId)return;
     const jobId=state.jobId;
@@ -3505,6 +3571,8 @@
       syncSelection();
     });
     $("batchReworkBtn").addEventListener("click", () => openHarness("rework", [...state.selected]));
+    $("batchPauseBtn")?.addEventListener("click", (event) => pauseTasks([...state.selected], false, event.currentTarget));
+    $("batchResumeBtn")?.addEventListener("click", (event) => pauseTasks([...state.selected], true, event.currentTarget));
     $("batchExportBtn").addEventListener("click", exportSelection);
     $("usageChip").addEventListener("click",()=>window.WorkbenchUI.showUsage(()=>api("/api/usage")));
 
@@ -3563,6 +3631,14 @@
       if (menuBtn) {
         event.preventDefault();
         if (!menuBtn.disabled) openReworkMenu(menuBtn, menuBtn.dataset.reworkMenu);
+        return;
+      }
+      const pauseBtn = event.target.closest("[data-pause]");
+      if (pauseBtn) {
+        event.preventDefault();
+        if (!pauseBtn.disabled) {
+          pauseTasks([pauseBtn.dataset.pause], pauseBtn.dataset.pauseMode === "resume", pauseBtn);
+        }
         return;
       }
       const retry = event.target.closest("[data-retry]");
