@@ -141,6 +141,8 @@ class Task:
     paused_from: str = ""
     #: 被哪张基准图连带暂停的（继续那张基准图时一起放回队列）；自己点的暂停这里是空
     paused_by: str = ""
+    #: 9.6.33 「取消这款」：这个款式被整款取消，卡片不再显示（文件和记录还在，只是不占界面）
+    hidden: bool = False
     error: str | None = None
     error_kind: str = ""             # "" | "rate_limit"（被并发限制打回来） | "error"
     out: str | None = None           # relative to the job dir
@@ -189,6 +191,7 @@ class Task:
             "paused": self.paused,
             "paused_from": self.paused_from,
             "paused_by": self.paused_by,
+            "hidden": self.hidden,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
         }
@@ -223,9 +226,12 @@ class Job:
         self.updated_at = time.time()
 
     def counts(self) -> dict:
-        stats = {"total": len(self.tasks), "pending": 0, "queued": 0, "running": 0,
+        stats = {"total": 0, "pending": 0, "queued": 0, "running": 0,
                  "done": 0, "failed": 0, "skipped": 0, "canceled": 0, "paused": 0}
         for task in self.tasks:
+            if getattr(task, "hidden", False):
+                continue          # 整款取消掉的不占统计，界面上也看不到
+            stats["total"] += 1
             stats[task.status] = stats.get(task.status, 0) + 1
         stats["finished"] = stats["done"] + stats["skipped"]
         stats["rate_limited"] = sum(
@@ -313,8 +319,11 @@ class Job:
                 "awaiting": self.status == "review",
                 "phase": str((self.params or {}).get("phase") or ""),
                 "master_ids": [t.id for t in masters],
-                "pending_ids": [t.id for t in masters if t.out and not t.approved and not t.paused],
-                "paused_ids": [t.id for t in masters if t.paused],
+                "pending_ids": [
+                    t.id for t in masters
+                    if t.out and not t.approved and not t.paused and not t.hidden
+                ],
+                "paused_ids": [t.id for t in masters if t.paused and not t.hidden],
                 "approved_ids": [t.id for t in masters if t.approved],
                 "derived_total": sum(1 for t in self.tasks if t.master_task),
                 "derived_done": sum(1 for t in self.tasks if t.master_task and t.out),
@@ -439,6 +448,7 @@ class Job:
                     paused=bool(raw.get("paused")),
                     paused_from=str(raw.get("paused_from") or ""),
                     paused_by=str(raw.get("paused_by") or ""),
+                    hidden=bool(raw.get("hidden")),
                 )
             )
         return job

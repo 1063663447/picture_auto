@@ -2680,6 +2680,63 @@ class Workbench:
         task.status = back if (back == "done" and task.out) else "pending"
         task.error = None
 
+    def cancel_style(self, job_id: str, task_ids: list[str]) -> dict:
+        """取消这一款（9.6.33）：基准图 + 这款还没开始的颜色一起取消，并且都不再显示。
+
+        和「取消这批」的区别：这是针对某一张基准图（某个款式）的，其它款式照跑；
+        和「暂停」的区别：暂停是还能继续，这里是本次任务不再生成这一款。
+        已出的成品文件不删，只是标记 hidden 从界面上撤下来（历史/日志还在）。
+        """
+        job = self.get_job(job_id)
+        wanted = [str(t) for t in (task_ids or []) if t]
+        if not wanted:
+            raise WorkbenchError("请先选中要取消的款式")
+        targets = [t for t in job.tasks if t.id in wanted]
+        if not targets:
+            raise WorkbenchError("选中的款式不在这个任务里")
+        hidden: list[str] = []
+        for task in targets:
+            task.paused = False
+            task.paused_from = ""
+            task.paused_by = ""
+            # 整款取消了：状态统一标 canceled（成品文件保留，但这批不再算它）
+            task.status = "canceled"
+            task.error = task.error or "本款已取消"
+            task.hidden = True
+            task.finished_at = task.finished_at or time.time()
+            hidden.append(task.id)
+            # 这款还没开始的颜色一起撤掉（已经出图的留着，钱已经花了）
+            if task.master:
+                for other in job.tasks:
+                    if other.id == task.id or other.hidden or other.out:
+                        continue
+                    if other.master_task == task.id:
+                        other.paused = False
+                        other.status = "canceled"
+                        other.error = other.error or "本款已取消"
+                        other.hidden = True
+                        other.finished_at = other.finished_at or time.time()
+                        hidden.append(other.id)
+        job.add_log(
+            f"已取消 {len(targets)} 个款式（连带 {len(hidden) - len(targets)} 张没开始的颜色），"
+            "这些卡片不再显示",
+            level="warn",
+        )
+        self._settle_if_only_paused(job)
+        if str(job.status) in {"review", "running", "queued", "packaging"}:
+            live = [t for t in job.tasks if not t.hidden]
+            waiting_master = [
+                t for t in live if t.master and t.out and not t.approved and not t.paused
+            ]
+            if not waiting_master and not any(
+                t.status in {"pending", "queued", "running"} for t in live
+            ):
+                job.status = "partial" if any(t.out for t in live) else "canceled"
+                job.stage = "已取消该款式：其余已出的成品保留"
+                job.finished_at = time.time()
+        job.save()
+        return job.as_dict(with_tasks=True, with_log=True)
+
     def _settle_if_only_paused(self, job: Job) -> None:
         """剩下的活全被暂停时把任务收尾，别让界面一直转圈等一个永远不动的队列。"""
         live = [t for t in job.tasks if t.status in {"pending", "queued", "running"}]

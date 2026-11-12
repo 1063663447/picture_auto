@@ -232,7 +232,9 @@ PRINT_LOCK_CLAUSE = (
     "clean up any letter, word, number, logo, patch or stitch. The artwork must occupy the "
     "same bounding box relative to the garment as in the source image. If the source artwork "
     "is a flat print, keep it flat; if it is a raised or 3D appliqué, keep it raised and 3D "
-    "with the same relief."
+    "with the same relief. If the source garment is BLANK (no print, no text, no logo), the "
+    "result stays completely BLANK — never invent a graphic, slogan, lettering, flag or badge "
+    "that is not in the source."
 )
 
 PRINT_CLAUSE = (
@@ -775,6 +777,41 @@ def color_hint(color: ColorRef) -> str:
     )
 
 
+#: **白色要干净的白**（9.6.33 客户：「很多款式的白色都不够白，有点像灰色」）。
+#: 白色的色号是 #E6E6E8，但模型会顺着原图/场景的环境光把整件压成浅灰。
+#: 这里把「白就是白」钉死：高光接近纯白、阴影中性偏冷，但不许整件发灰/发米/发蓝。
+WHITE_CLAUSE = (
+    " WHITE COLOURWAY — this garment is WHITE and must read as BRIGHT, CLEAN, TRUE WHITE: the lit "
+    "surfaces sit at paper-white (very close to #FFFFFF), highlights stay white, and shadows are "
+    "neutral (a touch cool at most). The white must not come out light grey, ash grey, milky "
+    "off-white, cream, ivory, beige or bluish-grey, and must not inherit the dim ambient tint or "
+    "the exposure falloff of the source photo. Do not darken the fabric to blend it into the scene; "
+    "keep it clean white with crisp tonal separation from the background."
+)
+
+
+def is_white_colour(color: ColorRef | None) -> bool:
+    """这个颜色算不算「白色」（按 label / 中文名 / 色号亮度综合判断）。"""
+    if color is None:
+        return False
+    label = str(getattr(color, "label", "") or "").strip().lower()
+    name = str(getattr(color, "name_zh", "") or "").strip()
+    if label in {"white", "off-white"} or name in {"白色", "奶白色"}:
+        return True
+    digits = str(getattr(color, "hex", "") or "").strip().lstrip("#")
+    if len(digits) == 6:
+        try:
+            r, g, b = (int(digits[i : i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            return False
+        return min(r, g, b) >= 205 and (max(r, g, b) - min(r, g, b)) <= 16
+    return False
+
+
+def white_clause(color: ColorRef | None) -> str:
+    return WHITE_CLAUSE if is_white_colour(color) else ""
+
+
 #: 版型描述自带冠词（"a long-sleeve t-shirt …"），模板里又写了 a/an →
 #: "into a a long-sleeve …"。这种别扭句子会分散模型注意力，顺手压掉。
 _DOUBLE_ARTICLE = re.compile(r"\b(a|an)\s+(a|an)\s+", re.IGNORECASE)
@@ -1291,6 +1328,7 @@ def build_single_pass(
         style_positive(garment, reference=want_effect),
         prompt,
         color_hint(color).strip(),
+        white_clause(color),
     ]
     effect_text = effect_clause(color, effect, getattr(garment, "fit", ""))
     if effect_text:
@@ -1363,6 +1401,9 @@ def build_recolor_only(
     if garment is not None:
         # 换色不该改工艺，但模型会"顺手"补罗纹/改袖长/把帽绳画串：把这几条再钉一次
         base = base + " " + style_positive(garment, reference=want_effect)
+    if white_clause(color):
+        # 白色单独钉一次「白就是白」（9.6.33：客户反馈浅色被画成灰色）
+        base = base + white_clause(color)
     effect_text = effect_clause(color, effect, getattr(garment, "fit", "") if garment else "")
     if effect_text:
         base = base + " " + effect_text
@@ -1701,6 +1742,9 @@ def build_master_recolor(
     )
     if garment is not None:
         base = base + " " + style_positive(garment, reference=want_effect)
+    if white_clause(color):
+        # 派生色也钉一次：浅色最容易被环境光压成灰（9.6.33）
+        base = base + white_clause(color)
     if swatch:
         # 派生色改发面料色卡：形状只能看基准，色卡里没有任何衣服形状
         roles = SWATCH_CLAUSE

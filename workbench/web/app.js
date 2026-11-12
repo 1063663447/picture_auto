@@ -1181,7 +1181,7 @@
     //（以前那一版的按钮在「重建瞬间」点下去是没反应的）
     $("reviewThumbs")?.addEventListener("click", (event) => {
       const hit = event.target.closest(
-        "[data-approve],[data-adopt],[data-revert],[data-annotate],[data-annotate-round],[data-rework],[data-pause-review],img[data-preview]"
+        "[data-approve],[data-adopt],[data-revert],[data-annotate],[data-annotate-round],[data-rework],[data-pause-review],[data-cancel-style],img[data-preview]"
       );
       if (!hit) return;
       const revert = hit.closest("[data-revert]");
@@ -1208,6 +1208,12 @@
       const rework = hit.closest("[data-rework]");
       if (rework) { talkMaster(rework.dataset.rework); return; }
       // 9.6.31 基准图也能暂停/继续
+      // 9.6.33 基准图的出口：取消这款（本款不再生成 + 卡片撤下）
+      const cancelStyleHit = hit.closest("[data-cancel-style]");
+      if (cancelStyleHit) {
+        cancelStyleTasks([cancelStyleHit.dataset.cancelStyle], cancelStyleHit);
+        return;
+      }
       const pauseHit = hit.closest("[data-pause-review]");
       if (pauseHit) {
         pauseTasks([pauseHit.dataset.pauseReview], pauseHit.dataset.pauseMode === "resume", pauseHit);
@@ -1302,8 +1308,11 @@
     const revertBtn = hasRound && !st.approved
       ? `<button type="button" class="warn" data-revert="${esc(task.id)}">复原</button>`
       : "";
-    // 9.6.31 基准图也能暂停：暂停后不再占着审核条（成品还在），要的时候点「继续」
+    // 9.6.31 基准图的出口是「取消这款」（9.6.33 由暂停改过来）：本款不再生成，卡片也不显示
     const paused = Boolean(task.paused);
+    const cancelStyleBtn = st.approved ? ""
+      : `<button type="button" data-cancel-style="${esc(task.id)}" `
+        + `title="本款不再生成：这张基准图和这款没开始的颜色都会取消并从列表里撤下">取消这款</button>`;
     const pauseBtn = st.approved ? ""
       : `<button type="button" data-pause-review="${esc(task.id)}" `
         + `data-pause-mode="${paused ? "resume" : "pause"}" `
@@ -1322,7 +1331,7 @@
       acts = `<div class="review-card-acts">
         <button type="button" data-adopt="${esc(task.id)}">确定</button>
         <button type="button" data-annotate-round="${esc(task.id)}" ${roundRef}>接着改（第 ${nextRound} 轮）</button>
-        ${pauseBtn}
+        ${cancelStyleBtn}
         ${revertBtn}
       </div>`;
     } else if (st.failed) {
@@ -1333,7 +1342,7 @@
         : "";
       acts = `<div class="review-card-acts">
         <button type="button" data-annotate-round="${esc(task.id)}" ${backRef}>再框一次</button>
-        ${pauseBtn}
+        ${cancelStyleBtn}
         ${revertBtn}
       </div>`;
     } else {
@@ -1341,7 +1350,7 @@
         <button type="button" data-approve="${esc(task.id)}">确定</button>
         <button type="button" data-annotate="${esc(task.id)}">框选改</button>
         <button type="button" data-rework="${esc(task.id)}">直接说</button>
-        ${pauseBtn}
+        ${cancelStyleBtn}
       </div>`;
     }
     const why = st.failed && st.rw.error
@@ -1422,7 +1431,7 @@
     // 刷新/重进任务时，用服务端记下的改图轮次把卡片状态补回来（9.6.24）
     hydrateReworks(job);
     const info = reviewInfo(job);
-    const masters = (job?.tasks || []).filter((t) => t.master && t.thumb_small);
+    const masters = (job?.tasks || []).filter((t) => t.master && t.thumb_small && !t.hidden);
     // 取消/失败/完成的单子不该再顶着审核条（否则会有人去点「确定」）
     const show = Boolean(
       info && !TERMINAL.includes(job.status)
@@ -2301,6 +2310,8 @@
     }
 
     const grid = $("gridImgs");
+    // 9.6.33 被「取消这款」掉的任务（hidden）不再占位置：卡片直接不渲染
+    const visible = job.tasks.filter((task) => !task.hidden);
     $("emptyState").hidden = job.tasks.length > 0;
     // 换了任务才重建；同一任务的轮询只增量更新，避免"出一张图就整片重载"
     if (state.cardsJob !== job.id) {
@@ -2310,7 +2321,7 @@
       state.logSig = "";
     }
     const seen = new Set();
-    job.tasks.forEach((task, index) => {
+    visible.forEach((task, index) => {
       let entry = state.cards.get(task.id);
       if (!entry) {
         entry = cardShell(task, job);
@@ -2629,10 +2640,56 @@
       toast("ok", resume
         ? `已继续 ${ids.length} 张`
         : `已暂停 ${ids.length} 张（选中后点「继续选中」可以接着跑）`);
-      watchJob(jobId);
+      // 暂停会把这批收尾（轮询本来就会停）；继续之后要重新盯上
+      if (resume) watchJob(jobId);
     } catch (err) {
       toast("bad", `${resume ? "继续" : "暂停"}失败：${err.message}`);
     }
+  }
+
+  /* 9.6.33 「取消这款」：基准图的出口（替代原来的暂停）。取消后本款不再生成，
+     这张基准图和该款没开始的颜色都会从列表里撤下（成品文件不删，历史还在）。
+     同样两步确认，点别处自动复原。 */
+  let cancelStyleArmed = false;
+  function disarmCancelStyle(button) {
+    cancelStyleArmed = false;
+    if (button) {
+      button.textContent = "取消这款";
+      delete button.dataset.armed;
+    }
+  }
+  async function cancelStyleTasks(taskIds, button) {
+    const ids = (taskIds || []).filter(Boolean);
+    const jobId = state.jobId;
+    if (!jobId || state.job?.id !== jobId || !ids.length) return;
+    if (!cancelStyleArmed) {
+      cancelStyleArmed = true;
+      if (button) {
+        button.textContent = "确认取消这款";
+        button.dataset.armed = "1";
+      }
+      setTimeout(() => {
+        document.addEventListener("click", function once(event) {
+          document.removeEventListener("click", once);
+          if (!event.target.closest("[data-cancel-style]")) disarmCancelStyle(button);
+        });
+      }, 0);
+      return;
+    }
+    cancelStyleArmed = false;
+    const form = new FormData();
+    ids.forEach((id) => form.append("task_ids", id));
+    await withLoading(button, async () => {
+      try {
+        const res = await api(`/api/jobs/${jobId}/cancel-style`, { method: "POST", body: form });
+        if (res?.job && state.jobId === jobId) renderJob(res.job);
+        toast("ok", "已取消这个款式：这张基准图和它没开始的颜色都不再显示");
+        loadHistory();
+      } catch (err) {
+        toast("bad", `取消失败：${err.message}`);
+      }
+    }, "取消中…");
+    disarmCancelStyle(button);
   }
 
   async function cancelJob() {
