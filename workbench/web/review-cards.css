@@ -128,7 +128,6 @@
 
 
 /* 9.6.37 换装模式：左栏允许纵向滚动（勾了换装后内容变高，不再被挤压裁掉） */
-.flow-shell .controls { overflow-y: auto; max-height: calc(100vh - 120px); }
 .source-section .swap-pattern { padding: 8px; }
 .swap-pattern .swap-drop { display: flex; align-items: center; gap: 8px; padding: 6px;
   border: 1px dashed var(--border-strong, #334155); border-radius: 9px; cursor: pointer; }
@@ -140,9 +139,25 @@
 
 
 /* 9.6.38 左栏整体滚动：款式区不再被 flex 压成一条缝，面板可以一直往下延 */
-.flow-shell .controls { overflow-y: auto; }
 .flow-shell .controls > section { flex: none; }
 .flow-shell .styles-section { display: flex; flex-direction: column; }
+.flow-shell .styles-section .style-list {
+  flex: none; max-height: none; overflow: visible; padding-right: 2px;
+}
+
+
+/* 9.6.39 左栏真正可下滑：整页是 100dvh 固定壳，面板内容超高时必须自己是滚动容器 */
+.flow-shell .controls {
+  height: 100%;
+  min-height: 0;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+/* 内容按自然高度排，全部交给面板滚动（款式区不再被压成一条缝） */
+.flow-shell .controls > section { flex: none; }
 .flow-shell .styles-section .style-list {
   flex: none; max-height: none; overflow: visible; padding-right: 2px;
 }

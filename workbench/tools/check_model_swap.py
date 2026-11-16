@@ -158,7 +158,8 @@ def main() -> int:
     check("后端默认款式不再写死弹力短袖",
           'self._resolve_garment(garment_type or "10-stretch-tee")' not in service_src
           and "next(iter(self.skill.types.values()), None)" in service_src)
-    check("左栏允许纵向滚动", ".flow-shell .controls { overflow-y: auto" in css)
+    check("左栏允许纵向滚动（!important 压过固定壳）",
+          "overflow-y: auto !important" in css and "max-height: none !important" in css)
     check("换装块紧凑（一行放缩略图+按钮）", ".swap-pattern .swap-drop" in css)
 
     if FAIL:
