@@ -120,6 +120,21 @@ def main() -> int:
     check("createJob 里走 model_swap", 'form.append("mode", "model_swap")' in app_js)
     check("没选图案图时按钮拦住", "请再选一张图案/面料图" in app_js)
 
+    print("4) 9.6.37 三处修复")
+    css = (ROOT / "web" / "review-cards.css").read_text(encoding="utf-8")
+    service_src = (ROOT / "skillbridge" / "service.py").read_text(encoding="utf-8")
+    check("图案图区是 dropzone（可拖入）", 'id="swapDrop"' in html and "swapDrop.addEventListener(\"drop\"" in app_js)
+    check("图案图有缩略图预览", 'id="swapThumbs"' in html and "function renderSwapThumb(" in app_js)
+    check("图案图支持粘贴（还没选时第一张给图案）",
+          "swapReady() && !state.swapPattern" in app_js and "setSwapPattern(files.shift())" in app_js)
+    check("图案图校验类型/大小", "图案图请用 PNG" in app_js and "图案图不能超过 20 MB" in app_js)
+    check("换装分支把当前款式传上去", 'form.append("garment_type", (primaryStyle().slug' in app_js)
+    check("后端默认款式不再写死弹力短袖",
+          'self._resolve_garment(garment_type or "10-stretch-tee")' not in service_src
+          and "first = next(iter(self.skill.types.values()), None)" in service_src)
+    check("左栏允许纵向滚动", ".flow-shell .controls { overflow-y: auto" in css)
+    check("换装块紧凑（一行放缩略图+按钮）", ".swap-pattern .swap-drop" in css)
+
     if FAIL:
         print(f"\n失败 {len(FAIL)} 项：" + "、".join(FAIL))
         return 1

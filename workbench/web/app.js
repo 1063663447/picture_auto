@@ -60,6 +60,7 @@
     files: [],
     // 9.6.35 保留模特换装：勾上以后多传一张图案/面料图
     swapPattern: null,
+    swapPatternUrl: "",
     jobId: null,
     pollTimer: null,
     pollEpoch: 0,
@@ -955,6 +956,11 @@
       files.push(file);
     }
     if(!files.length)return;
+    // 9.6.37 换装模式：还没选图案图时，粘贴的第一张自动当图案图
+    if (swapReady && swapReady() && !state.swapPattern && files.length) {
+      setSwapPattern(files.shift());
+      if (!files.length) return;
+    }
     let next=[...state.files,...files].reduce((max,entry)=>Math.max(max,Number(/^item-(\d+)(?:_|\.)/i.exec(entry.name)?.[1])||0),0)+1;
     const named=files.map(file=>{
       if(file.name&&!/^(?:image|blob|clipboard|untitled)(?:\.[^.]+)?$/i.test(file.name))return file;
@@ -1042,6 +1048,8 @@
         // 保留模特换装：只发模特图 + 图案图，不选款式颜色
         form.append("pattern", state.swapPattern, state.swapPattern.name);
         form.append("mode", "model_swap");
+        // 款式只用来命名/标签（版型以模特身上那件为准），但别让标签跟选的对不上
+        form.append("garment_type", (primaryStyle().slug || ""));
         form.append("provider", $("provider").value);
         form.append("model", currentModel());
         form.append("concurrency", "auto");
@@ -3589,6 +3597,71 @@
   function swapReady() {
     return Boolean($("swapToggle") && $("swapToggle").checked);
   }
+  /* 9.6.37 图案图：校验 + 缩略图预览 + 可移除（和模特图一致的体验） */
+  function setSwapPattern(file) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      toast("bad", "图案图请用 PNG、JPG 或 WebP");
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast("bad", "图案图不能超过 20 MB");
+      return;
+    }
+    if (state.swapPatternUrl) URL.revokeObjectURL(state.swapPatternUrl);
+    state.swapPattern = file;
+    state.swapPatternUrl = "";
+    renderSwapThumb();
+    // 缩略图（小尺寸 JPEG，省内存）
+    createImageBitmap(file).then((bitmap) => {
+      const ratio = Math.min(160 / bitmap.width, 160 / bitmap.height, 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+      canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+    }).then((blob) => {
+      if (!blob || state.swapPattern !== file) return;
+      state.swapPatternUrl = URL.createObjectURL(blob);
+      renderSwapThumb();
+    }).catch(() => { /* 预览失败不影响提交 */ });
+    updateSummary();
+  }
+
+  function clearSwapPattern() {
+    if (state.swapPatternUrl) URL.revokeObjectURL(state.swapPatternUrl);
+    state.swapPattern = null;
+    state.swapPatternUrl = "";
+    renderSwapThumb();
+    updateSummary();
+  }
+
+  function renderSwapThumb() {
+    const box = $("swapThumbs");
+    if (box) {
+      box.replaceChildren();
+      if (state.swapPattern) {
+        const wrap = document.createElement("div");
+        wrap.className = "thumb";
+        wrap.innerHTML = (state.swapPatternUrl ? `<img src="${state.swapPatternUrl}" alt="图案图" decoding="async"/>` : "")
+          + '<span class="idx">图案</span><button type="button" aria-label="移除图案图">×</button>';
+        wrap.querySelector("button").addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          clearSwapPattern();
+        });
+        box.appendChild(wrap);
+      }
+    }
+    const name = $("swapPatternName");
+    if (name) {
+      name.textContent = state.swapPattern
+        ? `${state.swapPattern.name}（${Math.round(state.swapPattern.size / 1024)} KB）`
+        : "点击、拖入或 Ctrl+V 粘贴";
+    }
+  }
+
   function syncSwapUi() {
     const on = swapReady();
     const box = $("swapPattern");
@@ -3637,15 +3710,24 @@
       updateSummary();
     });
     const swapInput = $("swapPatternInput");
-    $("swapPatternBtn")?.addEventListener("click", () => swapInput?.click());
+    $("swapPatternBtn")?.addEventListener("click", (event) => { event.stopPropagation(); swapInput?.click(); });
+    $("swapDrop")?.addEventListener("click", () => swapInput?.click());
     swapInput?.addEventListener("change", () => {
-      const file = swapInput.files && swapInput.files[0];
-      state.swapPattern = file || null;
-      const name = $("swapPatternName");
-      if (name) name.textContent = file ? `${file.name}（${Math.round(file.size / 1024)} KB）` : "未选择";
-      updateSummary();
+      setSwapPattern(swapInput.files && swapInput.files[0]);
       swapInput.value = "";
     });
+    // 图案图也支持拖入
+    const swapDrop = $("swapDrop");
+    if (swapDrop) {
+      ["dragenter", "dragover"].forEach((type) =>
+        swapDrop.addEventListener(type, (event) => { event.preventDefault(); swapDrop.classList.add("over"); }));
+      ["dragleave", "drop"].forEach((type) =>
+        swapDrop.addEventListener(type, (event) => { event.preventDefault(); swapDrop.classList.remove("over"); }));
+      swapDrop.addEventListener("drop", (event) => {
+        const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+        if (file) setSwapPattern(file);
+      });
+    }
     syncSwapUi();
 
     const gateHint = $("gateHint");

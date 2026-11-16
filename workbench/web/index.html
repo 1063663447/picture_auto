@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="dark" />
 <title>生图工作台</title>
-<link rel="stylesheet" href="/style.css?v=9.6.36" />
-<link rel="stylesheet" href="/aurora.css?v=9.6.36" />
-<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.36" />
-<link rel="stylesheet" href="/blackglass/type.css?v=9.6.36" />
-<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.36" />
-<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.36" />
-<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.36" />
-<link rel="stylesheet" href="/blackglass.css?v=9.6.36" />
-<link rel="stylesheet" href="/graphite.css?v=9.6.36" />
-<link rel="stylesheet" href="/ai-workflow.css?v=9.6.36" />
-<link rel="stylesheet" href="/review-cards.css?v=9.6.36" />
-<link rel="stylesheet" href="/annotate.css?v=9.6.36" />
+<link rel="stylesheet" href="/style.css?v=9.6.37" />
+<link rel="stylesheet" href="/aurora.css?v=9.6.37" />
+<link rel="stylesheet" href="/blackglass/layout.css?v=9.6.37" />
+<link rel="stylesheet" href="/blackglass/type.css?v=9.6.37" />
+<link rel="stylesheet" href="/blackglass/motion.css?v=9.6.37" />
+<link rel="stylesheet" href="/blackglass/frame.css?v=9.6.37" />
+<link rel="stylesheet" href="/blackglass/glass.css?v=9.6.37" />
+<link rel="stylesheet" href="/blackglass.css?v=9.6.37" />
+<link rel="stylesheet" href="/graphite.css?v=9.6.37" />
+<link rel="stylesheet" href="/ai-workflow.css?v=9.6.37" />
+<link rel="stylesheet" href="/review-cards.css?v=9.6.37" />
+<link rel="stylesheet" href="/annotate.css?v=9.6.37" />
 </head>
 <body class="flow-shell booting">
 <div class="netbar" id="netbar" aria-hidden="true"><i></i></div>
@@ -110,8 +110,13 @@
           <label class="check swap-toggle"><input type="checkbox" id="swapToggle" /><span>保留模特换装</span></label>
           <div class="swap-pattern" id="swapPattern" hidden>
             <input type="file" id="swapPatternInput" accept="image/png,image/jpeg,image/webp" hidden />
-            <button class="btn btn-ghost btn-sm" type="button" id="swapPatternBtn">选择图案 / 面料图</button>
-            <span class="hint" id="swapPatternName">未选择</span>
+            <div class="swap-drop" id="swapDrop" role="button" tabindex="0" aria-label="上传图案/面料图">
+              <div class="swap-thumbs" id="swapThumbs"></div>
+              <div class="swap-copy">
+                <button class="btn btn-ghost btn-sm" type="button" id="swapPatternBtn">选择图案 / 面料图</button>
+                <span class="hint" id="swapPatternName">点击、拖入或 Ctrl+V 粘贴</span>
+              </div>
+            </div>
             <p class="hint" id="swapHint">上面传模特图；这里传要换上去的图案/面料图。人和姿势不动，只换衣服的图案与材质。</p>
           </div>
         </section>
@@ -447,11 +452,11 @@
 <div class="scrim" id="usageScrim" hidden></div><aside class="drawer" id="usageDrawer" hidden aria-modal="true" role="dialog" aria-label="我的用量"><div class="drawer-head"><span class="avatar"><svg><use href="#i-coins"/></svg></span><div class="who"><b>我的用量与花费</b><span>按工作台用量记录计价</span></div><button class="btn btn-quiet btn-icon" id="usageClose" type="button" aria-label="关闭用量"><svg><use href="#i-x"/></svg></button></div><div class="chat" id="usageBody"></div><div class="drawer-foot"><button class="btn btn-ghost" id="usageReload" type="button">刷新用量</button></div></aside>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
 
-<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.36"></script>
-<script src="/blackglass/atmosphere.js?v=9.6.36"></script>
-<script src="/blackglass/effects.js?v=9.6.36"></script>
-<script src="/blackglass-ui.js?v=9.6.36"></script>
-<script src="/ai-workflow.js?v=9.6.36"></script>
-<script src="/app.js?v=9.6.36"></script>
+<script src="/blackglass/vendor/three-0.160.1.min.js?v=9.6.37"></script>
+<script src="/blackglass/atmosphere.js?v=9.6.37"></script>
+<script src="/blackglass/effects.js?v=9.6.37"></script>
+<script src="/blackglass-ui.js?v=9.6.37"></script>
+<script src="/ai-workflow.js?v=9.6.37"></script>
+<script src="/app.js?v=9.6.37"></script>
 </body>
 </html>

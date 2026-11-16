@@ -839,11 +839,13 @@ class Workbench:
             raise WorkbenchError("请先上传模特图")
         if not pattern:
             raise WorkbenchError("请再上传一张图案/面料图")
-        # 款式只用来给成品命名/分目录，不参与提示词（版型以模特身上那件为准）
+        # 款式只用来给成品命名/分目录，不参与提示词（版型以模特身上那件为准）。
+        # 9.6.37：前端会把当前选的款式传上来；没传就用款式库第一个，绝不再写死某个款。
         try:
-            garment = self._resolve_garment(garment_type or "10-stretch-tee")
+            garment = self._resolve_garment(garment_type)
         except WorkbenchError:
-            garment = self._resolve_garment(None)
+            first = next(iter(self.skill.types.values()), None)
+            garment = first or self._resolve_garment(None)
         provider_obj = self.get_provider(provider)
         defaults = self.defaults()
         chosen_model = str(model or "").strip() or str(provider_obj.cfg.get("model") or "")

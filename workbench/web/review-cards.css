@@ -125,3 +125,15 @@
   .flow-bar .filter-tabs button{padding:3px 4px;font-size:9px}
   .flow-bar .cost-chip{padding-left:6px}
 }
+
+
+/* 9.6.37 换装模式：左栏允许纵向滚动（勾了换装后内容变高，不再被挤压裁掉） */
+.flow-shell .controls { overflow-y: auto; max-height: calc(100vh - 120px); }
+.source-section .swap-pattern { padding: 8px; }
+.swap-pattern .swap-drop { display: flex; align-items: center; gap: 8px; padding: 6px;
+  border: 1px dashed var(--border-strong, #334155); border-radius: 9px; cursor: pointer; }
+.swap-pattern .swap-drop.over { border-color: var(--primary, #6ee7b7); background: #6ee7b714; }
+.swap-pattern .swap-thumbs { display: flex; gap: 6px; }
+.swap-pattern .swap-thumbs .thumb { width: 54px; height: 54px; }
+.swap-pattern .swap-copy { display: grid; gap: 3px; min-width: 0; }
+.swap-pattern .swap-copy .hint { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
