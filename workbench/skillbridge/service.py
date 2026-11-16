@@ -894,9 +894,15 @@ class Workbench:
 
         # 模特图 × 每个款式的每个颜色 = 一条任务
         tasks: list[Task] = []
+        # 9.6.40 和普通批次一样：每个款式先出**基准色**，确认后再派生其余颜色
         for g, wanted_colors in plan:
+            master_color = wanted_colors[0]
             for color in wanted_colors:
+                is_master = color is master_color
                 for folder, source in sources:
+                    master_id = (
+                        "" if is_master else f"swap-{folder}-{g.file_key}-{master_color.label}"
+                    )
                     tasks.append(
                         Task(
                             id=f"swap-{folder}-{g.file_key}-{color.label}",
@@ -909,7 +915,8 @@ class Workbench:
                             garment=g.slug,
                             garment_name=g.display_name,
                             subject="person",
-                            master=True,   # 一张模特图一个色就是一张成品，不排派生
+                            master=is_master,        # 只有第一个颜色是基准色
+                            master_task=master_id,   # 其余颜色跟着它
                         )
                     )
         psuffix = Path(pattern[0]).suffix.lower()
@@ -958,8 +965,9 @@ class Workbench:
             "pattern_mode": "preserve",
             "subject": subject_module.PERSON,
             "subject_choice": subject_module.PERSON,
-            "shape_lock": "off",
-            "review_gate": False,
+            "shape_lock": "master",
+            # 有派生色才开基准审核闸门（单色任务没有意义）
+            "review_gate": any(len(cols) > 1 for _g, cols in plan),
             "account": str(account or ""),
             "estimate": self.pricer.estimate(
                 chosen_model, len(tasks), str(size or "auto"), provider_obj.name

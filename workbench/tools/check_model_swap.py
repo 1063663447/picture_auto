@@ -109,13 +109,32 @@ def main() -> int:
               bool(job.params.get("pattern_image"))
               and (job.root / job.params["pattern_image"]).is_file(),
               str(job.params.get("pattern_image")))
-        check("不进审核闸门", job.params.get("review_gate") is False)
-        check("不排派生色（shape_lock off）", job.params.get("shape_lock") == "off")
+        # 9.6.40：换装也先出基准色，确认后再派生其余颜色（多色时开闸门）
+        check("多色时开基准审核闸门", job.params.get("review_gate") is True)
+        check("版型锁定 = master（有派生）", job.params.get("shape_lock") == "master")
+        masters = [t for t in job.tasks if t.master]
+        derived = [t for t in job.tasks if t.master_task]
+        check("第一个颜色是基准色", len(masters) == 1 and masters[0].color == "black",
+              str([t.color for t in masters]))
+        check("其余颜色指向基准色", len(derived) == 1 and derived[0].color == "purple"
+              and derived[0].master_task == masters[0].id,
+              str([(t.color, t.master_task) for t in derived]))
         check("主体按真人处理", job.params.get("subject") == "person")
-        check("任务带模特图 source 且是 master",
-              all(t.source and t.master for t in job.tasks))
+        check("每个任务都带模特图 source", all(t.source for t in job.tasks))
+        check("每个款式只有一个基准色", sum(1 for t in job.tasks if t.master) == 1,
+              str([(t.color, t.master) for t in job.tasks]))
         check("参数里有换装说明（日志）",
               any("保留模特换装" in str(row.get("msg")) for row in job.log))
+
+        print("2b) 单色换装不开闸门")
+        solo = bench.create_model_swap_job(
+            [("m.png", png_bytes())],
+            ("p.jpg", png_bytes((30, 30, 30))),
+            selections=[{"garment_type": "07-washed-tee", "colors": ["black"]}],
+            provider="mock",
+        )
+        check("单色 → review_gate=False", solo.params.get("review_gate") is False)
+        check("单色 → 没有派生任务", not any(t.master_task for t in solo.tasks))
     finally:
         shutil.rmtree(temp, ignore_errors=True)
 

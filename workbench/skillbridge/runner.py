@@ -664,8 +664,56 @@ class JobRunner:
         await self._gather(self.job.tasks, self._execute_rework_task)
 
     async def _run_model_swap(self) -> None:
-        """保留模特换装：每个任务 = 一张模特图，图案/面料来自 job.params['pattern_image']。"""
-        await self._gather(self.job.tasks, self._execute_model_swap)
+        """保留模特换装：每个任务 = 一张模特图 + 一个颜色，印花/面料来自 job.params['pattern_image']。
+
+        9.6.40：和普通批次一样先出**基准色**，确认后再派生其余颜色（phase=derived 那一趟只跑派生）。
+        """
+        def open_tasks(items: list[Task]) -> list[Task]:
+            return [
+                t for t in items
+                if t.status not in {"done", "skipped", "paused"} and not t.out and not t.paused
+            ]
+
+        if self.phase == "derived":
+            approved = {t.id for t in self.job.tasks if t.master and t.approved}
+            derived = open_tasks(
+                [t for t in self.job.tasks if t.master_task and t.master_task in approved]
+            )
+            if derived:
+                await self._gather(derived, self._execute_model_swap)
+            still = [t for t in self.job.tasks if t.master and not t.approved and not t.paused]
+            if still and self.review_mode:
+                self.job.status = "review"
+                self.job.stage = (
+                    f"已确认 {sum(1 for t in self.job.tasks if t.master and t.approved)}"
+                    f"/{sum(1 for t in self.job.tasks if t.master)} 张基准，其余等确认"
+                )
+                self._save(force=True)
+            return
+
+        masters = open_tasks([t for t in self.job.tasks if t.master])
+        if masters:
+            await self._gather(masters, self._execute_model_swap)
+        if self.review_gate:
+            # 先只出基准色，停下来等运营确认（和普通批次一致）
+            done = [t for t in self.job.tasks if t.master and t.out]
+            if not done:
+                self.job.status = "review"
+                self.job.stage = "基准色没出来，请重试或换接口"
+                self.job.add_log("基准色未能生成，无法进入审核", level="warn")
+            else:
+                self.job.status = "review"
+                self.job.stage = "基准色已出，等你确认（确认后按它跑其余颜色）"
+                self.job.add_log(
+                    "先出基准色：确认没问题再跑其余颜色；不满意就点「改图」重新生成或框选改"
+                )
+            self._save(force=True)
+            return
+        rest = open_tasks([
+            t for t in self.job.tasks if t.master_task and not t.master
+        ])
+        if rest:
+            await self._gather(rest, self._execute_model_swap)
 
     async def _execute_model_swap(self, task: Task) -> None:
         """IMAGE 1 模特图（人/姿势/场景不动）+ IMAGE 2 图案面料图（只取印花和材质）。
