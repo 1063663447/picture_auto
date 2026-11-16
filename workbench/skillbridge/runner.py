@@ -483,6 +483,8 @@ class JobRunner:
 
             if self.mode == "rework":
                 await self._run_rework()
+            elif self.mode == "model_swap":
+                await self._run_model_swap()
             elif self.mode == "two_phase":
                 await self._run_two_phase()
             else:
@@ -660,6 +662,50 @@ class JobRunner:
     async def _run_rework(self) -> None:
         """Every task already carries its reference image and its revised prompt."""
         await self._gather(self.job.tasks, self._execute_rework_task)
+
+    async def _run_model_swap(self) -> None:
+        """保留模特换装：每个任务 = 一张模特图，图案/面料来自 job.params['pattern_image']。"""
+        await self._gather(self.job.tasks, self._execute_model_swap)
+
+    async def _execute_model_swap(self, task: Task) -> None:
+        """IMAGE 1 模特图（人/姿势/场景不动）+ IMAGE 2 图案面料图（只取图案和材质）。"""
+        model_path = self._job_image_path(task.source)
+        if model_path is None:
+            self._set_status(task, "failed", error="模特图不存在或路径不安全")
+            return
+        pattern_rel = str((self.job.params or {}).get("pattern_image") or "")
+        pattern_path = self._job_image_path(pattern_rel)
+        capacity = max(1, int(getattr(self.provider, "max_images", 1) or 1))
+        if pattern_path is None:
+            self._set_status(task, "failed", error="图案图缺失：请重新上传图案/面料图")
+            return
+        if capacity < 2:
+            self._set_status(
+                task, "failed",
+                error=f"接口 {self.provider.name} 只收 1 张图，换装需要模特图 + 图案图两张",
+            )
+            return
+        images = [model_path, pattern_path]
+        task.reference = str(pattern_path.relative_to(self.root)).replace("\\", "/")
+        prompt = prompts.build_model_swap(
+            str((self.job.params or {}).get("extra_requirements") or ""), subject="person"
+        )
+        negative = prompts.MODEL_SWAP_NEGATIVE
+        request = EditRequest(
+            images=images[:capacity],
+            prompt=prompt,
+            negative=negative,
+            size=self._resolve_size(model_path),
+            quality=str(self.job.params.get("quality") or "high"),
+            seed=self.job.params.get("seed"),
+            model=self.model,
+            # 换装不要高保真：高保真会把原图的印花/面料钉死，图案就换不上
+            input_fidelity=None,
+        )
+        self.job.add_log(
+            f"{task.id} 保留模特换装：模特图 + 图案图（{pattern_path.name}）"
+        )
+        await self._attempt(task, request)
 
     def _job_image_path(self, relative: object, *, original: bool = False) -> Path | None:
         """Resolve a saved job-relative image, never an arbitrary/escaping filesystem path."""

@@ -814,6 +814,138 @@ class Workbench:
         self.jobs[job_id] = job
         return job
 
+    # ------------------------------------------------------ 保留模特换装（9.6.35） --
+    def create_model_swap_job(
+        self,
+        uploads: list[tuple[str, bytes]],
+        pattern: tuple[str, bytes] | None,
+        *,
+        garment_type: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        size: str = "auto",
+        quality: str = "high",
+        output_format: str = "auto",
+        extra_requirements: str = "",
+        account: str = "",
+        concurrency: int | str | None = None,
+    ) -> Job:
+        """保留模特换装：模特图（1..N 张）+ 一张图案/面料图 → 人和姿势不动，只换图案与材质。
+
+        和普通任务的区别：不选颜色、不排派生色，一张模特图一条任务；提示词走
+        `prompts.build_model_swap`，两张参考图分别是「模特图」和「图案图」。
+        """
+        if not uploads:
+            raise WorkbenchError("请先上传模特图")
+        if not pattern:
+            raise WorkbenchError("请再上传一张图案/面料图")
+        # 款式只用来给成品命名/分目录，不参与提示词（版型以模特身上那件为准）
+        try:
+            garment = self._resolve_garment(garment_type or "10-stretch-tee")
+        except WorkbenchError:
+            garment = self._resolve_garment(None)
+        provider_obj = self.get_provider(provider)
+        defaults = self.defaults()
+        chosen_model = str(model or "").strip() or str(provider_obj.cfg.get("model") or "")
+
+        job_id = new_job_id()
+        root = self.job_dir(job_id)
+        for name in ("inputs", "work", "staging", "outputs"):
+            (root / name).mkdir(parents=True)
+
+        tasks: list[Task] = []
+        for index, (filename, data) in enumerate(uploads, start=1):
+            suffix = Path(filename).suffix.lower()
+            if suffix not in IMAGE_SUFFIXES:
+                raise WorkbenchError(f"不支持的图片格式：{filename}")
+            folder = f"item-{index:02d}"
+            target_dir = root / "inputs" / folder
+            target_dir.mkdir(parents=True, exist_ok=True)
+            safe = SAFE_NAME.sub("-", Path(filename).stem).strip("-") or "model"
+            target = target_dir / f"{safe}{suffix}"
+            target.write_bytes(data)
+            tasks.append(
+                Task(
+                    id=f"swap-{index:02d}-{garment.file_key}",
+                    item=folder,
+                    view="view-01",
+                    color="pattern",
+                    color_hex="",
+                    color_name="换装",
+                    source=str(target.relative_to(root)).replace("\\", "/"),
+                    garment=garment.slug,
+                    garment_name=garment.display_name,
+                    subject="person",
+                    master=True,       # 一张模特图就是一张「成品」，按基准处理不排派生
+                )
+            )
+        psuffix = Path(pattern[0]).suffix.lower()
+        if psuffix not in IMAGE_SUFFIXES:
+            raise WorkbenchError(f"不支持的图案图格式：{pattern[0]}")
+        pattern_target = root / "inputs" / f"pattern{psuffix}"
+        pattern_target.write_bytes(pattern[1])
+
+        unlimited = bool(provider_obj.setting("unlimited", False))
+        wanted = max(1, len(tasks))
+        if str(concurrency).strip().lower() in {"", "auto", "none"} or concurrency is None:
+            max_conc = max(1, int(provider_obj.setting("max_concurrency", 20) or 20))
+            conc = wanted if unlimited else min(wanted, max_conc)
+        else:
+            conc = max(1, min(200, int(concurrency)))
+        params = {
+            "kind": "model_swap",
+            "mode": "model_swap",
+            "pattern_image": str(pattern_target.relative_to(root)).replace("\\", "/"),
+            "pattern_name": str(pattern[0]),
+            "garment_type": garment.slug,
+            "garment_name": garment.display_name,
+            "colors": ["pattern"],
+            "selections": [
+                {"garment_type": garment.slug, "garment_name": garment.display_name,
+                 "colors": ["pattern"]}
+            ],
+            "style_count": 1,
+            "total_colors": 1,
+            "provider": provider_obj.name,
+            "provider_label": provider_obj.info()["label"],
+            "model": chosen_model,
+            "concurrency": conc,
+            "rpm": int(provider_obj.setting("rpm", 0) or 0),
+            "size": str(size or "auto"),
+            "quality": provider_obj.quality_for(chosen_model, str(quality or "high")),
+            "seed": None,
+            "max_retries": max(1, int(defaults.get("max_retries") or 3)),
+            "timeout_sec": float(defaults.get("timeout_sec") or 180),
+            "output_format": str(output_format or defaults.get("output_format") or "png"),
+            "send_reference": True,
+            "input_fidelity": "",
+            "max_bytes": self.skill.max_bytes,
+            "extra_requirements": " ".join((extra_requirements or "").split()),
+            "pattern_mode": "preserve",
+            "subject": subject_module.PERSON,
+            "subject_choice": subject_module.PERSON,
+            "shape_lock": "off",
+            "review_gate": False,
+            "account": str(account or ""),
+            "estimate": self.pricer.estimate(
+                chosen_model, len(tasks), str(size or "auto"), provider_obj.name
+            ),
+        }
+        job = Job(id=job_id, params=params, batch_name=f"{garment.file_key}-model-swap")
+        job.root = root
+        job.tasks = tasks
+        job.add_log(
+            f"保留模特换装：{len(tasks)} 张模特图 + 1 张图案图，接口 {provider_obj.name}"
+            "（人和姿势不动，只换衣服图案和材质）"
+        )
+        self._quota_guard(
+            str(account or ""), chosen_model, len(tasks),
+            str(size or "auto"), provider_obj.name,
+        )
+        job.save()
+        self.jobs[job_id] = job
+        return job
+
     # ---------------------------------------------------------------- drafts --
     def save_draft(self, uploads: list[tuple[str, bytes]]) -> dict:
         """开工前先把图片存成草稿；harness 的工具之后直接引用这份草稿。"""
@@ -1750,7 +1882,8 @@ class Workbench:
 
     def _runner_for(self, job: Job) -> JobRunner:
         garment = self._resolve_garment(job.params.get("garment_type"))
-        is_rework = str(job.params.get("kind") or "") == "rework"
+        # model_swap 也不按「款式×颜色」解析（一张模特图一条任务）
+        is_rework = str(job.params.get("kind") or "") in {"rework", "model_swap"}
         colors: list[ColorRef] = []
         selections: list[tuple[object, list]] = []
         if not is_rework:

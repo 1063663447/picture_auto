@@ -58,6 +58,8 @@
     // 多款式：每项 { slug, colors:Set<label> }；默认一个款式且全色选中
     styles: [],
     files: [],
+    // 9.6.35 保留模特换装：勾上以后多传一张图案/面料图
+    swapPattern: null,
     jobId: null,
     pollTimer: null,
     pollEpoch: 0,
@@ -1026,15 +1028,36 @@
     if (state.busy) return;
     const blocked=startBlockedReason();if(blocked){toast("bad",blocked);return;}
     saveSettings();
+    const swap = swapReady();
     state.busy = true;
     updateSummary();
     $("startBtn").classList.add("loading");
     $("startBtn").textContent = "提交中…";
-    window.WorkbenchUI.beginSubmission(selectionsPayload());
+    window.WorkbenchUI.beginSubmission(swap ? [{colors:["pattern"]}] : selectionsPayload());
     if(fromHarness)window.AIWorkflow?.phase('submitting');
     try {
       const form = new FormData();
       state.files.forEach((entry) => form.append("files", entry.file, entry.file.name));
+      if (swap) {
+        // 保留模特换装：只发模特图 + 图案图，不选款式颜色
+        form.append("pattern", state.swapPattern, state.swapPattern.name);
+        form.append("mode", "model_swap");
+        form.append("provider", $("provider").value);
+        form.append("model", currentModel());
+        form.append("concurrency", "auto");
+        form.append("size", currentSize());
+        form.append("quality", $("quality").value);
+        form.append("output_format", currentOutputFormat());
+        if (extraRequirements) form.append("extra_requirements", extraRequirements);
+        form.append("start", "true");
+        const data = await api("/api/jobs", { method: "POST", body: form });
+        window.WorkbenchUI.endSubmission(true);
+        if(fromHarness){state.harnessSubmittedJob=data.job.id;window.AIWorkflow?.submitted(data.job.id);}else closeHarness();
+        watchJob(data.job.id, data.job);
+        loadHistory();
+        toast("ok", "保留模特换装已开工：人和姿势不动，只换图案和材质");
+        return;
+      }
       const picked = selectionsPayload();
       form.append("selections", JSON.stringify(picked));
       const head = primaryStyle();
@@ -3562,12 +3585,29 @@
     syncSelection(true);
   }
 
+  /* 9.6.35 保留模特换装：模特图 + 图案/面料图 → 人/姿势/场景不动，只换衣服的图案和材质。 */
+  function swapReady() {
+    return Boolean($("swapToggle") && $("swapToggle").checked);
+  }
+  function syncSwapUi() {
+    const on = swapReady();
+    const box = $("swapPattern");
+    if (box) box.hidden = !on;
+    // 文案/张数统一交给 WorkbenchUI.syncConfig（updateSummary 末尾会调）
+  }
+
   function startBlockedReason() {
     const locked=submissionBlockedReason();if(locked)return locked;
     if(state.job&&!TERMINAL.includes(state.job.status))return "本轮任务仍在运行，请等待完成或取消";
     if(state.files.some(entry=>entry.loading))return "原图正在读取，请稍候";
     if($("model").disabled)return "模型列表正在读取，请稍候";
-    if (!state.files.length) return "请先上传至少一张原图";
+    if (!state.files.length) return swapReady() ? "请先上传模特图" : "请先上传至少一张原图";
+    if (swapReady()) {
+      if (!state.swapPattern) return "请再选一张图案/面料图";
+      if (!currentModel()) return "请选择模型";
+      if (!$("provider").value) return "请选择生图接口";
+      return "";
+    }
     if (!totalColors()) return "请至少选择一个颜色";
     if (!currentModel()) return "请选择模型";
     if (!$("provider").value) return "请选择生图接口";
@@ -3590,6 +3630,23 @@
     drop.addEventListener("drop", (event) => {
       if (event.dataTransfer && event.dataTransfer.files) addFiles(event.dataTransfer.files);
     });
+
+    // 9.6.35 保留模特换装：勾选后露出「图案/面料图」入口
+    $("swapToggle")?.addEventListener("change", () => {
+      syncSwapUi();
+      updateSummary();
+    });
+    const swapInput = $("swapPatternInput");
+    $("swapPatternBtn")?.addEventListener("click", () => swapInput?.click());
+    swapInput?.addEventListener("change", () => {
+      const file = swapInput.files && swapInput.files[0];
+      state.swapPattern = file || null;
+      const name = $("swapPatternName");
+      if (name) name.textContent = file ? `${file.name}（${Math.round(file.size / 1024)} KB）` : "未选择";
+      updateSummary();
+      swapInput.value = "";
+    });
+    syncSwapUi();
 
     const gateHint = $("gateHint");
     if (gateHint) gateHint.addEventListener("click", () => loadGate());

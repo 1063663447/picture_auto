@@ -21,16 +21,20 @@
   }
   function syncConfig(){
     const s=state();if(!s)return;
-    const colors=s.styles.reduce((n,item)=>n+item.colors.size,0),count=s.files.length*colors;
+    // 9.6.35 保留模特换装：不选款色，一张模特图 = 一张成品，但必须先选图案/面料图
+    const swap=Boolean(document.getElementById('swapToggle')?.checked);
+    const patternOk=Boolean(s.swapPattern);
+    const colors=s.styles.reduce((n,item)=>n+item.colors.size,0),count=swap?s.files.length:s.files.length*colors;
     text($('styleCount'),`${s.styles.length} 款 / ${colors} 色`);text($('mobileStyleCount'),`${s.styles.length} 款`);
     text($('settingsSummary'),`${$('sizeTier').value} · ${{high:'高质量',medium:'标准',low:'快速',auto:'自动'}[$('quality').value]||'自动'}`);
-    text($('workspaceSummary'),`${s.files.length} 张原图 · ${s.styles.length} 款 · ${count} 张预计成品`);
+    text($('workspaceSummary'),swap?(patternOk?`${s.files.length} 张模特图 · 换装 · ${count} 张成品`:`${s.files.length} 张模特图 · 还没选图案图`):`${s.files.length} 张原图 · ${s.styles.length} 款 · ${count} 张预计成品`);
+    text($('outputCount'),swap?(patternOk?`保留模特换装：${s.files.length} 张模特图 = ${count} 张成品（人和姿势不动）`:'保留模特换装：再选一张图案/面料图'):(s.skill?`${s.files.length} 张原图 × ${colors} 个款色 = ${count} 张成品`:''));
     const phase=s.job?bridge.jobPhase(s.job):null,active=phase&&!phase.terminal,button=$('startBtn');
     const model=$('model').value==='__manual__'?$('modelManual').value.trim():$('model').value;
-    const blocked=s.busy||s.harnessBusy||s.harnessOpening||s.jobLoading||active||!s.skill||!s.files.length||!colors||s.files.some(f=>f.loading)||!$('provider').value||!model||$('model').disabled;
+    const blocked=s.busy||s.harnessBusy||s.harnessOpening||s.jobLoading||active||!s.skill||!s.files.length||(!swap&&!colors)||(swap&&!patternOk)||s.files.some(f=>f.loading)||!$('provider').value||!model||$('model').disabled;
     if(button.disabled!==!!blocked)button.disabled=!!blocked;
     if(!s.busy){
-      const label=s.harnessBusy?'AI 整理需求中…':s.jobLoading?'正在切换任务…':s.harnessOpening?'准备 AI 创作…':active?`${s.job.stats.done+s.job.stats.skipped} / ${s.job.stats.total} · ${phase.packaging?'整理打包…':'生成中'}`:`生成 ${count} 张`;
+      const label=s.harnessBusy?'AI 整理需求中…':s.jobLoading?'正在切换任务…':s.harnessOpening?'准备 AI 创作…':active?`${s.job.stats.done+s.job.stats.skipped} / ${s.job.stats.total} · ${phase.packaging?'整理打包…':'生成中'}`:(swap?`换装生成 ${count} 张`:`生成 ${count} 张`);
       if(button.dataset.label!==label||button.textContent.trim()!==label){button.replaceChildren();const span=document.createElement('span');span.textContent=label;button.appendChild(span);button.dataset.label=label;}
     }
     $('directStartBtn').disabled=!!blocked;

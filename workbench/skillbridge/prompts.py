@@ -1524,6 +1524,58 @@ def drawstring_negative(garment: GarmentType | None) -> str:
     return DRAWSTRING_NEGATIVE
 
 
+#: **保留模特换装**（9.6.35）：一张模特图 + 一张图案/面料图 → 人和姿势不动，只换衣服的图案与材质。
+#: 客户原话：「分别放入模特图和图案图后，保持模特和姿势不变，仅更换衣服图案和材质」。
+MODEL_SWAP_CLAUSE = (
+    "MODEL AND POSE LOCK — IMAGE 1 is the customer's own photo of a model wearing a garment. Keep "
+    "that person EXACTLY as they are: same face and identity, same hairstyle and hair volume, same "
+    "skin tone, same body proportions, same pose, same hand position, same shoulder and arm angle, "
+    "same camera angle, same framing and crop, same background, same lighting, shadow and colour "
+    "temperature. Do not retouch, slim, beautify, rejuvenate, age, swap or duplicate the person; do "
+    "not change the pose or the framing; do not add or remove limbs, hands, props or accessories; do "
+    "not move or repaint the background. If the model's face is partly turned or in shadow, keep it "
+    "exactly that way. "
+    "GARMENT MATERIAL AND PRINT SWAP — change ONLY two things on the garment: its PRINT and its "
+    "FABRIC. (1) PRINT: take the artwork from IMAGE 2 exactly as it is — same motif, same letters and "
+    "typeface, same colours, same scale and the same placement on the chest/body as IMAGE 2 shows; if "
+    "IMAGE 2 has no print, the garment stays unprinted and you never invent one. (2) FABRIC: use the "
+    "material of IMAGE 2 — same knit structure (plain jersey / rib knit / waffle / fleece / terry / "
+    "silk-like), same weave and grain, same thickness and weight, same sheen or matte finish, same "
+    "drape and folds, same base fabric colour; keep that texture readable under the existing "
+    "lighting and do not smooth it out. "
+    "KEEP THE CUT — the garment's cut, neckline shape, sleeve length, sleeve width, hem and "
+    "silhouette stay exactly as the model already wears them in IMAGE 1; do not restyle, lengthen, "
+    "shorten, widen or tighten the garment. "
+    "The result must read as the SAME photograph of the SAME person, re-shot with that printed "
+    "fabric: identical pose, identical scene, only the print and the material changed."
+)
+
+MODEL_SWAP_NEGATIVE = (
+    " Do not change the model's face, identity, hair, skin tone, body shape, weight, pose, hands, "
+    "camera angle, framing or background. Do not add, remove or duplicate people, limbs, props or "
+    "accessories. Do not retouch or beautify the model. Do not change the garment's cut, neckline, "
+    "sleeve length, sleeve width or hem. Do not keep the original print when IMAGE 2 has a different "
+    "one, and do not invent any print that is not in IMAGE 2. Do not blend two garments or show the "
+    "model wearing two layers at once. Do not flatten the new fabric into a smooth plastic surface "
+    "and do not add a sheen the reference does not have."
+)
+
+
+def build_model_swap(extra: str = "", *, subject: str = "person") -> str:
+    """模特换装：IMAGE 1 = 模特图（人和姿势不动），IMAGE 2 = 图案/面料图（只取图案和材质）。"""
+    parts = [
+        MODEL_SWAP_CLAUSE,
+        "IMAGE 1 = the model photo (person, pose, scene — untouchable).",
+        "IMAGE 2 = the printed garment / fabric reference (only its print and material are used).",
+    ]
+    text = " ".join((extra or "").split())
+    if text:
+        parts.append(f"OPERATOR NOTE (applies only to the print/material layer): {text}")
+    parts.append(subject_clause(subject))
+    parts.append(MATERIAL_CLAUSE)
+    return tidy_articles(" ".join(part for part in parts if part).strip())
+
+
 #: ---------------------------------------------------------------------------
 #: 款式级提示词：每个款式一套专属默认（library/prompts/<slug>.json）
 #:   `garment.style_positive` / `garment.style_negative` 有值就用它，

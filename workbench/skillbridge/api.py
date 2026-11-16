@@ -447,6 +447,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
     async def create_job(
         request: Request,
         files: list[UploadFile] = File(...),
+        pattern: list[UploadFile] = File(default=[]),
         garment_type: str = Form(""),
         colors: list[str] = Form(default=[]),
         selections: str = Form(""),
@@ -497,6 +498,42 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 return JSONResponse(
                     {"ok": False, "error": f"selections 不是合法 JSON：{exc}"}, status_code=400
                 )
+        # 9.6.35 保留模特换装：模特图 + 图案图，不选款式颜色（要在「至少选一个款式」之前分流）
+        if str(mode or "").strip() == "model_swap":
+            pattern_bytes: tuple[str, bytes] | None = None
+            for item in pattern:
+                data = await item.read()
+                if data:
+                    pattern_bytes = (item.filename or "pattern.png", data)
+                    break
+            if not uploads:
+                return JSONResponse(
+                    {"ok": False, "error": "请先上传模特图"}, status_code=400
+                )
+            if pattern_bytes is None:
+                return JSONResponse(
+                    {"ok": False, "error": "请再上传一张图案/面料图"}, status_code=400
+                )
+            try:
+                swap_job = await asyncio.to_thread(
+                    bench.create_model_swap_job,
+                    uploads,
+                    pattern_bytes,
+                    garment_type=garment_type or None,
+                    provider=provider or None,
+                    model=model or None,
+                    size=size,
+                    quality=quality,
+                    output_format=output_format,
+                    extra_requirements=extra_requirements,
+                    account=current_account(request),
+                    concurrency=parsed_concurrency,
+                )
+            except (KeyError, ValueError, WorkbenchError) as exc:
+                return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+            if start:
+                bench.start(swap_job.id)
+            return {"ok": True, "job": swap_job.as_dict(with_tasks=True, with_log=True)}
         if not parsed_selections and not garment_type:
             return JSONResponse(
                 {"ok": False, "error": "请至少选择一个款式"}, status_code=400
