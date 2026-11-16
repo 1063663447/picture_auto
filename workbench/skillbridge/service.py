@@ -821,6 +821,8 @@ class Workbench:
         pattern: tuple[str, bytes] | None,
         *,
         garment_type: str | None = None,
+        colors: list[str] | None = None,
+        selections: list[dict] | None = None,
         provider: str | None = None,
         model: str | None = None,
         size: str = "auto",
@@ -830,22 +832,44 @@ class Workbench:
         account: str = "",
         concurrency: int | str | None = None,
     ) -> Job:
-        """保留模特换装：模特图（1..N 张）+ 一张图案/面料图 → 人和姿势不动，只换图案与材质。
+        """保留模特换装：模特图（1..N 张）+ 一张图案/面料图 → 人和姿势不动，换衣服的款式/图案/材质。
 
-        和普通任务的区别：不选颜色、不排派生色，一张模特图一条任务；提示词走
-        `prompts.build_model_swap`，两张参考图分别是「模特图」和「图案图」。
+        9.6.38：款式和颜色**按界面上选的来**（模特图 × 色数 = 成品张数）：
+        版型/领型/袖长取选中款式，颜色取选中色号，印花和面料取图案图。
         """
         if not uploads:
             raise WorkbenchError("请先上传模特图")
         if not pattern:
             raise WorkbenchError("请再上传一张图案/面料图")
-        # 款式只用来给成品命名/分目录，不参与提示词（版型以模特身上那件为准）。
-        # 9.6.37：前端会把当前选的款式传上来；没传就用款式库第一个，绝不再写死某个款。
-        try:
-            garment = self._resolve_garment(garment_type)
-        except WorkbenchError:
-            first = next(iter(self.skill.types.values()), None)
-            garment = first or self._resolve_garment(None)
+        # 款式 + 颜色：和普通任务一样的解析（多款式也支持）
+        plan: list[tuple[object, list]] = []
+        for raw in selections or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                picked = self._resolve_garment(raw.get("garment_type") or raw.get("slug"))
+            except WorkbenchError as exc:
+                raise WorkbenchError(f"款式不存在：{exc}") from exc
+            try:
+                wanted_colors = picked.resolve_colors(raw.get("colors") or [])
+            except KeyError as exc:
+                raise WorkbenchError(str(exc)) from exc
+            if not wanted_colors:
+                raise WorkbenchError(f"{picked.display_name} 至少选一个颜色")
+            if any(g.slug == picked.slug for g, _ in plan):
+                continue
+            plan.append((picked, wanted_colors))
+        if not plan:
+            try:
+                picked = self._resolve_garment(garment_type)
+            except WorkbenchError:
+                picked = next(iter(self.skill.types.values()), None) or self._resolve_garment(None)
+            try:
+                wanted_colors = picked.resolve_colors(colors)
+            except KeyError as exc:
+                raise WorkbenchError(str(exc)) from exc
+            plan = [(picked, wanted_colors)]
+        garment = plan[0][0]
         provider_obj = self.get_provider(provider)
         defaults = self.defaults()
         chosen_model = str(model or "").strip() or str(provider_obj.cfg.get("model") or "")
@@ -855,7 +879,7 @@ class Workbench:
         for name in ("inputs", "work", "staging", "outputs"):
             (root / name).mkdir(parents=True)
 
-        tasks: list[Task] = []
+        sources: list[tuple[str, str]] = []
         for index, (filename, data) in enumerate(uploads, start=1):
             suffix = Path(filename).suffix.lower()
             if suffix not in IMAGE_SUFFIXES:
@@ -866,21 +890,28 @@ class Workbench:
             safe = SAFE_NAME.sub("-", Path(filename).stem).strip("-") or "model"
             target = target_dir / f"{safe}{suffix}"
             target.write_bytes(data)
-            tasks.append(
-                Task(
-                    id=f"swap-{index:02d}-{garment.file_key}",
-                    item=folder,
-                    view="view-01",
-                    color="pattern",
-                    color_hex="",
-                    color_name="换装",
-                    source=str(target.relative_to(root)).replace("\\", "/"),
-                    garment=garment.slug,
-                    garment_name=garment.display_name,
-                    subject="person",
-                    master=True,       # 一张模特图就是一张「成品」，按基准处理不排派生
-                )
-            )
+            sources.append((folder, str(target.relative_to(root)).replace("\\", "/")))
+
+        # 模特图 × 每个款式的每个颜色 = 一条任务
+        tasks: list[Task] = []
+        for g, wanted_colors in plan:
+            for color in wanted_colors:
+                for folder, source in sources:
+                    tasks.append(
+                        Task(
+                            id=f"swap-{folder}-{g.file_key}-{color.label}",
+                            item=folder,
+                            view="view-01",
+                            color=color.label,
+                            color_hex=color.hex or "",
+                            color_name=color.name_zh or color.label,
+                            source=source,
+                            garment=g.slug,
+                            garment_name=g.display_name,
+                            subject="person",
+                            master=True,   # 一张模特图一个色就是一张成品，不排派生
+                        )
+                    )
         psuffix = Path(pattern[0]).suffix.lower()
         if psuffix not in IMAGE_SUFFIXES:
             raise WorkbenchError(f"不支持的图案图格式：{pattern[0]}")
@@ -901,13 +932,14 @@ class Workbench:
             "pattern_name": str(pattern[0]),
             "garment_type": garment.slug,
             "garment_name": garment.display_name,
-            "colors": ["pattern"],
+            "colors": [c.label for c in plan[0][1]],
             "selections": [
-                {"garment_type": garment.slug, "garment_name": garment.display_name,
-                 "colors": ["pattern"]}
+                {"garment_type": g.slug, "garment_name": g.display_name,
+                 "colors": [c.label for c in cols]}
+                for g, cols in plan
             ],
-            "style_count": 1,
-            "total_colors": 1,
+            "style_count": len(plan),
+            "total_colors": sum(len(cols) for _g, cols in plan),
             "provider": provider_obj.name,
             "provider_label": provider_obj.info()["label"],
             "model": chosen_model,

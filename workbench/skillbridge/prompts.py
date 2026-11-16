@@ -1543,11 +1543,11 @@ MODEL_SWAP_CLAUSE = (
     "silk-like), same weave and grain, same thickness and weight, same sheen or matte finish, same "
     "drape and folds, same base fabric colour; keep that texture readable under the existing "
     "lighting and do not smooth it out. "
-    "KEEP THE CUT — the garment's cut, neckline shape, sleeve length, sleeve width, hem and "
-    "silhouette stay exactly as the model already wears them in IMAGE 1; do not restyle, lengthen, "
-    "shorten, widen or tighten the garment. "
-    "The result must read as the SAME photograph of the SAME person, re-shot with that printed "
-    "fabric: identical pose, identical scene, only the print and the material changed."
+    "KEEP POSE AND SCENE — the person's pose, hands, camera angle, framing, background, lighting and "
+    "shadows stay exactly as they are in IMAGE 1; only the garment itself changes (its type follows "
+    "the requested style, its print and material follow IMAGE 2). "
+    "The result must read as the SAME photograph of the SAME person wearing that printed garment: "
+    "identical pose, identical scene, only the clothing changed."
 )
 
 MODEL_SWAP_NEGATIVE = (
@@ -1561,13 +1561,45 @@ MODEL_SWAP_NEGATIVE = (
 )
 
 
-def build_model_swap(extra: str = "", *, subject: str = "person") -> str:
-    """模特换装：IMAGE 1 = 模特图（人和姿势不动），IMAGE 2 = 图案/面料图（只取图案和材质）。"""
-    parts = [
-        MODEL_SWAP_CLAUSE,
-        "IMAGE 1 = the model photo (person, pose, scene — untouchable).",
-        "IMAGE 2 = the printed garment / fabric reference (only its print and material are used).",
-    ]
+def build_model_swap(
+    extra: str = "",
+    *,
+    subject: str = "person",
+    garment: "GarmentType | None" = None,
+    color: "ColorRef | None" = None,
+) -> str:
+    """模特换装：IMAGE 1 = 模特图（人/姿势/场景不动），IMAGE 2 = 图案/面料图。
+
+    9.6.38：**衣服的款式取界面上选的那款**（以前是「保持模特身上那件的版型」，
+    结果选水洗T恤出来还是卫衣）。版型/领型/袖长来自款式描述 + 款式锁，
+    印花和面料来自 IMAGE 2，颜色按选中的色号。
+    """
+    parts = [MODEL_SWAP_CLAUSE]
+    if garment is not None:
+        parts.append(
+            "GARMENT REBUILD — what the model wears in the result is exactly this garment: "
+            + garment.phrase
+            + ". Take this garment's cut, neckline, sleeve length, sleeve width, hem and construction "
+            "from this description (and from the style rules below), NOT from what the model happens "
+            "to have on in IMAGE 1: replace the model's current garment with this one, dressed on the "
+            "same body in the same pose, without moving the person."
+        )
+        style_text = style_positive(garment, reference=False)
+        if style_text:
+            parts.append(style_text)
+        lock = garment_lock(garment)
+        if lock:
+            parts.append(lock)
+        if color is not None:
+            parts.append(color_hint(color).strip())
+            white = white_clause(color)
+            if white:
+                parts.append(white)
+    parts.append(
+        "IMAGE 1 = the model photo (person, pose, scene — untouchable). "
+        "IMAGE 2 = the printed garment / fabric reference: its PRINT and its FABRIC MATERIAL are the "
+        "only things taken from it."
+    )
     text = " ".join((extra or "").split())
     if text:
         parts.append(f"OPERATOR NOTE (applies only to the print/material layer): {text}")

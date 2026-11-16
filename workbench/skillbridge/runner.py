@@ -668,7 +668,10 @@ class JobRunner:
         await self._gather(self.job.tasks, self._execute_model_swap)
 
     async def _execute_model_swap(self, task: Task) -> None:
-        """IMAGE 1 模特图（人/姿势/场景不动）+ IMAGE 2 图案面料图（只取图案和材质）。"""
+        """IMAGE 1 模特图（人/姿势/场景不动）+ IMAGE 2 图案面料图（只取印花和材质）。
+
+        9.6.38：衣服的款式/颜色按任务上带的（界面选的）来 —— 选水洗T恤就出水洗T恤。
+        """
         model_path = self._job_image_path(task.source)
         if model_path is None:
             self._set_status(task, "failed", error="模特图不存在或路径不安全")
@@ -687,14 +690,18 @@ class JobRunner:
             return
         images = [model_path, pattern_path]
         task.reference = str(pattern_path.relative_to(self.root)).replace("\\", "/")
+        garment = self.garment_for_task(task)
+        color = garment.color(task.color)
         prompt = prompts.build_model_swap(
-            str((self.job.params or {}).get("extra_requirements") or ""), subject="person"
+            str((self.job.params or {}).get("extra_requirements") or ""),
+            subject="person",
+            garment=garment,
+            color=color,
         )
-        negative = prompts.MODEL_SWAP_NEGATIVE
         request = EditRequest(
             images=images[:capacity],
             prompt=prompt,
-            negative=negative,
+            negative=self.negative_for(garment, "person") + " " + prompts.MODEL_SWAP_NEGATIVE,
             size=self._resolve_size(model_path),
             quality=str(self.job.params.get("quality") or "high"),
             seed=self.job.params.get("seed"),
@@ -703,7 +710,8 @@ class JobRunner:
             input_fidelity=None,
         )
         self.job.add_log(
-            f"{task.id} 保留模特换装：模特图 + 图案图（{pattern_path.name}）"
+            f"{task.id} 保留模特换装：{garment.display_name} · {task.color_name}"
+            f"（印花/面料取 {pattern_path.name}）"
         )
         await self._attempt(task, request)
 

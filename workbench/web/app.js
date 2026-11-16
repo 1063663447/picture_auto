@@ -1048,8 +1048,11 @@
         // 保留模特换装：只发模特图 + 图案图，不选款式颜色
         form.append("pattern", state.swapPattern, state.swapPattern.name);
         form.append("mode", "model_swap");
-        // 款式只用来命名/标签（版型以模特身上那件为准），但别让标签跟选的对不上
+        // 9.6.38 换装也按「款式 + 颜色」出图：版型取款式，印花/面料取图案图
+        const swapPicked = selectionsPayload();
+        form.append("selections", JSON.stringify(swapPicked));
         form.append("garment_type", (primaryStyle().slug || ""));
+        for (const label of (primaryStyle().colors || [])) form.append("colors", label);
         form.append("provider", $("provider").value);
         form.append("model", currentModel());
         form.append("concurrency", "auto");

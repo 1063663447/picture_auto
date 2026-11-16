@@ -520,6 +520,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     uploads,
                     pattern_bytes,
                     garment_type=garment_type or None,
+                    colors=colors,
+                    selections=parsed_selections or None,
                     provider=provider or None,
                     model=model or None,
                     size=size,

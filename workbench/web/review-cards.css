@@ -137,3 +137,12 @@
 .swap-pattern .swap-thumbs .thumb { width: 54px; height: 54px; }
 .swap-pattern .swap-copy { display: grid; gap: 3px; min-width: 0; }
 .swap-pattern .swap-copy .hint { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+/* 9.6.38 左栏整体滚动：款式区不再被 flex 压成一条缝，面板可以一直往下延 */
+.flow-shell .controls { overflow-y: auto; }
+.flow-shell .controls > section { flex: none; }
+.flow-shell .styles-section { display: flex; flex-direction: column; }
+.flow-shell .styles-section .style-list {
+  flex: none; max-height: none; overflow: visible; padding-right: 2px;
+}
